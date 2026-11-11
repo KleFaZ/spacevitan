@@ -9,7 +9,8 @@ Das Regelwerk liegt als Dokument beim Projekt; dieses Repository enthaelt die Um
 |---|---|
 | `crates/game_core` | Regel-Kern in Rust: Karte, Rohstoffe, Zugregeln, Bots. Keine Grafik, keine externen Pakete. |
 | `crates/cli` | Text-Oberflaeche zum Zuschauen (Bot gegen Bot) und fuer Statistik. |
-| `client/` | Godot-Client (Isometrie, Eingabe) – kommt, sobald der Kern steht. |
+| `viewer/` | Browser-Ansicht: spielt exportierte Partien isometrisch ab. |
+| `client/` | Godot-Client (Isometrie, Eingabe) – kommt als Naechstes. |
 | `.github/workflows` | CI: Formatierung, Clippy, Tests unter Linux und Windows, Windows-`.exe` als Download. |
 
 Module in `game_core`:
@@ -41,6 +42,23 @@ neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
 
 Jede Partie bekommt einen neuen Startwert (Seed), der am Ende angezeigt wird. Mit
 `--seed <Wert>` laesst sich genau diese Partie wiederholen, z. B. um einen Fehler zu melden.
+
+### Browser-Ansicht
+
+`viewer/` spielt exportierte Partien isometrisch ab (Runde fuer Runde, mit Ereignissen und
+Feld-Details). Eine Partie exportieren und in der Ansicht mit *Eigene Partie laden* oeffnen:
+
+```
+spacevitan.exe --seed 7 --export partie.json
+```
+
+Die Ansicht mit eingebetteten Beispielpartien bauen:
+
+```
+python3 viewer/build.py ansicht.html partie1.json partie2.json --standalone
+```
+
+Das JSON-Format (`crates/game_core/src/replay.rs`) liest spaeter auch der Godot-Client.
 
 Legende der Textansicht: `A*` Koenig von A, `a2` Figur von A mit Stufe 2, `#A` Fabrik von A,
 `$` Beute, Ziffern = Rohstoffkategorien auf dem Feld, `.` leer.

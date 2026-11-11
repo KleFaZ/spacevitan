@@ -6,6 +6,7 @@ use game_core::config::Config;
 use game_core::game::Game;
 use game_core::ids::PlayerId;
 use game_core::render::{player_letter, render_game};
+use game_core::replay::ReplayWriter;
 use game_core::state::Outcome;
 use std::io::BufRead;
 use std::process::ExitCode;
@@ -25,6 +26,7 @@ Optionen:
   --bots LISTE   pro Spieler: gierig oder zufall, z. B. gierig,zufall (Standard: gierig)
   --show         Partie Runde fuer Runde anzeigen
   --games N      N Partien mit Seeds seed..seed+N-1 spielen und Statistik zeigen
+  --export DATEI Partie als JSON speichern (fuer die Browser-Ansicht), nur mit einer Partie
   --help         diese Hilfe
 
 Legende: A* Koenig von A, a2 Figur von A mit Stufe 2, #A Fabrik von A,
@@ -38,6 +40,7 @@ struct Options {
     bots: Vec<String>,
     show: bool,
     games: u32,
+    export: Option<String>,
 }
 
 fn parse(args: &[String]) -> Result<Option<Options>, String> {
@@ -49,6 +52,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
         bots: Vec::new(),
         show: false,
         games: 1,
+        export: None,
     };
     let mut i = 0;
     let value = |i: usize| -> Result<&String, String> {
@@ -81,6 +85,10 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
             }
             "--games" => {
                 o.games = (number(value(i)?, "--games")? as u32).max(1);
+                i += 1;
+            }
+            "--export" => {
+                o.export = Some(value(i)?.clone());
                 i += 1;
             }
             "--bots" => {
@@ -145,6 +153,9 @@ fn run() -> Result<(), String> {
         o.show = true;
     }
     let base_seed = o.seed.unwrap_or_else(fresh_seed);
+    if o.export.is_some() && o.games > 1 {
+        return Err("--export geht nur mit einer Partie (ohne --games)".into());
+    }
 
     let mut stats = Stats {
         wins: vec![0; o.players as usize],
@@ -178,7 +189,15 @@ fn run() -> Result<(), String> {
             println!("Start:\n{}", render_game(&game));
         }
         let mut last_round = 1;
-        let outcome = play_out(&mut game, &mut bots, |game, _player, _action, events| {
+        let bot_names: Vec<String> = bots.iter().map(|b| b.name().to_string()).collect();
+        let mut writer = o
+            .export
+            .as_ref()
+            .map(|_| ReplayWriter::new(&game, &bot_names));
+        let outcome = play_out(&mut game, &mut bots, |game, player, action, events| {
+            if let Some(w) = writer.as_mut() {
+                w.record(game, player, action, events);
+            }
             for e in events {
                 match e {
                     Event::Spawned { .. } => stats.spawned += 1,
@@ -201,6 +220,12 @@ fn run() -> Result<(), String> {
             println!("Endstand:\n{}", render_game(&game));
         }
         stats.rounds += game.state.round.min(o.rounds) as u64;
+        if let (Some(path), Some(w)) = (o.export.as_ref(), writer) {
+            let frames = w.frame_count();
+            std::fs::write(path, w.finish(&game))
+                .map_err(|e| format!("{path} konnte nicht geschrieben werden: {e}"))?;
+            println!("Partie gespeichert: {path} ({frames} Zuege inklusive Start)");
+        }
 
         match outcome {
             Outcome::Winner(p) => {
@@ -307,6 +332,13 @@ mod tests {
         for _ in 0..100 {
             assert!(fresh_seed() < 1_000_000);
         }
+    }
+
+    #[test]
+    fn export_takes_a_file_name() {
+        let o = parse(&args("--export partie.json")).unwrap().unwrap();
+        assert_eq!(o.export.as_deref(), Some("partie.json"));
+        assert!(parse(&args("--export")).is_err());
     }
 
     #[test]

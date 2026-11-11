@@ -1,0 +1,1006 @@
+<title>Spacevitan Wiedergabe</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: links das isometrische Brett mit Steuerleiste, rechts die Spieltafel; unter 900px gestapelt. */
+:root {
+  --bg: #e9ece6;
+  --surface: #f8f9f5;
+  --ink: #1d2320;
+  --muted: #5b6660;
+  --line: #ccd3cb;
+  --accent: #2f55a4;
+  --board-bg: #dfe4dc;
+  --label: #6b766f;
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131715; --surface: #1b201d; --ink: #e4e9e5; --muted: #95a199; --line: #2f3632;
+    --accent: #8ea9ec; --board-bg: #181d1a; --label: #87928b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131715; --surface: #1b201d; --ink: #e4e9e5; --muted: #95a199; --line: #2f3632;
+  --accent: #8ea9ec; --board-bg: #181d1a; --label: #87928b; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 28px;
+}
+h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+
+.top {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px 24px; max-width: 1280px; margin: 0 auto 14px;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand h1 { font-size: 1.5rem; font-weight: 800; font-stretch: 118%; letter-spacing: -0.01em; }
+.brand h1 span { font-weight: 500; font-stretch: 100%; color: var(--muted); }
+.pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.pick label.lead {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+}
+select, button, .file {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+select { padding: 7px 10px; max-width: min(460px, 100%); min-width: 0; }
+.file { padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+.file:hover, button:hover { border-color: var(--accent); }
+#file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px;
+  max-width: 1280px; margin: 0 auto; align-items: start;
+}
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.stage {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px; min-width: 0;
+}
+.board-wrap { position: relative; }
+canvas { display: block; width: 100%; height: auto; touch-action: manipulation; border-radius: 6px; }
+.tip {
+  position: absolute; z-index: 2; pointer-events: none; max-width: 240px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 10px; font-size: 0.82rem; box-shadow: 0 6px 18px rgb(0 0 0 / 0.16);
+}
+.tip b { font-family: var(--font-data); font-weight: 500; }
+.tip ul { margin: 4px 0 0; padding-left: 16px; }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.controls .btns { display: flex; gap: 6px; }
+.controls button {
+  width: 40px; height: 36px; display: grid; place-items: center; cursor: pointer; padding: 0;
+}
+.controls button svg { width: 18px; height: 18px; fill: currentColor; }
+.controls button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); width: 48px; }
+.scrub { flex: 1 1 180px; min-width: 0; accent-color: var(--accent); }
+.speed { padding: 6px 8px; }
+.status { margin: 10px 2px 2px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+.status .when { font-family: var(--font-data); font-size: 0.85rem; color: var(--muted); }
+.status .what { font-weight: 600; }
+
+.panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.panel h2 {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted); margin-bottom: 8px;
+}
+.summary { font-size: 0.9rem; color: var(--muted); }
+.summary strong { color: var(--ink); font-weight: 650; }
+.players { display: flex; flex-direction: column; gap: 6px; }
+.player {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 10px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+.player.turn { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.player.out { opacity: 0.5; }
+.chip {
+  grid-row: span 2; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-display); font-weight: 800; color: #fff; font-size: 0.95rem;
+  border: 2px solid rgb(0 0 0 / 0.25); text-shadow: 0 1px 1px rgb(0 0 0 / 0.35);
+}
+.pname { font-weight: 650; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.pname small { font-weight: 500; color: var(--muted); }
+.tag { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tag.win { border-color: #c99a06; color: #8b6a00; background: #f5e3a3; }
+:root[data-theme="dark"] .tag.win { color: #f5d777; background: #3a3112; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.win { color: #f5d777; background: #3a3112; } }
+.pstats { font-family: var(--font-data); font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.dots { display: inline-flex; gap: 3px; vertical-align: middle; }
+.dots i { width: 9px; height: 9px; border-radius: 2px; transform: rotate(45deg); border: 1px solid rgb(0 0 0 / 0.35); display: inline-block; }
+
+.events { margin: 0; padding-left: 18px; font-size: 0.86rem; display: flex; flex-direction: column; gap: 3px; }
+.events li::marker { color: var(--muted); }
+.events .none { list-style: none; margin-left: -18px; color: var(--muted); }
+
+.legend { font-size: 0.84rem; }
+.legend summary { cursor: pointer; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.legend dl { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 6px 10px; align-items: center; margin: 10px 0 0; }
+.legend dt canvas { width: 40px; height: 40px; }
+.legend dd { margin: 0; }
+.note { font-size: 0.82rem; color: var(--muted); margin: 0; }
+.error { color: #b3261e; font-size: 0.85rem; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<header class="top">
+  <div class="brand"><h1>Spacevitan <span>Wiedergabe</span></h1></div>
+  <div class="pick">
+    <label class="lead" for="game">Partie</label>
+    <select id="game"></select>
+    <label class="file" for="file">Eigene Partie laden …</label>
+    <input id="file" type="file" accept=".json,application/json">
+  </div>
+</header>
+
+<main class="layout">
+  <section class="stage" aria-label="Spielbrett">
+    <div class="board-wrap">
+      <canvas id="board" aria-label="Isometrisches Spielbrett"></canvas>
+      <div id="tip" class="tip" hidden></div>
+    </div>
+    <div class="controls">
+      <div class="btns">
+        <button id="first" type="button" aria-label="Zum Start"><svg viewBox="0 0 20 20"><path d="M4 4h2v12H4zM16 4v12L7 10z"/></svg></button>
+        <button id="prev" type="button" aria-label="Einen Zug zurück"><svg viewBox="0 0 20 20"><path d="M14 4v12L5 10z"/></svg></button>
+        <button id="play" class="primary" type="button" aria-label="Abspielen"><svg viewBox="0 0 20 20"><path id="playIcon" d="M6 4v12l10-6z"/></svg></button>
+        <button id="next" type="button" aria-label="Einen Zug vor"><svg viewBox="0 0 20 20"><path d="M6 4v12l9-6z"/></svg></button>
+        <button id="last" type="button" aria-label="Zum Ende"><svg viewBox="0 0 20 20"><path d="M14 4h2v12h-2zM4 4v12l9-6z"/></svg></button>
+      </div>
+      <input id="scrub" class="scrub" type="range" min="0" max="0" value="0" aria-label="Zug wählen">
+      <select id="speed" class="speed" aria-label="Tempo">
+        <option value="900">langsam</option>
+        <option value="450" selected>normal</option>
+        <option value="200">schnell</option>
+        <option value="70">sehr schnell</option>
+      </select>
+    </div>
+    <p class="status" id="status"></p>
+  </section>
+
+  <aside class="panel">
+    <div>
+      <h2>Partie</h2>
+      <div class="summary" id="summary"></div>
+      <p class="error" id="error" hidden></p>
+    </div>
+    <div>
+      <h2>Spieler</h2>
+      <div class="players" id="players"></div>
+    </div>
+    <div>
+      <h2>Dieser Zug</h2>
+      <ol class="events" id="events"></ol>
+    </div>
+    <details class="legend" open>
+      <summary>Legende</summary>
+      <dl id="legend"></dl>
+      <p class="note" style="margin-top:10px">Felder heißen wie beim Schach: Buchstabe für die Spalte, Zahl für die Reihe. Gebiete (Wald, Himmel, Steppe, Fels) sind nur Farbe, ohne Spielwirkung. Tippe oder zeige auf ein Feld für Details. Tasten: Leertaste, ← →, Pos1, Ende.</p>
+    </details>
+  </aside>
+</main>
+
+<script type="application/json" id="samples">[]</script>
+<script>
+(() => {
+  "use strict";
+
+  // ----- Farben und Namen ---------------------------------------------------------------------
+  const PLAYER = [
+    { name: "A", color: "#d23c34" },
+    { name: "B", color: "#e9ad0c" },
+    { name: "C", color: "#7a4fd6" },
+    { name: "D", color: "#1d9e96" },
+  ];
+  const FREE_CRYSTAL = ["#f3f2ec", "#3d3b45"]; // Kat-1-Farbe freier Ecken (bei 2 Spielern)
+  const TERRAIN = [
+    { name: "Wald", top: "#86a872" },
+    { name: "Himmel", top: "#a4c5df" },
+    { name: "Steppe", top: "#dcc58d" },
+    { name: "Fels", top: "#b9afbf" },
+  ];
+  const NEUTRAL = { name: "Mitte", top: "#cfd4c8" };
+  const INGOT = "#9aa6b1";
+  const GRAIN = "#d9b257";
+  const GOLD = "#f2c94c";
+  const COLS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("board");
+  const boardCtx = canvas.getContext("2d");
+  let ctx = boardCtx; // die Legende lenkt die Zeichenfunktionen kurz auf eigene Bilder um
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function hexToRgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function shade(hex, f) {
+    // f > 0 heller, f < 0 dunkler
+    const [r, g, b] = hexToRgb(hex);
+    const mix = (c) => Math.round(f >= 0 ? c + (255 - c) * f : c * (1 + f));
+    return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+  }
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // ----- Zustand -----------------------------------------------------------------------------
+  let games = [];      // { label, replay }
+  let R = null;        // aktuelle Partie, vorbereitet
+  let fi = 0;          // aktueller Frame
+  let playing = false;
+  let tween = null;    // { from, to, start, dur }
+  let geo = null;      // Brett-Geometrie in CSS-Pixeln
+  let hoverCell = null;
+
+  function prepare(replay) {
+    if (!replay || replay.format !== "spacevitan-replay") throw new Error("Das ist keine Spacevitan-Partie (Feld \"format\" fehlt).");
+    if (replay.version !== 1) throw new Error(`Unbekannte Formatversion ${replay.version}; diese Ansicht kennt Version 1.`);
+    if (replay.board.kind !== "square") throw new Error(`Brettform "${replay.board.kind}" wird hier noch nicht gezeichnet.`);
+    const cornerPlayer = replay.board.corners.map((_, c) => replay.player_corners.indexOf(c));
+    let free = 0;
+    const cornerColor = cornerPlayer.map((p) => (p >= 0 ? PLAYER[p].color : FREE_CRYSTAL[free++ % FREE_CRYSTAL.length]));
+    const frames = replay.frames.map((f) => {
+      const byId = new Map();
+      for (const p of f.pieces) byId.set(p.id, p);
+      const fById = new Map();
+      for (const x of f.factories) fById.set(x.id, x);
+      return { ...f, byId, fById };
+    });
+    return { ...replay, frames, cornerPlayer, cornerColor, side: replay.board.side };
+  }
+
+  const cellName = (cell) => {
+    const [x, y] = R.board.cells[cell];
+    return `${COLS[x] || "?"}${y + 1}`;
+  };
+  const playerName = (p) => PLAYER[p] ? PLAYER[p].name : String(p);
+  const typeInfo = (res) => R.resource_types[res];
+  const category = (res) => typeInfo(res).category;
+  const total = (inv) => inv.reduce((s, [, n]) => s + n, 0);
+  const crystalColor = (res) => R.cornerColor[typeInfo(res).home];
+
+  function roundOf(i) {
+    // Runde, in der der Zug i gespielt wurde (Frame i-1 haelt den Zustand davor).
+    if (i === 0) return R.frames[0].round;
+    return R.frames[i - 1].round;
+  }
+
+  // ----- Geometrie ---------------------------------------------------------------------------
+  function layout() {
+    if (!R) return;
+    const wrap = canvas.parentElement;
+    const cssW = Math.max(240, wrap.clientWidth);
+    const side = R.side;
+    const W = Math.min(84, cssW / (side + 2.2));
+    const thick = W * 0.12;
+    const top = W * 1.05;                       // Platz fuer hohe Figuren und Beschriftung
+    const ox = cssW / 2;                         // Mitte der obersten Kachel
+    const oy = top;
+    const cssH = Math.ceil(oy + (2 * (side - 1)) * W / 4 + W / 2 + thick + W * 0.3);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.height = cssH + "px";
+    geo = { W, thick, ox, oy, cssW, cssH, dpr };
+  }
+  function iso(x, y) {
+    return [geo.ox + (x - y) * geo.W / 2, geo.oy + (x + y) * geo.W / 4];
+  }
+  function cellAt(mx, my) {
+    const dx = (mx - geo.ox) / (geo.W / 2);
+    const dy = (my - geo.oy) / (geo.W / 4);
+    const x = Math.round((dy + dx) / 2);
+    const y = Math.round((dy - dx) / 2);
+    if (x < 0 || y < 0 || x >= R.side || y >= R.side) return null;
+    return y * R.side + x;
+  }
+
+  // ----- Zeichnen ----------------------------------------------------------------------------
+  function diamond(cx, cy, W) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - W / 4);
+    ctx.lineTo(cx + W / 2, cy);
+    ctx.lineTo(cx, cy + W / 4);
+    ctx.lineTo(cx - W / 2, cy);
+    ctx.closePath();
+  }
+
+  function drawTile(cell) {
+    const [x, y] = R.board.cells[cell];
+    const [cx, cy] = iso(x, y);
+    const { W, thick } = geo;
+    const t = R.territories[cell];
+    const base = t >= 0 ? TERRAIN[t % TERRAIN.length].top : NEUTRAL.top;
+    // Schachbrett-Anklang: jedes zweite Feld etwas heller
+    const top = (x + y) % 2 === 0 ? shade(base, 0.1) : shade(base, -0.02);
+    // Seitenflaechen (nur am vorderen Rand sichtbar, Malerreihenfolge erledigt den Rest)
+    ctx.fillStyle = shade(base, -0.35);
+    ctx.beginPath();
+    ctx.moveTo(cx - W / 2, cy); ctx.lineTo(cx, cy + W / 4); ctx.lineTo(cx, cy + W / 4 + thick); ctx.lineTo(cx - W / 2, cy + thick);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = shade(base, -0.5);
+    ctx.beginPath();
+    ctx.moveTo(cx + W / 2, cy); ctx.lineTo(cx, cy + W / 4); ctx.lineTo(cx, cy + W / 4 + thick); ctx.lineTo(cx + W / 2, cy + thick);
+    ctx.closePath(); ctx.fill();
+    diamond(cx, cy, W);
+    ctx.fillStyle = top;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  function outlineCell(cell, color, fillAlpha) {
+    const [x, y] = R.board.cells[cell];
+    const [cx, cy] = iso(x, y);
+    diamond(cx, cy, geo.W * 0.92);
+    if (fillAlpha) {
+      ctx.globalAlpha = fillAlpha; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, geo.W * 0.045); ctx.stroke();
+  }
+
+  function drawCrystal(x, y, s, color) {
+    const h = s * 1.15, w = s * 0.42;
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - h * 0.45); ctx.lineTo(x, y); ctx.lineTo(x - w, y - h * 0.45); ctx.closePath();
+    ctx.fillStyle = color; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - h * 0.45); ctx.lineTo(x, y); ctx.closePath();
+    ctx.fillStyle = "rgba(0,0,0,0.22)"; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x - w * 0.55, y - h * 0.5); ctx.lineTo(x - w * 0.1, y - h * 0.55); ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.55)"; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - h * 0.45); ctx.lineTo(x, y); ctx.lineTo(x - w, y - h * 0.45); ctx.closePath();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  function drawIngot(x, y, s) {
+    const w = s * 0.55, d = s * 0.22, h = s * 0.32;
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.beginPath(); // Oberseite
+    ctx.moveTo(x - w, y - h); ctx.lineTo(x, y - h - d); ctx.lineTo(x + w, y - h); ctx.lineTo(x, y - h + d); ctx.closePath();
+    ctx.fillStyle = shade(INGOT, 0.35); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - w, y - h); ctx.lineTo(x, y - h + d); ctx.lineTo(x, y + d); ctx.lineTo(x - w, y); ctx.closePath();
+    ctx.fillStyle = INGOT; ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + w, y - h); ctx.lineTo(x, y - h + d); ctx.lineTo(x, y + d); ctx.lineTo(x + w, y); ctx.closePath();
+    ctx.fillStyle = shade(INGOT, -0.3); ctx.fill(); ctx.stroke();
+  }
+  function drawGrain(x, y, s) {
+    const r = s * 0.26;
+    for (const [dx, dy] of [[-r * 0.9, 0], [r * 0.9, 0], [0, -r * 0.9]]) {
+      ctx.beginPath(); ctx.arc(x + dx, y + dy - r, r, 0, Math.PI * 2);
+      ctx.fillStyle = GRAIN; ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.45)"; ctx.lineWidth = 1; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + dx - r * 0.3, y + dy - r * 1.3, r * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.fill();
+    }
+  }
+  function drawDeposits(cell, dim) {
+    const list = R.deposits[cell];
+    if (!list.length) return;
+    const [x, y] = R.board.cells[cell];
+    const [cx, cy] = iso(x, y);
+    const s = geo.W * 0.32;
+    ctx.globalAlpha = dim ? 0.35 : 1;
+    list.forEach((res, k) => {
+      const off = list.length === 1 ? 0 : (k === 0 ? -1 : 1) * geo.W * 0.15;
+      const px = cx + off, py = cy + geo.W * 0.06 - (list.length > 1 && k === 1 ? geo.W * 0.03 : 0);
+      const cat = category(res);
+      if (cat === 1) drawCrystal(px, py, s, crystalColor(res));
+      else if (cat === 2) drawIngot(px, py, s);
+      else drawGrain(px, py, s);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function cylinder(cx, cy, rx, h, color) {
+    const ry = rx * 0.5;
+    const g = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0);
+    g.addColorStop(0, shade(color, 0.25)); g.addColorStop(0.55, color); g.addColorStop(1, shade(color, -0.45));
+    ctx.beginPath();
+    ctx.moveTo(cx - rx, cy - h);
+    ctx.lineTo(cx - rx, cy);
+    ctx.ellipse(cx, cy, rx, ry, 0, Math.PI, 0, true);
+    ctx.lineTo(cx + rx, cy - h);
+    ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy - h, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = shade(color, 0.3); ctx.fill(); ctx.stroke();
+  }
+  function shadow(cx, cy, rx) {
+    ctx.beginPath(); ctx.ellipse(cx, cy + rx * 0.1, rx * 1.15, rx * 0.55, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.22)"; ctx.fill();
+  }
+  function drawKing(cx, cy, color) {
+    const W = geo.W, rx = W * 0.2, h = W * 0.6;
+    shadow(cx, cy, rx);
+    cylinder(cx, cy, rx, h, color);
+    // Krone
+    const ty = cy - h, cw = rx * 0.95;
+    ctx.beginPath();
+    ctx.moveTo(cx - cw, ty);
+    ctx.lineTo(cx - cw, ty - W * 0.16);
+    ctx.lineTo(cx - cw * 0.5, ty - W * 0.07);
+    ctx.lineTo(cx, ty - W * 0.2);
+    ctx.lineTo(cx + cw * 0.5, ty - W * 0.07);
+    ctx.lineTo(cx + cw, ty - W * 0.16);
+    ctx.lineTo(cx + cw, ty);
+    ctx.closePath();
+    ctx.fillStyle = GOLD; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  function drawUnit(cx, cy, color, level, range) {
+    const W = geo.W, rx = W * 0.16;
+    shadow(cx, cy, rx);
+    cylinder(cx, cy, rx, W * 0.1, shade(color, -0.1));          // Sockel
+    // Rumpf (Kegelstumpf)
+    const top = cy - W * 0.34, tr = rx * 0.45;
+    const g = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0);
+    g.addColorStop(0, shade(color, 0.25)); g.addColorStop(0.55, color); g.addColorStop(1, shade(color, -0.45));
+    ctx.beginPath();
+    ctx.moveTo(cx - rx * 0.8, cy - W * 0.1); ctx.lineTo(cx - tr, top); ctx.lineTo(cx + tr, top); ctx.lineTo(cx + rx * 0.8, cy - W * 0.1);
+    ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    // Kopf mit Stufe
+    const hr = W * 0.12, hy = top - hr * 0.7;
+    ctx.beginPath(); ctx.arc(cx, hy, hr, 0, Math.PI * 2);
+    const hg = ctx.createRadialGradient(cx - hr * 0.4, hy - hr * 0.4, hr * 0.1, cx, hy, hr);
+    hg.addColorStop(0, shade(color, 0.45)); hg.addColorStop(1, shade(color, -0.25));
+    ctx.fillStyle = hg; ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = `700 ${Math.round(hr * 1.25)}px ${cssVar("--font-display") || "sans-serif"}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 2.5; ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeText(String(level), cx, hy + 0.5); ctx.fillText(String(level), cx, hy + 0.5);
+    // Reichweite: Punkte vor dem Sockel
+    const pr = Math.max(1.5, W * 0.025);
+    for (let i = 0; i < range; i++) {
+      const px = cx + (i - (range - 1) / 2) * pr * 3.2;
+      ctx.beginPath(); ctx.arc(px, cy + W * 0.075, pr, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+  function drawFactory(cx, cy, color, stock) {
+    const W = geo.W, w = W * 0.3, d = W * 0.15, h = W * 0.2;
+    shadow(cx, cy, w * 0.8);
+    const y0 = cy;
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.beginPath(); ctx.moveTo(cx - w, y0 - h); ctx.lineTo(cx, y0 - h + d); ctx.lineTo(cx, y0 + d); ctx.lineTo(cx - w, y0); ctx.closePath();
+    ctx.fillStyle = shade(color, -0.05); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + w, y0 - h); ctx.lineTo(cx, y0 - h + d); ctx.lineTo(cx, y0 + d); ctx.lineTo(cx + w, y0); ctx.closePath();
+    ctx.fillStyle = shade(color, -0.4); ctx.fill(); ctx.stroke();
+    // Saegezahndach
+    ctx.beginPath(); ctx.moveTo(cx - w, y0 - h); ctx.lineTo(cx, y0 - h - d); ctx.lineTo(cx + w, y0 - h); ctx.lineTo(cx, y0 - h + d); ctx.closePath();
+    ctx.fillStyle = shade(color, 0.35); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - w * 0.5, y0 - h - d * 0.5); ctx.lineTo(cx - w * 0.15, y0 - h - d * 1.6); ctx.lineTo(cx + w * 0.2, y0 - h - d * 0.3); ctx.closePath();
+    ctx.fillStyle = "#5c5f66"; ctx.fill(); ctx.stroke();
+    // Schornstein
+    ctx.fillStyle = "#4b4e55";
+    ctx.fillRect(cx + w * 0.35, y0 - h - d * 2.2, w * 0.2, d * 1.8);
+    ctx.strokeRect(cx + w * 0.35, y0 - h - d * 2.2, w * 0.2, d * 1.8);
+    if (stock > 0) {
+      const label = String(stock);
+      ctx.font = `600 ${Math.round(W * 0.16)}px ${cssVar("--font-data") || "monospace"}`;
+      const tw = ctx.measureText(label).width + W * 0.12;
+      const bx = cx - tw / 2, by = y0 - h - d * 3.4, bh = W * 0.2;
+      ctx.fillStyle = "rgba(20,24,22,0.82)";
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, tw, bh, bh / 2) : ctx.rect(bx, by, tw, bh); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(label, cx, by + bh / 2 + 0.5);
+    }
+  }
+  function drawLoot(cx, cy) {
+    const W = geo.W, r = W * 0.11;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath(); ctx.ellipse(cx + (i - 1) * r * 0.5, cy - i * r * 0.45, r, r * 0.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = i === 2 ? shade(GOLD, 0.25) : GOLD; ctx.fill();
+      ctx.strokeStyle = "rgba(90,60,0,0.8)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+  function drawFlag(cell, color) {
+    const [x, y] = R.board.cells[cell];
+    const [cx, cy] = iso(x, y);
+    const W = geo.W, px = cx, base = cy - W * 0.18, top = base - W * 0.55;
+    ctx.strokeStyle = "rgba(30,30,30,0.8)"; ctx.lineWidth = Math.max(1.5, W * 0.03);
+    ctx.beginPath(); ctx.moveTo(px, base); ctx.lineTo(px, top); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + W * 0.28, top + W * 0.08); ctx.lineTo(px, top + W * 0.17); ctx.closePath();
+    ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 1; ctx.stroke();
+  }
+  function drawLabels() {
+    const { W } = geo;
+    ctx.fillStyle = cssVar("--label") || "#666";
+    ctx.font = `500 ${Math.max(9, Math.round(W * 0.18))}px ${cssVar("--font-data") || "monospace"}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (let i = 0; i < R.side; i++) {
+      const [ax, ay] = iso(i + 0.35, -1.25); ctx.fillText(COLS[i] || "?", ax, ay);
+      const [bx, by] = iso(-1.25, i + 0.35); ctx.fillText(String(i + 1), bx, by);
+    }
+  }
+
+  function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+  function draw(now) {
+    if (!R || !geo) return;
+    const { dpr } = geo;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, geo.cssW, geo.cssH);
+    ctx.fillStyle = cssVar("--board-bg") || "#ddd";
+    ctx.fillRect(0, 0, geo.cssW, geo.cssH);
+
+    let t = 1, prev = null;
+    if (tween && !reduceMotion) {
+      t = Math.min(1, (now - tween.start) / tween.dur);
+      if (tween.to === fi && tween.from === fi - 1) prev = R.frames[tween.from];
+      if (t >= 1) tween = null;
+    }
+    const f = R.frames[fi];
+    const k = ease(t);
+
+    // Kacheln von hinten nach vorn
+    const order = [];
+    for (let c = 0; c < R.board.cells.length; c++) order.push(c);
+    order.sort((a, b) => {
+      const [ax, ay] = R.board.cells[a], [bx, by] = R.board.cells[b];
+      return ax + ay - (bx + by) || ax - bx;
+    });
+    for (const c of order) drawTile(c);
+    drawLabels();
+
+    // Letzter Zug hervorheben
+    const moved = f.events.find((e) => e.type === "moved");
+    if (moved && f.player !== null) {
+      const col = PLAYER[f.player].color;
+      outlineCell(moved.from, col, 0.12);
+      outlineCell(moved.to, col, 0.28);
+    }
+    for (const e of f.events) {
+      if (e.type === "factory_built" || e.type === "spawned") outlineCell(e.cell, PLAYER[e.owner].color, 0.25);
+    }
+    if (hoverCell !== null) outlineCell(hoverCell, cssVar("--ink") || "#000", 0);
+
+    // Objekte sammeln und nach Tiefe sortieren
+    const objs = [];
+    const occupied = new Set(f.pieces.map((p) => p.cell));
+    const built = new Set(f.factories.map((x) => x.cell));
+    for (let c = 0; c < R.deposits.length; c++) {
+      if (R.deposits[c].length) {
+        const [x, y] = R.board.cells[c];
+        objs.push({ d: x + y, o: 0, x, fn: () => drawDeposits(c, occupied.has(c) || built.has(c)) });
+      }
+    }
+    R.board.corners.forEach((cell, corner) => {
+      const p = R.cornerPlayer[corner];
+      const [x, y] = R.board.cells[cell];
+      const color = p >= 0 ? PLAYER[p].color : "#f4f4ef";
+      if (p >= 0 && !f.alive[p]) return;
+      objs.push({ d: x + y - 0.01, o: 1, x, fn: () => drawFlag(cell, color) });
+    });
+    for (const l of f.loot) {
+      const [x, y] = R.board.cells[l.cell];
+      objs.push({ d: x + y, o: 2, x, fn: () => { const [cx, cy] = iso(x, y); drawLoot(cx - geo.W * 0.18, cy + geo.W * 0.04); } });
+    }
+    for (const fac of f.factories) {
+      const [x, y] = R.board.cells[fac.cell];
+      const fresh = prev && !prev.fById.has(fac.id);
+      objs.push({ d: x + y, o: 3, x, alpha: fresh ? k : 1, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, total(fac.storage)); } });
+    }
+    if (prev) {
+      for (const fac of prev.factories) {
+        if (!f.fById.has(fac.id)) {
+          const [x, y] = R.board.cells[fac.cell];
+          objs.push({ d: x + y, o: 3, x, alpha: 1 - k, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, 0); } });
+        }
+      }
+    }
+    for (const p of f.pieces) {
+      const [x1, y1] = R.board.cells[p.cell];
+      let x = x1, y = y1, alpha = 1;
+      if (prev) {
+        const before = prev.byId.get(p.id);
+        if (before && before.cell !== p.cell) {
+          const [x0, y0] = R.board.cells[before.cell];
+          x = x0 + (x1 - x0) * k; y = y0 + (y1 - y0) * k;
+        } else if (!before) alpha = k;
+      }
+      objs.push({ d: x + y + 0.001, o: 4, x, alpha, fn: () => drawPiece(p, x, y) });
+    }
+    if (prev) {
+      for (const p of prev.pieces) {
+        if (!f.byId.has(p.id)) {
+          const [x, y] = R.board.cells[p.cell];
+          objs.push({ d: x + y, o: 4, x, alpha: 1 - k, fn: () => drawPiece(p, x, y) });
+        }
+      }
+    }
+    objs.sort((a, b) => a.d - b.d || a.o - b.o || a.x - b.x);
+    for (const ob of objs) {
+      ctx.globalAlpha = ob.alpha === undefined ? 1 : Math.max(0, Math.min(1, ob.alpha));
+      ob.fn();
+    }
+    ctx.globalAlpha = 1;
+    canvas.dataset.pieces = String(f.pieces.length);
+    canvas.dataset.frame = String(fi);
+
+    if (tween) requestAnimationFrame(draw);
+  }
+
+  function drawPiece(p, x, y) {
+    const [cx, cy] = iso(x, y);
+    const color = PLAYER[p.owner].color;
+    if (p.king) drawKing(cx, cy + geo.W * 0.02, color);
+    else drawUnit(cx, cy + geo.W * 0.02, color, p.level, p.range);
+  }
+
+  // ----- Texte -------------------------------------------------------------------------------
+  function pieceLabel(p) {
+    if (!p) return "Figur";
+    return p.king ? "König" : `Figur Stufe ${p.level}`;
+  }
+  function invText(inv) {
+    if (!inv.length) return "nichts";
+    const byCat = [0, 0, 0, 0];
+    for (const [res, n] of inv) byCat[category(res)] += n;
+    return [1, 2, 3].filter((c) => byCat[c]).map((c) => `${byCat[c]}× Kat ${c}`).join(", ");
+  }
+  function actionText(i) {
+    const f = R.frames[i];
+    if (i === 0) return { who: null, text: "Aufstellung: jeder Spieler hat nur seinen König." };
+    const prev = R.frames[i - 1];
+    const a = f.action, who = f.player;
+    let text = "";
+    if (a.type === "move") {
+      const piece = prev.byId.get(a.piece);
+      text = `${pieceLabel(piece)} ${cellName(piece.cell)} → ${cellName(a.to)}`;
+      const cap = f.events.find((e) => e.type === "captured");
+      if (cap) {
+        const victim = prev.byId.get(cap.piece);
+        text += `, schlägt ${victim && victim.king ? "König" : "Figur"} von ${playerName(cap.owner)}`;
+      }
+      const fd = f.events.find((e) => e.type === "factory_destroyed");
+      if (fd) text += `, nimmt Fabrik von ${playerName(fd.owner)} ein`;
+    } else if (a.type === "build") {
+      const king = prev.pieces.find((p) => p.owner === who && p.king);
+      text = `König baut Fabrik auf ${cellName(king.cell)}`;
+    } else if (a.type === "spawn") {
+      const sp = f.events.find((e) => e.type === "spawned");
+      text = `Fabrik auf ${cellName(sp.cell)} wird zur Figur: Stufe ${sp.level}, Reichweite ${sp.range}`;
+    } else {
+      text = "passt";
+    }
+    return { who, text };
+  }
+  function eventText(e) {
+    switch (e.type) {
+      case "moved": return null;
+      case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
+      case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
+      case "factory_destroyed": return `Fabrik von ${playerName(e.owner)} auf ${cellName(e.cell)} zerstört; Beute: ${invText(e.loot)}.`;
+      case "spawned": return `${playerName(e.owner)} erhält eine Figur Stufe ${e.level}, Reichweite ${e.range}.`;
+      case "collected": return `König von ${playerName(e.player)} sammelt auf ${cellName(e.cell)}: ${invText(e.gained)}.`;
+      case "unloaded": return `König von ${playerName(e.player)} lädt ab: ${invText(e.amount)}.`;
+      case "factory_yield": return `Fabrik ${e.factory} sammelt ${invText(e.gained)}.`;
+      case "eliminated": return `${playerName(e.player)} scheidet aus.`;
+      case "passed": return `${playerName(e.player)} passt.`;
+      case "game_over": return e.outcome.type === "winner" ? `Spielende: ${playerName(e.outcome.player)} gewinnt.` : "Spielende: unentschieden.";
+      default: return null;
+    }
+  }
+  function outcomeText(rep) {
+    const last = rep.frames.length - 1;
+    const round = last > 0 ? rep.frames[last - 1].round : 1;
+    if (!rep.outcome) return "nicht beendet";
+    if (rep.outcome.type === "winner") return `${playerName(rep.outcome.player)} gewinnt in Runde ${round}`;
+    return `unentschieden nach ${rep.config.max_rounds} Runden`;
+  }
+  function gameLabel(rep) {
+    const bots = rep.bots || [];
+    const same = bots.length > 0 && bots.every((b) => b === bots[0]);
+    let who;
+    if (rep.players === 2) who = bots.join(" gegen ");
+    else if (same) who = `${rep.players} Spieler, alle ${bots[0]}`;
+    else who = `${rep.players} Spieler: ${bots.join(", ")}`;
+    return `Seed ${rep.seed} · ${who} · ${outcomeText(rep)}`;
+  }
+
+  // ----- Oberflaeche aktualisieren ------------------------------------------------------------
+  function renderPanel() {
+    const f = R.frames[fi];
+    const last = R.frames.length - 1;
+    $("summary").innerHTML =
+      `<strong>Seed <span class="mono">${R.seed}</span></strong> · Karte ${R.side}×${R.side} · ` +
+      `${R.players} Spieler · ${R.frames.length - 1} Züge<br>Ergebnis: <strong>${outcomeText(R)}</strong>`;
+
+    const players = $("players");
+    players.innerHTML = "";
+    for (let p = 0; p < R.players; p++) {
+      const mine = f.pieces.filter((x) => x.owner === p);
+      const units = mine.filter((x) => !x.king);
+      const facs = f.factories.filter((x) => x.owner === p);
+      const stock = facs.reduce((s, x) => s + total(x.storage), 0);
+      const carried = f.carried[p] || [];
+      const colors = carried.filter(([res]) => category(res) === 1).map(([res]) => crystalColor(res));
+      const isWinner = fi === last && R.outcome && R.outcome.type === "winner" && R.outcome.player === p;
+      const turn = fi < last && f.current === p && f.alive[p];
+      const div = document.createElement("div");
+      div.className = "player" + (turn ? " turn" : "") + (f.alive[p] ? "" : " out");
+      const levels = units.reduce((acc, u) => { acc[u.level] = (acc[u.level] || 0) + 1; return acc; }, {});
+      const levelText = Object.keys(levels).length
+        ? Object.entries(levels).map(([l, n]) => `${n}×St.${l}`).join(" ")
+        : "keine";
+      let tag = "";
+      if (isWinner) tag = `<span class="tag win">Sieger</span>`;
+      else if (!f.alive[p]) tag = `<span class="tag">ausgeschieden</span>`;
+      else if (turn) tag = `<span class="tag">am Zug</span>`;
+      div.innerHTML =
+        `<span class="chip" style="background:${PLAYER[p].color}">${PLAYER[p].name}</span>` +
+        `<div class="pname">Spieler ${PLAYER[p].name} <small>${R.bots[p] || ""}</small> ${tag}</div>` +
+        `<div class="pstats"><span>Figuren ${levelText}</span><span>Fabriken ${facs.length} (Lager ${stock})</span>` +
+        `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span></div>`;
+      players.appendChild(div);
+    }
+
+    const list = $("events");
+    list.innerHTML = "";
+    const lines = f.events.map(eventText).filter(Boolean);
+    if (!lines.length) {
+      const li = document.createElement("li");
+      li.className = "none";
+      li.textContent = fi === 0 ? "Noch kein Zug gespielt." : "Keine weiteren Ereignisse.";
+      list.appendChild(li);
+    }
+    for (const line of lines) {
+      const li = document.createElement("li");
+      li.textContent = line;
+      list.appendChild(li);
+    }
+
+    const { who, text } = actionText(fi);
+    const when = fi === 0 ? "Start" : `Runde ${roundOf(fi)} · Zug ${fi}/${last}`;
+    const whoHtml = who === null ? "" : `<span class="chip" style="display:inline-grid;width:22px;height:22px;font-size:0.75rem;vertical-align:middle;background:${PLAYER[who].color}">${PLAYER[who].name}</span> `;
+    $("status").innerHTML = `<span class="when">${when}</span><span class="what">${whoHtml}${escapeHtml(text)}</span>`;
+
+    $("scrub").max = String(last);
+    $("scrub").value = String(fi);
+    $("play").setAttribute("aria-label", playing ? "Anhalten" : "Abspielen");
+    $("playIcon").setAttribute("d", playing ? "M5 4h4v12H5zM11 4h4v12h-4z" : "M6 4v12l10-6z");
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  function goTo(i, animate) {
+    if (!R) return;
+    const next = Math.max(0, Math.min(R.frames.length - 1, i));
+    if (animate && next === fi + 1 && !reduceMotion) {
+      tween = { from: fi, to: next, start: performance.now(), dur: Math.min(380, Number($("speed").value) * 0.75) };
+    } else {
+      tween = null;
+    }
+    fi = next;
+    renderPanel();
+    requestAnimationFrame(draw);
+    if (fi === R.frames.length - 1) setPlaying(false);
+  }
+
+  let timer = null;
+  function setPlaying(on) {
+    playing = on;
+    clearTimeout(timer);
+    if (playing) {
+      if (fi === R.frames.length - 1) goTo(0, false);
+      const step = () => {
+        if (!playing) return;
+        goTo(fi + 1, true);
+        if (playing) timer = setTimeout(step, Number($("speed").value));
+      };
+      timer = setTimeout(step, 120);
+    }
+    if (R) renderPanel();
+  }
+
+  // ----- Tooltip -----------------------------------------------------------------------------
+  function showTip(cell, mx, my) {
+    const tip = $("tip");
+    if (cell === null) { tip.hidden = true; return; }
+    const f = R.frames[fi];
+    const t = R.territories[cell];
+    const region = t >= 0 ? TERRAIN[t % TERRAIN.length].name : NEUTRAL.name;
+    const deps = R.deposits[cell].map((res) => {
+      const info = typeInfo(res);
+      const home = R.cornerPlayer[info.home] >= 0 ? `Gebiet ${playerName(R.cornerPlayer[info.home])}` : "freie Ecke";
+      return `Kat ${info.category} (Typ ${res}, ${home})`;
+    });
+    const piece = f.pieces.find((p) => p.cell === cell);
+    const fac = f.factories.find((x) => x.cell === cell);
+    const loot = f.loot.find((l) => l.cell === cell);
+    const rows = [];
+    if (piece) rows.push(piece.king ? `König von ${playerName(piece.owner)}` : `Figur von ${playerName(piece.owner)}: Stufe ${piece.level}, Reichweite ${piece.range}`);
+    if (fac) rows.push(`Fabrik von ${playerName(fac.owner)}, Lager: ${invText(fac.storage)}`);
+    if (loot) rows.push(`Beute: ${invText(loot.items)}`);
+    tip.innerHTML =
+      `<b>${cellName(cell)}</b> · ${region}` +
+      `<ul>${(deps.length ? deps : ["keine Rohstoffe"]).map((d) => `<li>${d}</li>`).join("")}` +
+      `${rows.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul>`;
+    tip.hidden = false;
+    const wrap = canvas.parentElement.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let left = mx + 14, top = my + 14;
+    if (left + tw > wrap.width) left = Math.max(0, mx - tw - 14);
+    if (top + th > wrap.height) top = Math.max(0, my - th - 14);
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+  function pointer(ev) {
+    if (!R || !geo) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const cell = cellAt(mx, my);
+    if (cell !== hoverCell) { hoverCell = cell; requestAnimationFrame(draw); }
+    showTip(cell, mx, my);
+  }
+  canvas.addEventListener("pointermove", pointer);
+  canvas.addEventListener("pointerdown", pointer);
+  canvas.addEventListener("pointerleave", () => { hoverCell = null; $("tip").hidden = true; requestAnimationFrame(draw); });
+
+  // ----- Legende -----------------------------------------------------------------------------
+  function legend() {
+    const items = [
+      ["king", "König: sammelt, baut Fabriken. Fällt er, ist der Spieler raus."],
+      ["unit", "Figur: Zahl = Stufe (Kat-1-Farben), Punkte = Reichweite."],
+      ["factory", "Fabrik: sammelt Kat 2 und 3 von Feld und Nachbarn. Zahl = Lager."],
+      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört."],
+      ["ingot", "Kat 2"],
+      ["grain", "Kat 3"],
+      ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
+    ];
+    const dl = $("legend");
+    dl.innerHTML = "";
+    const saved = geo;
+    for (const [kind, text] of items) {
+      const dt = document.createElement("dt");
+      const c = document.createElement("canvas");
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      c.width = 40 * dpr; c.height = 40 * dpr;
+      dt.appendChild(c);
+      const dd = document.createElement("dd");
+      dd.textContent = text;
+      dl.append(dt, dd);
+      const lc = c.getContext("2d");
+      lc.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx = lc;
+      try {
+        geo = { W: 46 };
+        if (kind === "king") drawKing(20, 34, PLAYER[0].color);
+        if (kind === "unit") drawUnit(20, 33, PLAYER[1].color, 2, 3);
+        geo = { W: 38 };
+        if (kind === "factory") drawFactory(20, 34, PLAYER[2].color, 7);
+        geo = { W: 46 };
+        if (kind === "crystal") drawCrystal(20, 34, 22, PLAYER[3].color);
+        if (kind === "ingot") drawIngot(20, 28, 24);
+        if (kind === "grain") drawGrain(20, 32, 24);
+        if (kind === "loot") drawLoot(20, 28);
+      } finally {
+        ctx = boardCtx;
+      }
+    }
+    geo = saved;
+  }
+
+  // ----- Laden -------------------------------------------------------------------------------
+  function showError(msg) {
+    const el = $("error");
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+  function selectGame(index, startFrame) {
+    playing = false;
+    clearTimeout(timer);
+    R = prepare(games[index].replay);
+    layout();
+    const last = R.frames.length - 1;
+    fi = startFrame === undefined ? 0 : Math.max(0, Math.min(last, startFrame));
+    tween = null;
+    hoverCell = null;
+    renderPanel();
+    requestAnimationFrame(draw);
+  }
+  function addGame(replay, label) {
+    prepare(replay); // prueft das Format
+    games.push({ label: label || gameLabel(replay), replay });
+    const opt = document.createElement("option");
+    opt.value = String(games.length - 1);
+    opt.textContent = games[games.length - 1].label;
+    $("game").appendChild(opt);
+    return games.length - 1;
+  }
+  /** Ein spannender Startpunkt fuer die Ansicht in Ruhe: der Zug mit den meisten Objekten. */
+  function busiestFrame(replay) {
+    let best = 0, score = -1;
+    const limit = Math.floor(replay.frames.length * 0.85);
+    for (let i = 0; i < limit; i++) {
+      const f = replay.frames[i];
+      const s = f.pieces.length * 2 + f.factories.length;
+      if (s > score) { score = s; best = i; }
+    }
+    return best;
+  }
+
+  $("game").addEventListener("change", (e) => selectGame(Number(e.target.value), 0));
+  $("file").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const replay = JSON.parse(String(reader.result));
+        prepare(replay); // wirft eine verstaendliche Meldung, wenn das Format nicht passt
+        const idx = addGame(replay, `${file.name} · ${gameLabel(replay)}`);
+        $("game").value = String(idx);
+        showError("");
+        selectGame(idx, 0);
+      } catch (err) {
+        showError(`Datei konnte nicht gelesen werden: ${err.message}`);
+      }
+      e.target.value = "";
+    };
+    reader.onerror = () => showError("Datei konnte nicht gelesen werden.");
+    reader.readAsText(file);
+  });
+  $("first").addEventListener("click", () => { setPlaying(false); goTo(0, false); });
+  $("prev").addEventListener("click", () => { setPlaying(false); goTo(fi - 1, false); });
+  $("next").addEventListener("click", () => { setPlaying(false); goTo(fi + 1, true); });
+  $("last").addEventListener("click", () => { setPlaying(false); goTo(R.frames.length - 1, false); });
+  $("play").addEventListener("click", () => setPlaying(!playing));
+  $("scrub").addEventListener("input", (e) => { setPlaying(false); goTo(Number(e.target.value), false); });
+  document.addEventListener("keydown", (e) => {
+    if (!R || e.target.closest && e.target.closest("select, input")) return;
+    if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
+    else if (e.key === "ArrowRight") { setPlaying(false); goTo(fi + 1, true); }
+    else if (e.key === "ArrowLeft") { setPlaying(false); goTo(fi - 1, false); }
+    else if (e.key === "Home") { setPlaying(false); goTo(0, false); }
+    else if (e.key === "End") { setPlaying(false); goTo(R.frames.length - 1, false); }
+  });
+  new ResizeObserver(() => { if (R) { layout(); requestAnimationFrame(draw); } }).observe(canvas.parentElement);
+  const scheme = window.matchMedia("(prefers-color-scheme: dark)");
+  if (scheme.addEventListener) scheme.addEventListener("change", () => requestAnimationFrame(draw));
+  new MutationObserver(() => requestAnimationFrame(draw)).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { legend(); requestAnimationFrame(draw); });
+
+  // Beispielpartien
+  let samples = [];
+  try { samples = JSON.parse($("samples").textContent); } catch (err) { showError("Beispielpartien fehlen."); }
+  for (const s of samples) {
+    try { addGame(s.replay || s, s.label); } catch (err) { showError(err.message); }
+  }
+  legend();
+  if (games.length) {
+    selectGame(0, busiestFrame(games[0].replay));
+  } else {
+    $("summary").textContent = "Keine Partie geladen. Lade eine mit „Eigene Partie laden …“ (erzeugt mit spacevitan --export partie.json).";
+  }
+  window.__viewer = { goTo, get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; }, select: selectGame };
+})();
+</script>

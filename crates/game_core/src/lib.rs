@@ -11,6 +11,7 @@ pub mod game;
 pub mod ids;
 pub mod map;
 pub mod render;
+pub mod replay;
 pub mod rng;
 pub mod state;
 
