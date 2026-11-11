@@ -35,8 +35,12 @@ cargo run --release -- --help
 ```
 
 Ohne Rust: Bei jedem Push baut GitHub Actions die `spacevitan.exe`. Sie liegt unter
-*Actions → letzter Lauf → Artifacts → spacevitan-windows*. In einer Eingabeaufforderung
-starten, z. B. `spacevitan.exe --show`.
+*Actions → letzter Lauf → Artifacts → spacevitan-windows*. Per Doppelklick zeigt sie eine
+neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
+(`spacevitan.exe --help`).
+
+Jede Partie bekommt einen neuen Startwert (Seed), der am Ende angezeigt wird. Mit
+`--seed <Wert>` laesst sich genau diese Partie wiederholen, z. B. um einen Fehler zu melden.
 
 Legende der Textansicht: `A*` Koenig von A, `a2` Figur von A mit Stufe 2, `#A` Fabrik von A,
 `$` Beute, Ziffern = Rohstoffkategorien auf dem Feld, `.` leer.
