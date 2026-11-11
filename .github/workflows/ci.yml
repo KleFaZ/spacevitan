@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -30,10 +31,39 @@ jobs:
       - name: Tests unter Windows
         run: cargo test --workspace
       - name: Release-Build
-        run: cargo build --release --workspace
+        run: cargo build --release -p cli
       - name: Artefakt hochladen
         uses: actions/upload-artifact@v4
         with:
           name: spacevitan-windows
           path: target/release/spacevitan.exe
           if-no-files-found: error
+
+  web:
+    name: WebAssembly (Branch web-build)
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Build
+        run: cargo build --release -p spacevitan_web --target wasm32-unknown-unknown
+      - name: Nach web-build schieben
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir out
+          cp target/wasm32-unknown-unknown/release/spacevitan_web.wasm out/spacevitan.wasm
+          echo "${GITHUB_SHA}" > out/SOURCE_COMMIT
+          ls -la out
+          cd out
+          git init -q -b web-build
+          git add .
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
+            commit -q -m "WebAssembly aus ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" web-build

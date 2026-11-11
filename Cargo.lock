@@ -12,3 +12,10 @@ dependencies = [
 [[package]]
 name = "game_core"
 version = "0.1.0"
+
+[[package]]
+name = "spacevitan_web"
+version = "0.1.0"
+dependencies = [
+ "game_core",
+]

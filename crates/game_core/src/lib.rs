@@ -17,5 +17,8 @@ pub mod state;
 
 #[cfg(test)]
 mod game_tests;
+#[cfg(test)]
+mod json_check;
+pub mod session;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

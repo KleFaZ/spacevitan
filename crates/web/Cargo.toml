@@ -1,0 +1,12 @@
+[package]
+name = "spacevitan_web"
+description = "WebAssembly-Schnittstelle: der Regel-Kern im Browser."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+game_core = { path = "../game_core" }
