@@ -1,0 +1,8 @@
+[package]
+name = "game_core"
+description = "Regel-Kern: Karte, Rohstoffe, Zugregeln, Bots. Keine Grafik, keine externen Abhaengigkeiten."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]

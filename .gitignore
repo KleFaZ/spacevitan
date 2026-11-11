@@ -1,0 +1,9 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Godot (spaeter)
+.godot/
+*.translation
+export_presets.cfg
+.import/

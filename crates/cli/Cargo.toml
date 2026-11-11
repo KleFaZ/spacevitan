@@ -1,0 +1,13 @@
+[package]
+name = "cli"
+description = "Text-Oberflaeche zum Zuschauen: Bot gegen Bot, Karten als Text."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "spacevitan"
+path = "src/main.rs"
+
+[dependencies]
+game_core = { path = "../game_core" }

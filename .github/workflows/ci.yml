@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tests
+        run: cargo test --workspace --all-targets
+
+  windows-build:
+    name: Windows-Build (.exe)
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Release-Build
+        run: cargo build --release --workspace
+      - name: Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: spacevitan-windows
+          path: target/release/spacevitan.exe
+          if-no-files-found: error
