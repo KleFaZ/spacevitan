@@ -1,4 +1,4 @@
-<title>Spacevitan Wiedergabe</title>
+<title>Spacevitan</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -30,6 +30,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -136,19 +137,44 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .legend dt canvas { width: 40px; height: 40px; }
 .legend dd { margin: 0; }
 .note { font-size: 0.82rem; color: var(--muted); margin: 0; }
+.tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.tabs button { border: 0; border-radius: 0; padding: 7px 14px; cursor: pointer; background: transparent; font-weight: 650; }
+.tabs button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.tabs button:disabled { opacity: 0.45; cursor: not-allowed; }
+.brand { flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.notice { max-width: 1280px; margin: 0 auto 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 0.88rem; }
+.setup { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.setup label { display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; color: var(--muted); min-width: 0; }
+.setup select, .setup input { font: inherit; font-size: 0.9rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; max-width: none; }
+.setup .wide { grid-column: 1 / -1; }
+.btn { padding: 8px 12px; cursor: pointer; font-weight: 650; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.turnbox { margin-top: 10px; border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.hint { margin: 0; font-weight: 650; }
+.hint small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.actions:empty { display: none; }
+.actions button { text-align: left; }
 .error { color: #b3261e; font-size: 0.85rem; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 
 <header class="top">
-  <div class="brand"><h1>Spacevitan <span>Wiedergabe</span></h1></div>
-  <div class="pick">
+  <div class="brand">
+    <h1>Spacevitan</h1>
+    <div class="tabs" role="group" aria-label="Modus">
+      <button id="modePlay" type="button" aria-pressed="false">Spielen</button>
+      <button id="modeView" type="button" aria-pressed="true">Partien ansehen</button>
+    </div>
+  </div>
+  <div class="pick" id="viewPick">
     <label class="lead" for="game">Partie</label>
     <select id="game"></select>
     <label class="file" for="file">Eigene Partie laden …</label>
     <input id="file" type="file" accept=".json,application/json">
   </div>
 </header>
+<p class="notice" id="notice" hidden></p>
 
 <main class="layout">
   <section class="stage" aria-label="Spielbrett">
@@ -173,9 +199,30 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       </select>
     </div>
     <p class="status" id="status"></p>
+    <div id="turnBox" class="turnbox" hidden>
+      <p class="hint" id="hint"></p>
+      <div class="actions" id="actions"></div>
+      <div><button class="btn" id="toNow" type="button" hidden>Zur aktuellen Stellung</button></div>
+    </div>
   </section>
 
   <aside class="panel">
+    <div id="playBox" hidden>
+      <h2>Neue Partie</h2>
+      <form id="setup" class="setup" novalidate>
+        <label for="setPlayers">Spieler
+          <select id="setPlayers"><option value="2" selected>2 (gegenüber)</option><option value="4">4</option></select>
+        </label>
+        <label for="setOpp">Gegner
+          <select id="setOpp"><option value="0" selected>Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
+        </label>
+        <label class="wide" for="setSeed">Seed (leer = zufällig)
+          <input id="setSeed" type="number" min="0" step="1" inputmode="numeric" placeholder="zufällig">
+        </label>
+        <button class="btn primary wide" type="submit">Partie starten</button>
+      </form>
+      <p class="error" id="playError" hidden></p>
+    </div>
     <div>
       <h2>Partie</h2>
       <div class="summary" id="summary"></div>
@@ -198,6 +245,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 </main>
 
 <script type="application/json" id="samples">[]</script>
+<script type="application/octet-stream" id="wasm"></script>
 <script>
 (() => {
   "use strict";
@@ -250,6 +298,12 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   let tween = null;    // { from, to, start, dur }
   let geo = null;      // Brett-Geometrie in CSS-Pixeln
   let hoverCell = null;
+  let mode = "view";   // "play" oder "view"
+  let wasm = null;     // Exporte des Spielkerns
+  let live = null;     // laufende Partie: { legal, humanToMove, outcome, seats, opponent }
+  let liveR = null;    // vorbereitete laufende Partie (waechst Zug fuer Zug)
+  let botTimer = null;
+  let selected = null; // ausgewaehlte eigene Figur
 
   function prepare(replay) {
     if (!replay || replay.format !== "spacevitan-replay") throw new Error("Das ist keine Spacevitan-Partie (Feld \"format\" fehlt).");
@@ -258,14 +312,15 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     const cornerPlayer = replay.board.corners.map((_, c) => replay.player_corners.indexOf(c));
     let free = 0;
     const cornerColor = cornerPlayer.map((p) => (p >= 0 ? PLAYER[p].color : FREE_CRYSTAL[free++ % FREE_CRYSTAL.length]));
-    const frames = replay.frames.map((f) => {
-      const byId = new Map();
-      for (const p of f.pieces) byId.set(p.id, p);
-      const fById = new Map();
-      for (const x of f.factories) fById.set(x.id, x);
-      return { ...f, byId, fById };
-    });
+    const frames = replay.frames.map(prepFrame);
     return { ...replay, frames, cornerPlayer, cornerColor, side: replay.board.side };
+  }
+  function prepFrame(f) {
+    const byId = new Map();
+    for (const p of f.pieces) byId.set(p.id, p);
+    const fById = new Map();
+    for (const x of f.factories) fById.set(x.id, x);
+    return { ...f, byId, fById };
   }
 
   const cellName = (cell) => {
@@ -357,6 +412,14 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       ctx.globalAlpha = fillAlpha; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
     }
     ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, geo.W * 0.045); ctx.stroke();
+  }
+
+  function markCell(cell, color) {
+    const [x, y] = R.board.cells[cell];
+    const [cx, cy] = iso(x, y);
+    diamond(cx, cy, geo.W * 0.42);
+    ctx.globalAlpha = 0.75; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
   }
 
   function drawCrystal(x, y, s, color) {
@@ -580,6 +643,23 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       if (e.type === "factory_built" || e.type === "spawned") outlineCell(e.cell, PLAYER[e.owner].color, 0.25);
     }
     if (hoverCell !== null) outlineCell(hoverCell, cssVar("--ink") || "#000", 0);
+    if (canAct()) {
+      const accent = cssVar("--accent") || "#2f55a4";
+      if (selected !== null && f.byId.get(selected)) {
+        const me = f.byId.get(selected);
+        outlineCell(me.cell, accent, 0.3);
+        for (const to of destinations(selected)) {
+          const hostile = f.pieces.some((q) => q.cell === to && q.owner !== me.owner) ||
+            f.factories.some((x) => x.cell === to && x.owner !== me.owner);
+          markCell(to, hostile ? "#d23c34" : accent);
+        }
+      } else {
+        for (const id of movablePieces()) {
+          const p = f.byId.get(id);
+          if (p) outlineCell(p.cell, accent, 0);
+        }
+      }
+    }
 
     // Objekte sammeln und nach Tiefe sortieren
     const objs = [];
@@ -711,7 +791,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   function outcomeText(rep) {
     const last = rep.frames.length - 1;
     const round = last > 0 ? rep.frames[last - 1].round : 1;
-    if (!rep.outcome) return "nicht beendet";
+    if (!rep.outcome) return "läuft noch";
     if (rep.outcome.type === "winner") return `${playerName(rep.outcome.player)} gewinnt in Runde ${round}`;
     return `unentschieden nach ${rep.config.max_rounds} Runden`;
   }
@@ -731,7 +811,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     const last = R.frames.length - 1;
     $("summary").innerHTML =
       `<strong>Seed <span class="mono">${R.seed}</span></strong> · Karte ${R.side}×${R.side} · ` +
-      `${R.players} Spieler · ${R.frames.length - 1} Züge<br>Ergebnis: <strong>${outcomeText(R)}</strong>`;
+      `${R.players} Spieler · ${R.frames.length - 1} ${R.frames.length === 2 ? "Zug" : "Züge"}<br>Ergebnis: <strong>${outcomeText(R)}</strong>`;
 
     const players = $("players");
     players.innerHTML = "";
@@ -756,7 +836,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       else if (turn) tag = `<span class="tag">am Zug</span>`;
       div.innerHTML =
         `<span class="chip" style="background:${PLAYER[p].color}">${PLAYER[p].name}</span>` +
-        `<div class="pname">Spieler ${PLAYER[p].name} <small>${R.bots[p] || ""}</small> ${tag}</div>` +
+        `<div class="pname">Spieler ${PLAYER[p].name} <small>${seatLabel(p)}</small> ${tag}</div>` +
         `<div class="pstats"><span>Figuren ${levelText}</span><span>Fabriken ${facs.length} (Lager ${stock})</span>` +
         `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span></div>`;
       players.appendChild(div);
@@ -786,6 +866,12 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     $("scrub").value = String(fi);
     $("play").setAttribute("aria-label", playing ? "Anhalten" : "Abspielen");
     $("playIcon").setAttribute("d", playing ? "M5 4h4v12H5zM11 4h4v12h-4z" : "M6 4v12l10-6z");
+    renderTurnBox();
+  }
+  function seatLabel(p) {
+    const name = (R.bots || [])[p] || "";
+    if (name !== "mensch") return R === liveR ? `Bot ${name}` : name;
+    return live && live.opponent === 2 ? "Mensch" : "du";
   }
   function escapeHtml(s) {
     return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -862,7 +948,17 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     showTip(cell, mx, my);
   }
   canvas.addEventListener("pointermove", pointer);
-  canvas.addEventListener("pointerdown", pointer);
+  let downAt = null;
+  canvas.addEventListener("pointerdown", (ev) => { downAt = [ev.clientX, ev.clientY]; pointer(ev); });
+  canvas.addEventListener("pointerup", (ev) => {
+    if (!downAt || !R || !geo) return;
+    const moved = Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]);
+    downAt = null;
+    if (moved > 10 || !canAct()) return;
+    $("tip").hidden = true;
+    const rect = canvas.getBoundingClientRect();
+    boardClick(cellAt(ev.clientX - rect.left, ev.clientY - rect.top));
+  });
   canvas.addEventListener("pointerleave", () => { hoverCell = null; $("tip").hidden = true; requestAnimationFrame(draw); });
 
   // ----- Legende -----------------------------------------------------------------------------
@@ -909,6 +1005,206 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     geo = saved;
   }
 
+  // ----- Spielen ------------------------------------------------------------------------------
+  function canAct() {
+    return mode === "play" && live && !live.outcome && live.humanToMove && R === liveR && fi === R.frames.length - 1;
+  }
+  function destinations(pieceId) {
+    return live.legal.filter((a) => a.type === "move" && a.piece === pieceId).map((a) => a.to);
+  }
+  function movablePieces() {
+    return [...new Set(live.legal.filter((a) => a.type === "move").map((a) => a.piece))];
+  }
+  function boardClick(cell) {
+    if (!canAct()) return;
+    const f = R.frames[fi];
+    if (cell !== null && selected !== null) {
+      const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === cell);
+      if (i >= 0) { humanAct(i); return; }
+    }
+    const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
+    selected = piece && destinations(piece.id).length ? piece.id : null;
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  function callWasm(name, ...args) {
+    const code = wasm[name](...args);
+    const ptr = wasm.sv_out_ptr(), len = wasm.sv_out_len();
+    const text = new TextDecoder().decode(new Uint8Array(wasm.memory.buffer, ptr, len));
+    const json = JSON.parse(text);
+    if (code !== 0) throw new Error(json.error || "Unbekannter Fehler im Spielkern");
+    return json;
+  }
+  function showPlayError(msg) {
+    const el = $("playError");
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+  function randomSeed() {
+    const a = new Uint32Array(1);
+    (window.crypto || window.msCrypto).getRandomValues(a);
+    return a[0] % 1000000;
+  }
+  function startLive(players, opponent, seed) {
+    clearTimeout(botTimer);
+    playing = false; clearTimeout(timer);
+    const s = seed === null || seed === undefined ? randomSeed() : seed;
+    const out = callWasm("sv_new_game", players, s % 4294967296, Math.floor(s / 4294967296), 0, opponent);
+    const header = out.header;
+    header.frames = [out.frame];
+    header.outcome = out.outcome;
+    liveR = prepare(header);
+    live = { legal: out.legal, humanToMove: out.human_to_move, outcome: out.outcome, seats: out.seats, opponent };
+    R = liveR;
+    selected = null; fi = 0; tween = null; hoverCell = null;
+    showPlayError("");
+    layout();
+    renderPanel();
+    requestAnimationFrame(draw);
+    scheduleBots();
+  }
+  function pushStep(out) {
+    const follow = R === liveR && fi === liveR.frames.length - 1;
+    liveR.frames.push(prepFrame(out.frame));
+    liveR.outcome = out.outcome;
+    live.legal = out.legal;
+    live.humanToMove = out.human_to_move;
+    live.outcome = out.outcome;
+    if (R !== liveR) return;
+    if (follow) goTo(liveR.frames.length - 1, true);
+    else renderPanel();
+  }
+  function humanAct(i) {
+    if (!canAct()) return;
+    try {
+      const out = callWasm("sv_apply", i);
+      selected = null;
+      pushStep(out);
+      scheduleBots();
+    } catch (err) {
+      showPlayError(err.message);
+    }
+  }
+  function botDelay() {
+    return Math.max(120, Math.min(700, Number($("speed").value)));
+  }
+  function scheduleBots() {
+    clearTimeout(botTimer);
+    renderTurnBox();
+    if (mode !== "play" || !live || live.outcome || live.humanToMove) return;
+    botTimer = setTimeout(() => {
+      if (mode !== "play" || !live) return;
+      try {
+        pushStep(callWasm("sv_bot_step"));
+      } catch (err) {
+        showPlayError(err.message);
+        return;
+      }
+      scheduleBots();
+    }, botDelay());
+  }
+  function homeName(res) {
+    const p = R.cornerPlayer[typeInfo(res).home];
+    return p >= 0 ? `Farbe ${playerName(p)}` : "Farbe einer freien Ecke";
+  }
+  function actionLabel(a, f) {
+    if (a.type === "build") {
+      const king = f.pieces.find((p) => p.king && p.owner === f.current);
+      return `Fabrik bauen auf ${cellName(king.cell)} (kostet ${R.config.factory_cost}× Kat 1, ${homeName(a.pay)})`;
+    }
+    if (a.type === "spawn") {
+      const fac = f.fById.get(a.factory);
+      const level = fac.storage.filter(([r]) => category(r) === 1).length;
+      const range = Math.max(...fac.storage.map(([r]) => category(r)));
+      return `Fabrik auf ${cellName(fac.cell)} auflösen: Figur Stufe ${level}, Reichweite ${range}`;
+    }
+    if (a.type === "pass") return "Passen";
+    return a.type;
+  }
+  function renderTurnBox() {
+    const box = $("turnBox");
+    if (mode !== "play" || !live || R !== liveR) { box.hidden = true; return; }
+    box.hidden = false;
+    const last = liveR.frames.length - 1;
+    const now = liveR.frames[last];
+    const hotseat = live.opponent === 2;
+    let hint, sub = "";
+    if (live.outcome) {
+      if (live.outcome.type === "winner") {
+        const w = live.outcome.player;
+        hint = hotseat ? `Spieler ${playerName(w)} gewinnt!`
+          : w === 0 ? "Gewonnen! Du hast den letzten gegnerischen König geschlagen."
+          : `Verloren: Spieler ${playerName(w)} gewinnt.`;
+      } else {
+        hint = "Unentschieden: die Rundengrenze ist erreicht.";
+      }
+      sub = "Starte rechts eine neue Partie oder spiele diese mit den Tasten noch einmal ab.";
+    } else if (!live.humanToMove) {
+      hint = `Spieler ${playerName(now.current)} (Bot) ist am Zug …`;
+    } else {
+      hint = hotseat ? `Spieler ${playerName(now.current)} ist am Zug.` : "Du bist am Zug (Spieler A, rot).";
+      sub = selected !== null
+        ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur."
+        : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
+    }
+    if (fi < last) sub = "Du siehst einen früheren Zug. " + sub;
+    $("hint").innerHTML = escapeHtml(hint) + (sub ? `<small>${escapeHtml(sub)}</small>` : "");
+    $("toNow").hidden = fi >= last;
+    const actions = $("actions");
+    actions.innerHTML = "";
+    if (canAct()) {
+      live.legal.forEach((a, i) => {
+        if (a.type === "move") return;
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn";
+        b.textContent = actionLabel(a, now);
+        b.addEventListener("click", () => humanAct(i));
+        actions.appendChild(b);
+      });
+    }
+  }
+  function setMode(m) {
+    mode = m;
+    $("modePlay").setAttribute("aria-pressed", String(m === "play"));
+    $("modeView").setAttribute("aria-pressed", String(m === "view"));
+    $("viewPick").hidden = m !== "view";
+    $("playBox").hidden = m !== "play";
+    clearTimeout(botTimer);
+    playing = false; clearTimeout(timer);
+    selected = null;
+    if (m === "play") {
+      if (!liveR) {
+        startLive(2, 0, null);
+        return;
+      }
+      R = liveR;
+      fi = liveR.frames.length - 1;
+      tween = null;
+      layout();
+      renderPanel();
+      requestAnimationFrame(draw);
+      scheduleBots();
+    } else {
+      if (games.length) selectGame(Number($("game").value) || 0, undefined);
+      else renderTurnBox();
+    }
+  }
+  async function loadWasm() {
+    const el = $("wasm");
+    const b64 = ((el && el.textContent) || "").trim();
+    if (!b64) throw new Error("In dieser Seite ist kein Spielkern eingebettet.");
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const { instance } = await WebAssembly.instantiate(bytes, {});
+    const ex = instance.exports;
+    if (typeof ex.sv_api_version !== "function" || ex.sv_api_version() !== 1) {
+      throw new Error("Der eingebettete Spielkern hat eine unerwartete Version.");
+    }
+    return ex;
+  }
+
   // ----- Laden -------------------------------------------------------------------------------
   function showError(msg) {
     const el = $("error");
@@ -924,6 +1220,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     fi = startFrame === undefined ? 0 : Math.max(0, Math.min(last, startFrame));
     tween = null;
     hoverCell = null;
+    selected = null;
     renderPanel();
     requestAnimationFrame(draw);
   }
@@ -949,6 +1246,26 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   }
 
   $("game").addEventListener("change", (e) => selectGame(Number(e.target.value), 0));
+  $("modePlay").addEventListener("click", () => setMode("play"));
+  $("modeView").addEventListener("click", () => setMode("view"));
+  $("toNow").addEventListener("click", () => { setPlaying(false); goTo(R.frames.length - 1, false); });
+  $("setup").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const raw = $("setSeed").value.trim();
+    let seed = null;
+    if (raw !== "") {
+      seed = Number.parseInt(raw, 10);
+      if (!Number.isSafeInteger(seed) || seed < 0) {
+        showPlayError("Der Seed muss eine ganze Zahl ab 0 sein.");
+        return;
+      }
+    }
+    try {
+      startLive(Number($("setPlayers").value), Number($("setOpp").value), seed);
+    } catch (err) {
+      showPlayError(err.message);
+    }
+  });
   $("file").addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -996,11 +1313,40 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     try { addGame(s.replay || s, s.label); } catch (err) { showError(err.message); }
   }
   legend();
+  $("viewPick").hidden = false;
   if (games.length) {
     selectGame(0, busiestFrame(games[0].replay));
   } else {
     $("summary").textContent = "Keine Partie geladen. Lade eine mit „Eigene Partie laden …“ (erzeugt mit spacevitan --export partie.json).";
   }
-  window.__viewer = { goTo, get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; }, select: selectGame };
+  window.__viewer = {
+    goTo, select: selectGame, click: boardClick, act: humanAct, start: startLive, setMode,
+    get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; },
+    get live() { return live; }, get mode() { return mode; }, get selected() { return selected; },
+    get ready() { return wasm !== null; },
+    /** Feld einer Figur im angezeigten Zug (fuer automatische Tests). */
+    pieceCell(id) {
+      const p = R.frames[fi].byId.get(id);
+      return p ? p.cell : null;
+    },
+    /** Bildschirmpunkt der Feldmitte (fuer automatische Tests). */
+    cellPoint(cell) {
+      const [x, y] = R.board.cells[cell];
+      const [cx, cy] = iso(x, y);
+      const r = canvas.getBoundingClientRect();
+      return [r.left + cx, r.top + cy];
+    },
+  };
+  loadWasm().then((ex) => {
+    wasm = ex;
+    setMode("play");
+  }).catch((err) => {
+    $("modePlay").disabled = true;
+    $("modePlay").title = "Spielen ist hier nicht verfügbar";
+    const n = $("notice");
+    n.textContent = `Spielen ist in dieser Ansicht nicht verfügbar (${err.message}). Die Wiedergabe funktioniert. ` +
+      "Zum Spielen die Datei spacevitan.html herunterladen und im Browser öffnen.";
+    n.hidden = false;
+  });
 })();
 </script>

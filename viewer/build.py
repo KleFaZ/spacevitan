@@ -1,26 +1,42 @@
 #!/usr/bin/env python3
 """Baut die Browser-Ansicht mit eingebetteten Partien.
 
-    python3 viewer/build.py AUSGABE.html partie1.json [partie2.json ...] [--standalone]
+    python3 viewer/build.py AUSGABE.html [partie.json ...] [--wasm spacevitan.wasm] [--standalone]
 
 Ohne --standalone entsteht ein Seitenfragment (so wird es als Artefakt veroeffentlicht).
 Mit --standalone bekommt die Datei einen vollstaendigen HTML-Rahmen und laesst sich direkt
 im Browser oeffnen.
 
 Partien erzeugt die CLI:  spacevitan --seed 1 --export partie.json
+Den Spielkern (--wasm) baut die CI in den Branch web-build:
+    git fetch origin web-build && git show origin/web-build:spacevitan.wasm > spacevitan.wasm
+Ohne --wasm funktioniert nur die Wiedergabe, nicht das Spielen.
 """
 
+import base64
 import json
 import pathlib
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 PLACEHOLDER = '<script type="application/json" id="samples">[]</script>'
+WASM_PLACEHOLDER = '<script type="application/octet-stream" id="wasm"></script>'
 
 
 def main(argv):
     standalone = "--standalone" in argv
     args = [a for a in argv if a != "--standalone"]
+    wasm = None
+    if "--wasm" in args:
+        i = args.index("--wasm")
+        if i + 1 >= len(args):
+            print("--wasm braucht eine Datei", file=sys.stderr)
+            return 2
+        wasm = pathlib.Path(args[i + 1]).read_bytes()
+        if wasm[:4] != b"\0asm":
+            print(f"{args[i + 1]} ist keine WebAssembly-Datei", file=sys.stderr)
+            return 1
+        del args[i : i + 2]
     if len(args) < 1:
         print(__doc__)
         return 2
@@ -40,6 +56,12 @@ def main(argv):
         return 1
     payload = json.dumps(replays, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
     page = template.replace(PLACEHOLDER, f'<script type="application/json" id="samples">{payload}</script>')
+    if wasm is not None:
+        if page.count(WASM_PLACEHOLDER) != 1:
+            print("Platzhalter fuer den Spielkern fehlt in index.html", file=sys.stderr)
+            return 1
+        encoded = base64.b64encode(wasm).decode("ascii")
+        page = page.replace(WASM_PLACEHOLDER, f'<script type="application/octet-stream" id="wasm">{encoded}</script>')
 
     if standalone:
         page = (
@@ -48,7 +70,8 @@ def main(argv):
             "</head>\n<body>\n" + page + "\n</body>\n</html>\n"
         )
     out.write_text(page, encoding="utf-8")
-    print(f"{out}: {len(replays)} Partien, {len(page) // 1024} KB")
+    kern = "mit Spielkern" if wasm is not None else "ohne Spielkern"
+    print(f"{out}: {len(replays)} Partien, {kern}, {len(page) // 1024} KB")
     return 0
 
 

@@ -9,7 +9,8 @@ Das Regelwerk liegt als Dokument beim Projekt; dieses Repository enthaelt die Um
 |---|---|
 | `crates/game_core` | Regel-Kern in Rust: Karte, Rohstoffe, Zugregeln, Bots. Keine Grafik, keine externen Pakete. |
 | `crates/cli` | Text-Oberflaeche zum Zuschauen (Bot gegen Bot) und fuer Statistik. |
-| `viewer/` | Browser-Ansicht: spielt exportierte Partien isometrisch ab. |
+| `crates/web` | WebAssembly-Schnittstelle: der Regel-Kern im Browser. |
+| `viewer/` | Browser-Seite: im Browser gegen Bots spielen und Partien isometrisch ansehen. |
 | `client/` | Godot-Client (Isometrie, Eingabe) – kommt als Naechstes. |
 | `.github/workflows` | CI: Formatierung, Clippy, Tests unter Linux und Windows, Windows-`.exe` als Download. |
 
@@ -42,6 +43,22 @@ neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
 
 Jede Partie bekommt einen neuen Startwert (Seed), der am Ende angezeigt wird. Mit
 `--seed <Wert>` laesst sich genau diese Partie wiederholen, z. B. um einen Fehler zu melden.
+
+### Im Browser spielen
+
+`viewer/` ist eine Seite mit zwei Modi: **Spielen** (du bist Spieler A gegen Bots, oder mehrere
+Menschen an einem Geraet) und **Partien ansehen** (Wiedergabe). Die Regeln laufen dabei als
+WebAssembly direkt im Browser; es ist derselbe Rust-Kern wie in der CLI (`crates/web`,
+`game_core::session`). Die CI baut `spacevitan.wasm` bei jedem Push nach `main` in den Branch
+`web-build`.
+
+```
+git fetch origin web-build:refs/remotes/origin/web-build
+git show origin/web-build:spacevitan.wasm > spacevitan.wasm
+python3 viewer/build.py spacevitan.html --wasm spacevitan.wasm --standalone
+```
+
+Die entstandene `spacevitan.html` laesst sich per Doppelklick im Browser oeffnen.
 
 ### Browser-Ansicht
 
