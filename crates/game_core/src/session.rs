@@ -5,6 +5,7 @@
 //! zuletzt gelieferten Liste erlaubter Aktionen; die Schnittstelle muss deshalb kein JSON lesen.
 
 use crate::action::{Action, Event};
+use crate::ai::SearchBot;
 use crate::bot::{Bot, GreedyBot, RandomBot};
 use crate::config::Config;
 use crate::game::Game;
@@ -15,6 +16,8 @@ use crate::state::Outcome;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SeatKind {
     Human,
+    /// Rechnet voraus (`ai::SearchBot`).
+    Strong,
     Greedy,
     Random,
 }
@@ -23,6 +26,7 @@ impl SeatKind {
     pub fn name(self) -> &'static str {
         match self {
             SeatKind::Human => "mensch",
+            SeatKind::Strong => "stark",
             SeatKind::Greedy => "gierig",
             SeatKind::Random => "zufall",
         }
@@ -69,6 +73,7 @@ impl Session {
                 let bot_seed = seed.wrapping_mul(7919).wrapping_add(i as u64);
                 match kind {
                     SeatKind::Human => None,
+                    SeatKind::Strong => Some(Box::new(SearchBot::new(bot_seed)) as Box<dyn Bot>),
                     SeatKind::Greedy => Some(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
                     SeatKind::Random => Some(Box::new(RandomBot::new(bot_seed)) as Box<dyn Bot>),
                 }

@@ -2,6 +2,7 @@
 //! geprueft. Ausserdem werden `legal_actions` und `apply` gegeneinander gefuzzt.
 
 use game_core::action::Action;
+use game_core::ai::{SearchBot, SearchParams};
 use game_core::bot::{play_out, Bot, GreedyBot, RandomBot};
 use game_core::config::Config;
 use game_core::game::Game;
@@ -23,6 +24,9 @@ fn bots(kinds: &[&str], seed: u64) -> Vec<Box<dyn Bot>> {
             let s = seed * 31 + i as u64;
             match *k {
                 "random" => Box::new(RandomBot::new(s)) as Box<dyn Bot>,
+                // Kleines Budget, damit die Tests auch ohne Optimierung schnell bleiben.
+                "strong" => Box::new(SearchBot::with_params(s, SearchParams::with_budget(300)))
+                    as Box<dyn Bot>,
                 _ => Box::new(GreedyBot::new(s)) as Box<dyn Bot>,
             }
         })
@@ -76,6 +80,37 @@ fn greedy_games_never_break_an_invariant_and_usually_produce_a_winner() {
 fn greedy_four_player_games_never_break_an_invariant() {
     for seed in 0..8 {
         checked(4, seed, 200, &["greedy"; 4]);
+    }
+}
+
+#[test]
+fn strong_bot_games_never_break_an_invariant_on_any_board() {
+    for (players, kinds) in [
+        (2, vec!["strong", "strong"]),
+        (2, vec!["strong", "random"]),
+        (3, vec!["strong", "greedy", "random"]),
+        (4, vec!["strong", "strong", "greedy", "greedy"]),
+        (
+            6,
+            vec!["strong", "greedy", "random", "strong", "greedy", "random"],
+        ),
+    ] {
+        for seed in 0..2 {
+            let (game, _) = checked(players, seed, 40, &kinds);
+            assert!(game.outcome().is_some());
+        }
+    }
+}
+
+#[test]
+fn the_strong_bot_beats_the_random_bot_quickly() {
+    for seed in 0..4 {
+        let (_, outcome) = checked(2, seed, 120, &["strong", "random"]);
+        assert_eq!(
+            outcome,
+            Outcome::Winner(game_core::ids::PlayerId(0)),
+            "Seed {seed}"
+        );
     }
 }
 

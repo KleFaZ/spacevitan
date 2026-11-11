@@ -23,7 +23,8 @@ Module in `game_core`:
 | `config` | alle einstellbaren Zahlen |
 | `state` | Figuren, Fabriken, Beute, Gepaeck, Rohstoff-Buchfuehrung |
 | `game` | Regel-Engine: erlaubte Aktionen, Ausfuehren, Zugende, Invariantenpruefung |
-| `bot` | Zufallsbot und einfacher Heuristik-Bot ("gierig") |
+| `ai` | Starker Bot ("stark"): Vorausberechnung mit Alpha-Beta bzw. Best-Reply-Search, Ruhesuche, Bewertung von Material, Koenigssicherheit, Einkesseln und Wirtschaft |
+| `bot` | Zufallsbot und einfacher Heuristik-Bot ("gierig"), `play_out` |
 | `render` | Textansicht eines Spielstands |
 | `rng` | deterministischer Zufall (gleicher Seed = gleiche Partie) |
 
@@ -32,6 +33,7 @@ Module in `game_core`:
 ```
 cargo run --release -- --show                  # eine Partie gierig gegen gierig ansehen
 cargo run --release -- --games 200             # Statistik ueber 200 Partien
+cargo run --release -- --games 50 --bots stark,gierig   # starker Bot gegen einfachen
 cargo run --release -- --players 4 --games 50 --bots gierig,zufall
 cargo run --release -- --games 200 --stock 5 --kat1 3   # Vorrat je Vorkommen, Kat-1-Felder je Ecke
 cargo run --release -- --help
@@ -42,13 +44,24 @@ Ohne Rust: Bei jedem Push baut GitHub Actions die `spacevitan.exe`. Sie liegt un
 neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
 (`spacevitan.exe --help`).
 
+### Computergegner
+
+| Bot | Spielweise |
+|---|---|
+| `stark` | rechnet voraus: eigene Zuege und die gefaehrlichste Antwort der Gegner, mehrere Zuege tief (bei 2 Spielern Alpha-Beta wie bei Schachprogrammen, ab 3 Spielern Best-Reply-Search). Wirtschaft, Koenigssicherheit und das Einkesseln gegnerischer Koenige stecken in der Bewertung. Rechnet mit festem Budget (`--nodes`, Standard 20000 Stellungen pro Zug), also auf jedem Rechner gleich. |
+| `gierig` | feste Faustregeln ohne Vorausschau |
+| `zufall` | zufaellige erlaubte Zuege (zum Testen der Regeln) |
+
+Gewichte der Bewertung lassen sich zum Abstimmen ohne Neubau setzen, z. B.
+`SPACEVITAN_WEIGHTS="trap=30,king_hunt=8" spacevitan --games 50 --bots stark,gierig`.
+
 Jede Partie bekommt einen neuen Startwert (Seed), der am Ende angezeigt wird. Mit
 `--seed <Wert>` laesst sich genau diese Partie wiederholen, z. B. um einen Fehler zu melden.
 
 ### Im Browser spielen
 
-`viewer/` ist eine Seite mit zwei Modi: **Spielen** (du bist Spieler A gegen Bots, oder mehrere
-Menschen an einem Geraet) und **Partien ansehen** (Wiedergabe). Die Regeln laufen dabei als
+`viewer/` ist eine Seite mit zwei Modi: **Spielen** (du bist Spieler A gegen Bots, Standard
+ist `stark`, oder mehrere Menschen an einem Geraet) und **Partien ansehen** (Wiedergabe). Die Regeln laufen dabei als
 WebAssembly direkt im Browser; es ist derselbe Rust-Kern wie in der CLI (`crates/web`,
 `game_core::session`). Die CI baut `spacevitan.wasm` bei jedem Push nach `main` in den Branch
 `web-build`.
@@ -100,7 +113,7 @@ Koenig sammelt, baut Fabriken nur auf Kat-1-Vorkommen (das Vorkommen ist danach 
 Nachbarfeldern (im Quadratgitter 5 Felder); Aufloesen in Figuren (Stufe = Zahl der
 Kat-1-Farben, Reichweite = Stufe); Stufe 1 zieht gerade, ab Stufe 2 frei;
 Schlagen wie im Schach; Fabrik-Einnahme mit Beute, die nur Koenige aufnehmen; Koenig faellt =
-Spieler raus; Unentschieden nach `max_rounds`.
+Spieler raus; Unentschieden nach `max_rounds`; Computergegner `stark`, `gierig`, `zufall`.
 
 Noch nicht umgesetzt: verdeckte Karte, Forschung,
 Kachel-Zukauf, Nebenfiguren aus Nebenrohstoffen, Nahrung und Kombos, Zugzeit, Netzwerkprotokoll,

@@ -1,6 +1,7 @@
 //! Text-Oberflaeche: Bots gegeneinander spielen lassen und zusehen oder Statistik sammeln.
 
-use game_core::action::Event;
+use game_core::action::{Action, Event};
+use game_core::ai::{SearchBot, SearchParams, Weights};
 use game_core::bot::{play_out, Bot, GreedyBot, RandomBot};
 use game_core::config::Config;
 use game_core::game::Game;
@@ -8,9 +9,12 @@ use game_core::ids::PlayerId;
 use game_core::render::{player_letter, render_game};
 use game_core::replay::ReplayWriter;
 use game_core::state::Outcome;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::io::BufRead;
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::rc::Rc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const HELP: &str = "\
 spacevitan - Bots spielen gegeneinander (Textansicht)
@@ -25,7 +29,9 @@ Optionen:
   --rounds N     Unentschieden nach N Runden (Standard 300)
   --stock N      Vorrat je Rohstoffvorkommen in Einheiten (Standard 0 = unerschoepflich)
   --kat1 N       Felder je Kat-1-Typ, also Bauplaetze fuer Fabriken je Ecke (Standard 2)
-  --bots LISTE   pro Spieler: gierig oder zufall, z. B. gierig,zufall (Standard: gierig)
+  --bots LISTE   pro Spieler: stark, gierig oder zufall, z. B. stark,gierig
+                 (Standard: gierig)
+  --nodes N      Rechenbudget von \"stark\": Stellungen pro Zug (Standard 20000)
   --show         Partie Runde fuer Runde anzeigen
   --games N      N Partien mit Seeds seed..seed+N-1 spielen und Statistik zeigen
   --export DATEI Partie als JSON speichern (fuer die Browser-Ansicht), nur mit einer Partie
@@ -42,6 +48,7 @@ struct Options {
     stock: u32,
     kat1: u32,
     bots: Vec<String>,
+    nodes: u64,
     show: bool,
     games: u32,
     export: Option<String>,
@@ -56,6 +63,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
         stock: 0,
         kat1: 0,
         bots: Vec::new(),
+        nodes: SearchParams::DEFAULT.node_budget,
         show: false,
         games: 1,
         export: None,
@@ -105,6 +113,10 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
                 o.export = Some(value(i)?.clone());
                 i += 1;
             }
+            "--nodes" => {
+                o.nodes = number(value(i)?, "--nodes")?.max(1);
+                i += 1;
+            }
             "--bots" => {
                 o.bots = value(i)?.split(',').map(|s| s.trim().to_string()).collect();
                 i += 1;
@@ -136,17 +148,61 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                 .unwrap_or("gierig");
             let bot_seed = seed.wrapping_mul(1_000_003).wrapping_add(i as u64);
             match kind {
+                "stark" | "strong" => {
+                    // Zum Abstimmen: SPACEVITAN_WEIGHTS="trap=30,king_hunt=4"
+                    let weights = match std::env::var("SPACEVITAN_WEIGHTS") {
+                        Ok(list) => Weights::DEFAULT.parse_overrides(&list)?,
+                        Err(_) => Weights::DEFAULT,
+                    };
+                    let bot = SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes))
+                        .with_weights(weights);
+                    Ok(Box::new(bot) as Box<dyn Bot>)
+                }
                 "gierig" | "greedy" => Ok(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
                 "zufall" | "random" => Ok(Box::new(RandomBot::new(bot_seed)) as Box<dyn Bot>),
-                other => Err(format!("unbekannter Bot '{other}' (gierig oder zufall)")),
+                other => Err(format!(
+                    "unbekannter Bot '{other}' (stark, gierig oder zufall)"
+                )),
             }
         })
         .collect()
 }
 
+/// Misst die Rechenzeit eines Bots.
+struct Timed {
+    inner: Box<dyn Bot>,
+    clock: Rc<RefCell<Clock>>,
+}
+
+#[derive(Default)]
+struct Clock {
+    total: Duration,
+    max: Duration,
+    moves: u64,
+}
+
+impl Bot for Timed {
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+
+    fn choose(&mut self, game: &Game) -> Action {
+        let start = Instant::now();
+        let a = self.inner.choose(game);
+        let took = start.elapsed();
+        let mut c = self.clock.borrow_mut();
+        c.total += took;
+        c.max = c.max.max(took);
+        c.moves += 1;
+        a
+    }
+}
+
 #[derive(Default)]
 struct Stats {
     wins: Vec<u32>,
+    wins_by_bot: BTreeMap<String, u32>,
+    clocks: BTreeMap<String, Rc<RefCell<Clock>>>,
     draws: u32,
     rounds: u64,
     spawned: u64,
@@ -186,7 +242,17 @@ fn run() -> Result<(), String> {
             config.cells_per_type[0] = o.kat1;
         }
         let mut game = Game::new(config).map_err(|e| e.to_string())?;
-        let mut bots = make_bots(&o, seed)?;
+        let mut bots: Vec<Box<dyn Bot>> = make_bots(&o, seed)?
+            .into_iter()
+            .map(|b| {
+                let clock = stats
+                    .clocks
+                    .entry(b.name().to_string())
+                    .or_default()
+                    .clone();
+                Box::new(Timed { inner: b, clock }) as Box<dyn Bot>
+            })
+            .collect();
 
         if o.show {
             let names: Vec<String> = bots
@@ -248,6 +314,10 @@ fn run() -> Result<(), String> {
         match outcome {
             Outcome::Winner(p) => {
                 stats.wins[p.idx()] += 1;
+                *stats
+                    .wins_by_bot
+                    .entry(bot_names[p.idx()].clone())
+                    .or_default() += 1;
                 if o.show || o.games == 1 {
                     println!(
                         "Ergebnis: Spieler {} gewinnt in Runde {}. (Seed {seed}, gleiche Partie mit --seed {seed})",
@@ -289,7 +359,25 @@ fn run() -> Result<(), String> {
             stats.draws,
             stats.draws as f64 / n * 100.0
         );
+        if stats.clocks.len() > 1 {
+            let by_bot: Vec<String> = stats
+                .clocks
+                .keys()
+                .map(|name| format!("{name} {}", stats.wins_by_bot.get(name).unwrap_or(&0)))
+                .collect();
+            println!("  Siege nach Bot: {}", by_bot.join(", "));
+        }
         println!("  Runden im Schnitt: {:.1}", stats.rounds as f64 / n);
+        for (name, clock) in &stats.clocks {
+            let c = clock.borrow();
+            if c.moves > 0 {
+                println!(
+                    "  Rechenzeit {name}: {:.1} ms pro Zug, hoechstens {:.0} ms",
+                    c.total.as_secs_f64() * 1000.0 / c.moves as f64,
+                    c.max.as_secs_f64() * 1000.0
+                );
+            }
+        }
         println!(
             "  Pro Partie: {:.1} Fabriken, {:.1} Figuren erzeugt, {:.1} geschlagen",
             stats.factories as f64 / n,
@@ -380,5 +468,16 @@ mod tests {
         );
         o.bots = vec!["schach".into()];
         assert!(make_bots(&o, 1).is_err());
+    }
+
+    #[test]
+    fn the_strong_bot_and_its_budget_can_be_chosen() {
+        let o = parse(&args("--bots stark,gierig --nodes 500"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(o.nodes, 500);
+        let names: Vec<&str> = make_bots(&o, 1).unwrap().iter().map(|b| b.name()).collect();
+        assert_eq!(names, vec!["stark", "gierig"]);
+        assert!(parse(&args("--nodes x")).is_err());
     }
 }

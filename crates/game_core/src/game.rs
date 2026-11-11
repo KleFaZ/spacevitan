@@ -9,11 +9,14 @@ use crate::ids::{CellId, FactoryId, PieceId, PlayerId, ResourceId};
 use crate::map::{Map, MapError};
 use crate::state::{Factory, Inventory, Outcome, Piece, PieceKind, State};
 use std::collections::{BTreeSet, VecDeque};
+use std::sync::Arc;
 
+/// Ein laufendes Spiel. Die Karte aendert sich waehrend der Partie nicht und wird beim Kopieren
+/// geteilt; eine Kopie kostet damit nur den Zustand (wichtig fuer die Suche der KI).
 #[derive(Clone, Debug)]
 pub struct Game {
     pub config: Config,
-    pub map: Map,
+    pub map: Arc<Map>,
     pub state: State,
 }
 
@@ -35,7 +38,11 @@ impl Game {
             let player = PlayerId(p);
             state.insert_piece(player, map.start_cell(player), PieceKind::King);
         }
-        Game { config, map, state }
+        Game {
+            config,
+            map: Arc::new(map),
+            state,
+        }
     }
 
     // ----- Abfragen -------------------------------------------------------------------------
@@ -221,8 +228,8 @@ impl Game {
             .all(|f| dist[f.cell.idx()] >= self.config.min_factory_distance)
     }
 
-    fn can_spawn(&self, factory: &Factory) -> bool {
-        factory.owner == self.state.current
+    fn can_spawn(&self, factory: &Factory, me: PlayerId) -> bool {
+        factory.owner == me
             && self.spawn_preview(factory).is_some()
             && self.state.piece_at(factory.cell).is_none()
     }
@@ -230,10 +237,15 @@ impl Game {
     // ----- Erlaubte Aktionen ----------------------------------------------------------------
 
     pub fn legal_actions(&self) -> Vec<Action> {
-        if self.state.outcome.is_some() {
+        self.legal_actions_for(self.state.current)
+    }
+
+    /// Was `player` tun duerfte, wenn er am Zug waere. Die KI fragt damit die Antworten der
+    /// Gegner ab, ohne den Zustand umzustellen.
+    pub fn legal_actions_for(&self, me: PlayerId) -> Vec<Action> {
+        if self.state.outcome.is_some() || !self.state.alive[me.idx()] {
             return Vec::new();
         }
-        let me = self.state.current;
         let mut actions = Vec::new();
 
         for piece in self.pieces_of(me) {
@@ -246,17 +258,24 @@ impl Game {
         }
 
         if let Some(king) = self.king(me) {
-            if self.state.factory_at(king.cell).is_none() && self.factory_distance_ok(king.cell) {
-                for res in self.available_deposits(king.cell) {
-                    if self.map.category(res) == 1 {
-                        actions.push(Action::BuildFactory { pay: res });
-                    }
+            let cat1: Vec<ResourceId> = self
+                .available_deposits(king.cell)
+                .into_iter()
+                .filter(|&r| self.map.category(r) == 1)
+                .collect();
+            // Abstandspruefung (Breitensuche) nur, wenn hier ueberhaupt gebaut werden koennte.
+            if !cat1.is_empty()
+                && self.state.factory_at(king.cell).is_none()
+                && self.factory_distance_ok(king.cell)
+            {
+                for res in cat1 {
+                    actions.push(Action::BuildFactory { pay: res });
                 }
             }
         }
 
         for factory in self.factories_of(me) {
-            if self.can_spawn(factory) {
+            if self.can_spawn(factory, me) {
                 actions.push(Action::SpawnPiece {
                     factory: factory.id,
                 });
@@ -337,6 +356,13 @@ impl Game {
         if !self.legal_actions().contains(&action) {
             return Err(RuleError::Illegal(self.diagnose(&action)));
         }
+        Ok(self.apply_unchecked(action))
+    }
+
+    /// Wie `apply`, aber ohne Pruefung. Nur fuer Aktionen aus `legal_actions_for` des
+    /// Spielers, der gerade am Zug ist (die Suche der KI spart sich so die doppelte Arbeit).
+    pub(crate) fn apply_unchecked(&mut self, action: Action) -> Vec<Event> {
+        debug_assert!(self.state.outcome.is_none(), "Spiel ist vorbei");
         let actor = self.state.current;
         let mut events = Vec::new();
 
@@ -354,7 +380,7 @@ impl Game {
         if self.state.outcome.is_none() {
             self.advance_turn(&mut events);
         }
-        Ok(events)
+        events
     }
 
     fn do_move(&mut self, actor: PlayerId, id: PieceId, to: CellId, events: &mut Vec<Event>) {

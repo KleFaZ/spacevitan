@@ -43,7 +43,7 @@ fn c(g: &Game, x: i32, y: i32) -> CellId {
 
 fn put(g: &mut Game, x: i32, y: i32, res: ResourceId) {
     let cell = c(g, x, y);
-    g.map.deposits[cell.idx()].push(res);
+    std::sync::Arc::make_mut(&mut g.map).deposits[cell.idx()].push(res);
 }
 
 fn king_id(g: &Game, p: PlayerId) -> PieceId {

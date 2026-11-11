@@ -5,7 +5,7 @@
 //! aus dem Speicher liest. Rueckgabewert 0 = in Ordnung, 1 = Fehler.
 //!
 //! Spieler A (Index 0) ist immer ein Mensch. `opponent`: 0 = gierig, 1 = zufall,
-//! 2 = Menschen (alle Spieler an einem Geraet).
+//! 2 = Menschen (alle Spieler an einem Geraet), 3 = stark (rechnet voraus).
 
 use game_core::config::Config;
 use game_core::session::{SeatKind, Session};
@@ -63,6 +63,7 @@ fn new_game(players: u32, seed: u64, side: u32, opponent: u32) -> Result<String,
         0 => SeatKind::Greedy,
         1 => SeatKind::Random,
         2 => SeatKind::Human,
+        3 => SeatKind::Strong,
         other => return Err(format!("Unbekannte Gegnerart {other}")),
     };
     let mut seats = vec![others; players as usize];
@@ -193,6 +194,16 @@ mod tests {
         }
         assert_eq!(sv_apply(0), 1);
         assert!(out().contains("vorbei"));
+    }
+
+    #[test]
+    fn the_strong_bot_answers_a_human_move() {
+        assert_eq!(sv_new_game(2, 5, 0, 0, 3), 0);
+        assert!(out().contains("\"seats\":[\"mensch\",\"stark\"]"));
+        assert_eq!(sv_apply(0), 0);
+        assert!(out().contains("\"human_to_move\":false"));
+        assert_eq!(sv_bot_step(), 0, "{}", out());
+        assert!(out().contains("\"human_to_move\":true"));
     }
 
     #[test]
