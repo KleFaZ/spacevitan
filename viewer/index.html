@@ -211,7 +211,15 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       <h2>Neue Partie</h2>
       <form id="setup" class="setup" novalidate>
         <label for="setPlayers">Spieler
-          <select id="setPlayers"><option value="2" selected>2 (gegenüber)</option><option value="4">4</option></select>
+          <select id="setPlayers">
+            <option value="2" selected>2 (Quadrat, gegenüber)</option>
+            <option value="3">3 (Dreieck)</option>
+            <option value="4">4 (Quadrat)</option>
+            <option value="5">5 (Fünfeck)</option>
+            <option value="6">6 (Sechseck)</option>
+            <option value="7">7 (Siebeneck)</option>
+            <option value="8">8 (Achteck)</option>
+          </select>
         </label>
         <label for="setOpp">Gegner
           <select id="setOpp"><option value="0" selected>Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
@@ -239,7 +247,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     <details class="legend" open>
       <summary>Legende</summary>
       <dl id="legend"></dl>
-      <p class="note" style="margin-top:10px">Felder heißen wie beim Schach: Buchstabe für die Spalte, Zahl für die Reihe. Gebiete (Wald, Himmel, Steppe, Fels) sind nur Farbe, ohne Spielwirkung. Tippe oder zeige auf ein Feld für Details. Tasten: Leertaste, ← →, Pos1, Ende.</p>
+      <p class="note" style="margin-top:10px">Auf dem Quadrat heißen Felder wie beim Schach: Buchstabe für die Spalte, Zahl für die Reihe. Gebiete (Wald, Himmel, Steppe, Fels) sind nur Farbe, ohne Spielwirkung. Tippe oder zeige auf ein Feld für Details. Tasten: Leertaste, ← →, Pos1, Ende.</p>
     </details>
   </aside>
 </main>
@@ -308,7 +316,11 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   function prepare(replay) {
     if (!replay || replay.format !== "spacevitan-replay") throw new Error("Das ist keine Spacevitan-Partie (Feld \"format\" fehlt).");
     if (replay.version !== 1) throw new Error(`Unbekannte Formatversion ${replay.version}; diese Ansicht kennt Version 1.`);
-    if (replay.board.kind !== "square") throw new Error(`Brettform "${replay.board.kind}" wird hier noch nicht gezeichnet.`);
+    if (!["square", "triangle", "hex"].includes(replay.board.kind)) throw new Error(`Brettform "${replay.board.kind}" kennt diese Ansicht nicht.`);
+    if (!replay.board.shapes) {
+      // Aeltere Exporte (nur Quadrat) haben keine Feldumrisse.
+      replay.board.shapes = replay.board.cells.map(([x, y]) => [[x - 0.5, y - 0.5], [x + 0.5, y - 0.5], [x + 0.5, y + 0.5], [x - 0.5, y + 0.5]]);
+    }
     const cornerPlayer = replay.board.corners.map((_, c) => replay.player_corners.indexOf(c));
     let free = 0;
     const cornerColor = cornerPlayer.map((p) => (p >= 0 ? PLAYER[p].color : FREE_CRYSTAL[free++ % FREE_CRYSTAL.length]));
@@ -324,6 +336,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   }
 
   const cellName = (cell) => {
+    if (R.board.kind !== "square") return `Feld ${cell + 1}`;
     const [x, y] = R.board.cells[cell];
     return `${COLS[x] || "?"}${y + 1}`;
   };
@@ -340,74 +353,108 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   }
 
   // ----- Geometrie ---------------------------------------------------------------------------
+  const TILT = 0.62; // Neigung der Draufsicht bei Dreieck und Hex
   function layout() {
     if (!R) return;
     const wrap = canvas.parentElement;
     const cssW = Math.max(240, wrap.clientWidth);
-    const side = R.side;
-    const W = Math.min(84, cssW / (side + 2.2));
+    const square = R.board.kind === "square";
+    // Projektion bei Massstab 1: Quadrat isometrisch (Raute), sonst schraeg von oben.
+    const proj1 = square ? (x, y) => [(x - y) / 2, (x + y) / 4] : (x, y) => [x, y * TILT];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const shape of R.board.shapes) {
+      for (const [x, y] of shape) {
+        const [px, py] = proj1(x, y);
+        minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+        minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+      }
+    }
+    const pad = square ? 2.2 : 0.6;                 // Rand fuer Beschriftung (in Feldbreiten)
+    const U = Math.min(square ? 84 : 72, cssW / (maxX - minX + pad));
+    const W = U * (square ? 1 : R.board.kind === "hex" ? 0.9 : 0.72); // Figurengroesse
     const thick = W * 0.12;
-    const top = W * 1.05;                       // Platz fuer hohe Figuren und Beschriftung
-    const ox = cssW / 2;                         // Mitte der obersten Kachel
-    const oy = top;
-    const cssH = Math.ceil(oy + (2 * (side - 1)) * W / 4 + W / 2 + thick + W * 0.3);
+    const top = W * 1.05 + (square ? U * 0.15 : 0); // Platz fuer hohe Figuren
+    const ox = cssW / 2 - ((minX + maxX) / 2) * U;
+    const oy = top - minY * U;
+    const cssH = Math.ceil(oy + maxY * U + thick + W * 0.35);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     canvas.style.height = cssH + "px";
-    geo = { W, thick, ox, oy, cssW, cssH, dpr };
+    geo = { U, W, thick, ox, oy, cssW, cssH, dpr, square };
   }
   function iso(x, y) {
-    return [geo.ox + (x - y) * geo.W / 2, geo.oy + (x + y) * geo.W / 4];
+    return geo.square
+      ? [geo.ox + (x - y) * geo.U / 2, geo.oy + (x + y) * geo.U / 4]
+      : [geo.ox + x * geo.U, geo.oy + y * geo.U * TILT];
+  }
+  function depth(x, y) {
+    return iso(x, y)[1];
   }
   function cellAt(mx, my) {
-    const dx = (mx - geo.ox) / (geo.W / 2);
-    const dy = (my - geo.oy) / (geo.W / 4);
-    const x = Math.round((dy + dx) / 2);
-    const y = Math.round((dy - dx) / 2);
-    if (x < 0 || y < 0 || x >= R.side || y >= R.side) return null;
-    return y * R.side + x;
+    if (geo.square) {
+      const dx = (mx - geo.ox) / (geo.U / 2);
+      const dy = (my - geo.oy) / (geo.U / 4);
+      const x = Math.round((dy + dx) / 2);
+      const y = Math.round((dy - dx) / 2);
+      if (x < 0 || y < 0 || x >= R.side || y >= R.side) return null;
+      return y * R.side + x;
+    }
+    let best = null, bestD = Infinity;
+    for (let c = 0; c < R.board.cells.length; c++) {
+      const [sx, sy] = iso(R.board.cells[c][0], R.board.cells[c][1]);
+      const d = (sx - mx) ** 2 + ((sy - my) / TILT) ** 2;
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    const limit = R.board.kind === "hex" ? 0.6 : 0.45;
+    return bestD <= (geo.U * limit) ** 2 ? best : null;
   }
 
   // ----- Zeichnen ----------------------------------------------------------------------------
-  function diamond(cx, cy, W) {
+  /** Umriss eines Feldes als Pfad, um seinen Mittelpunkt skaliert. */
+  function cellPath(cell, scale) {
+    const [cx, cy] = R.board.cells[cell];
     ctx.beginPath();
-    ctx.moveTo(cx, cy - W / 4);
-    ctx.lineTo(cx + W / 2, cy);
-    ctx.lineTo(cx, cy + W / 4);
-    ctx.lineTo(cx - W / 2, cy);
+    R.board.shapes[cell].forEach(([x, y], i) => {
+      const [sx, sy] = iso(cx + (x - cx) * scale, cy + (y - cy) * scale);
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    });
     ctx.closePath();
+  }
+  /** Feine Musterung wie beim Schachbrett: abwechselnd hellere und dunklere Felder. */
+  function tileShade(cell) {
+    const [x, y] = R.board.cells[cell];
+    if (R.board.kind === "square") return (x + y) % 2 === 0 ? 0.1 : -0.02;
+    if (R.board.kind === "triangle") {
+      const above = R.board.shapes[cell].filter((p) => p[1] < y).length;
+      return above === 1 ? 0.08 : -0.03;
+    }
+    const r = Math.round(y / 0.8660254);
+    const q = Math.round(x - r / 2);
+    return [0.09, 0.0, -0.05][(((q - r) % 3) + 3) % 3];
   }
 
   function drawTile(cell) {
-    const [x, y] = R.board.cells[cell];
-    const [cx, cy] = iso(x, y);
-    const { W, thick } = geo;
     const t = R.territories[cell];
     const base = t >= 0 ? TERRAIN[t % TERRAIN.length].top : NEUTRAL.top;
-    // Schachbrett-Anklang: jedes zweite Feld etwas heller
-    const top = (x + y) % 2 === 0 ? shade(base, 0.1) : shade(base, -0.02);
-    // Seitenflaechen (nur am vorderen Rand sichtbar, Malerreihenfolge erledigt den Rest)
-    ctx.fillStyle = shade(base, -0.35);
-    ctx.beginPath();
-    ctx.moveTo(cx - W / 2, cy); ctx.lineTo(cx, cy + W / 4); ctx.lineTo(cx, cy + W / 4 + thick); ctx.lineTo(cx - W / 2, cy + thick);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = shade(base, -0.5);
-    ctx.beginPath();
-    ctx.moveTo(cx + W / 2, cy); ctx.lineTo(cx, cy + W / 4); ctx.lineTo(cx, cy + W / 4 + thick); ctx.lineTo(cx + W / 2, cy + thick);
-    ctx.closePath(); ctx.fill();
-    diamond(cx, cy, W);
-    ctx.fillStyle = top;
+    // Sockel: derselbe Umriss etwas tiefer und dunkler; vordere Felder verdecken ihn spaeter
+    ctx.save();
+    ctx.translate(0, geo.thick);
+    cellPath(cell, 1);
+    ctx.fillStyle = shade(base, -0.45);
     ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.restore();
+    cellPath(cell, 1);
+    ctx.fillStyle = shade(base, tileShade(cell));
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.14)";
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 
   function outlineCell(cell, color, fillAlpha) {
-    const [x, y] = R.board.cells[cell];
-    const [cx, cy] = iso(x, y);
-    diamond(cx, cy, geo.W * 0.92);
+    cellPath(cell, 0.86);
     if (fillAlpha) {
       ctx.globalAlpha = fillAlpha; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
     }
@@ -415,9 +462,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   }
 
   function markCell(cell, color) {
-    const [x, y] = R.board.cells[cell];
-    const [cx, cy] = iso(x, y);
-    diamond(cx, cy, geo.W * 0.42);
+    cellPath(cell, 0.42);
     ctx.globalAlpha = 0.75; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
     ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
   }
@@ -465,7 +510,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     if (!list.length) return;
     const [x, y] = R.board.cells[cell];
     const [cx, cy] = iso(x, y);
-    const s = geo.W * 0.32;
+    const s = geo.W * (list.length > 1 && !geo.square ? 0.27 : 0.32);
     ctx.globalAlpha = dim ? 0.35 : 1;
     list.forEach((res, k) => {
       const off = list.length === 1 ? 0 : (k === 0 ? -1 : 1) * geo.W * 0.15;
@@ -593,6 +638,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 1; ctx.stroke();
   }
   function drawLabels() {
+    if (!geo.square) return;
     const { W } = geo;
     ctx.fillStyle = cssVar("--label") || "#666";
     ctx.font = `500 ${Math.max(9, Math.round(W * 0.18))}px ${cssVar("--font-data") || "monospace"}`;
@@ -627,7 +673,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     for (let c = 0; c < R.board.cells.length; c++) order.push(c);
     order.sort((a, b) => {
       const [ax, ay] = R.board.cells[a], [bx, by] = R.board.cells[b];
-      return ax + ay - (bx + by) || ax - bx;
+      return depth(ax, ay) - depth(bx, by) || ax - bx;
     });
     for (const c of order) drawTile(c);
     drawLabels();
@@ -668,7 +714,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     for (let c = 0; c < R.deposits.length; c++) {
       if (R.deposits[c].length) {
         const [x, y] = R.board.cells[c];
-        objs.push({ d: x + y, o: 0, x, fn: () => drawDeposits(c, occupied.has(c) || built.has(c)) });
+        objs.push({ d: depth(x, y), o: 0, x, fn: () => drawDeposits(c, occupied.has(c) || built.has(c)) });
       }
     }
     R.board.corners.forEach((cell, corner) => {
@@ -676,22 +722,22 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       const [x, y] = R.board.cells[cell];
       const color = p >= 0 ? PLAYER[p].color : "#f4f4ef";
       if (p >= 0 && !f.alive[p]) return;
-      objs.push({ d: x + y - 0.01, o: 1, x, fn: () => drawFlag(cell, color) });
+      objs.push({ d: depth(x, y) - 0.01, o: 1, x, fn: () => drawFlag(cell, color) });
     });
     for (const l of f.loot) {
       const [x, y] = R.board.cells[l.cell];
-      objs.push({ d: x + y, o: 2, x, fn: () => { const [cx, cy] = iso(x, y); drawLoot(cx - geo.W * 0.18, cy + geo.W * 0.04); } });
+      objs.push({ d: depth(x, y), o: 2, x, fn: () => { const [cx, cy] = iso(x, y); drawLoot(cx - geo.W * 0.18, cy + geo.W * 0.04); } });
     }
     for (const fac of f.factories) {
       const [x, y] = R.board.cells[fac.cell];
       const fresh = prev && !prev.fById.has(fac.id);
-      objs.push({ d: x + y, o: 3, x, alpha: fresh ? k : 1, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, total(fac.storage)); } });
+      objs.push({ d: depth(x, y), o: 3, x, alpha: fresh ? k : 1, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, total(fac.storage)); } });
     }
     if (prev) {
       for (const fac of prev.factories) {
         if (!f.fById.has(fac.id)) {
           const [x, y] = R.board.cells[fac.cell];
-          objs.push({ d: x + y, o: 3, x, alpha: 1 - k, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, 0); } });
+          objs.push({ d: depth(x, y), o: 3, x, alpha: 1 - k, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, 0); } });
         }
       }
     }
@@ -705,13 +751,13 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
           x = x0 + (x1 - x0) * k; y = y0 + (y1 - y0) * k;
         } else if (!before) alpha = k;
       }
-      objs.push({ d: x + y + 0.001, o: 4, x, alpha, fn: () => drawPiece(p, x, y) });
+      objs.push({ d: depth(x, y) + 0.001, o: 4, x, alpha, fn: () => drawPiece(p, x, y) });
     }
     if (prev) {
       for (const p of prev.pieces) {
         if (!f.byId.has(p.id)) {
           const [x, y] = R.board.cells[p.cell];
-          objs.push({ d: x + y, o: 4, x, alpha: 1 - k, fn: () => drawPiece(p, x, y) });
+          objs.push({ d: depth(x, y), o: 4, x, alpha: 1 - k, fn: () => drawPiece(p, x, y) });
         }
       }
     }

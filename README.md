@@ -18,7 +18,7 @@ Module in `game_core`:
 
 | Modul | Aufgabe |
 |---|---|
-| `board` | Quadratgitter, Nachbarn, Richtungen, Abstaende, Gebiete der Startecken |
+| `board` | Quadrat-, Dreiecks- und Hexgitter: Nachbarn, gerade Linien, Abstaende, Gebiete |
 | `map` | Kartengenerator (Rohstoff-Adern, Kat-1-Garantie, Fairnesspruefung) |
 | `config` | alle einstellbaren Zahlen |
 | `state` | Figuren, Fabriken, Beute, Gepaeck, Rohstoff-Buchfuehrung |
@@ -93,13 +93,14 @@ cargo test --workspace
 
 ## Stand: Meilenstein 1
 
-Umgesetzt: 2 und 4 Spieler auf der Quadratkarte; Kartengenerator mit Fairnesspruefung;
+Umgesetzt: 2 bis 8 Spieler (2 und 4: Quadrat, 3: Dreieck aus Dreiecksfeldern, 5 bis 8:
+regelmaessiges Vieleck aus Hexfeldern; ab 6 Spielern eine vierte Rohstoffkategorie); Kartengenerator mit Fairnesspruefung;
 Koenig sammelt, baut Fabriken, laedt ab; Fabriken sammeln Kat 2/3 vom eigenen Feld und den
 Nachbarfeldern (im Quadratgitter 5 Felder); Aufloesen in Figuren (Stufe = Zahl der
 Kat-1-Farben, Reichweite = hoechste Kategorie); Stufe 1 zieht gerade, ab Stufe 2 frei;
 Schlagen wie im Schach; Fabrik-Einnahme mit Beute, die nur Koenige aufnehmen; Koenig faellt =
 Spieler raus; Unentschieden nach `max_rounds`.
 
-Noch nicht umgesetzt: 3 und 5–8 Spieler (Dreiecks-/Hexfelder), verdeckte Karte, Forschung,
+Noch nicht umgesetzt: verdeckte Karte, Forschung,
 Kachel-Zukauf, Nebenfiguren aus Nebenrohstoffen, Nahrung und Kombos, Zugzeit, Netzwerkprotokoll,
 Godot-Client.

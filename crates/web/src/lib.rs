@@ -150,13 +150,27 @@ mod tests {
 
     #[test]
     fn invalid_settings_are_reported() {
-        assert_eq!(sv_new_game(3, 1, 0, 0, 0), 1);
+        assert_eq!(sv_new_game(9, 1, 0, 0, 0), 1);
         assert!(out().contains("error"));
         assert_eq!(sv_new_game(2, 1, 0, 3, 0), 1, "Seitenlaenge 3 ist zu klein");
         assert_eq!(sv_new_game(2, 1, 0, 0, 9), 1);
         assert!(out().contains("Gegnerart"));
         assert_eq!(sv_new_game(0, 1, 0, 0, 0), 1);
         assert_eq!(sv_new_game(300, 1, 0, 0, 0), 1);
+    }
+
+    #[test]
+    fn every_player_count_from_two_to_eight_starts() {
+        for (players, kind) in [
+            (2, "square"),
+            (3, "triangle"),
+            (4, "square"),
+            (5, "hex"),
+            (8, "hex"),
+        ] {
+            assert_eq!(sv_new_game(players, 3, 0, 0, 0), 0, "{players}: {}", out());
+            assert!(out().contains(&format!("\"kind\":\"{kind}\"")));
+        }
     }
 
     #[test]

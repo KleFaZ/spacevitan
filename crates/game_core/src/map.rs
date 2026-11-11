@@ -1,7 +1,7 @@
 //! Karte mit Rohstoffvorkommen, deterministisch aus einem Seed erzeugt, mit Fairnesspruefung.
 //!
 //! Regeln aus dem Regelwerk (Abschnitt 3):
-//! - je Startecke 1 Kat-1-Typ, 2 Kat-2-Typen, 3 Kat-3-Typen
+//! - je Startecke 1 Kat-1-Typ, 2 Kat-2-Typen, 3 Kat-3-Typen (ab 6 Ecken zusaetzlich 4 Kat-4-Typen)
 //! - Rohstoffe liegen primaer im Gebiet ihrer Ecke (Startposition bis Mitte), vereinzelt anderswo
 //! - Kat 1 liegt immer im Gebiet der Ecke, der erste Fundort 1 bis 2 Schritte vom Start
 //! - Adern: zusammenhaengende Felder; ein Feld kann mehrere Rohstoffe tragen
@@ -15,7 +15,7 @@ use crate::rng::Rng;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResourceType {
     pub id: ResourceId,
-    /// 1 = Hauptrohstoff (am seltensten), 2, 3.
+    /// 1 = Hauptrohstoff (am seltensten), 2, 3, 4.
     pub category: u8,
     /// Ecke (Index in `Board::corners`), zu deren Gebiet der Rohstoff gehoert.
     pub home_corner: usize,
@@ -57,7 +57,7 @@ impl From<BoardError> for MapError {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Map {
     pub board: Board,
     pub resource_types: Vec<ResourceType>,
@@ -77,7 +77,7 @@ pub struct CornerStats {
     /// Kuerzester Abstand vom Start zu einem Vorkommen des eigenen Kat-1-Typs.
     pub cat1_first_distance: Option<u32>,
     /// Rohstoffvorkommen je Kategorie (Index 0 = Kat 1) im Radius um den Start.
-    pub near_counts: [u32; 3],
+    pub near_counts: Vec<u32>,
     /// Vorkommen des eigenen Kat-1-Typs im eigenen Gebiet.
     pub cat1_in_territory: u32,
 }
@@ -104,9 +104,9 @@ impl Map {
     /// Erzeugt eine faire Karte. Gleiche Einstellungen und gleicher Seed ergeben dieselbe Karte.
     pub fn generate(config: &Config) -> Result<Map, MapError> {
         config.validate()?;
-        let board = Board::square(config.side)?;
+        let board = config.make_board()?;
         let territories = board.territories();
-        let resource_types = make_types(config.corner_count());
+        let resource_types = make_types(config.corner_count(), config.category_count());
         let mut base = Rng::new(config.seed);
         for attempt in 1..=config.max_generator_attempts {
             let mut rng = base.fork(attempt as u64);
@@ -131,32 +131,33 @@ impl Map {
         })
     }
 
-    /// Karte als Text: `S0`..`S3` = Startecken, Ziffern = Kategorien der Vorkommen auf dem Feld
-    /// (seltenste zuerst), `.` = leer.
+    /// Karte als Text: `S0`.. = Startecken, Ziffern = Kategorien der Vorkommen auf dem Feld
+    /// (seltenste zuerst), `.` = leer. Hex- und Dreiecksfelder werden versetzt angeordnet.
     pub fn render_ascii(&self) -> String {
-        let side = self.board.side() as i32;
-        let mut out = String::new();
-        for y in 0..side {
-            for x in 0..side {
-                let cell = self.board.cell_at(x, y).expect("Feld liegt auf dem Brett");
-                let text = if let Some(i) = self.board.corners().iter().position(|&c| c == cell) {
-                    format!("S{i}")
-                } else if self.deposits_at(cell).is_empty() {
-                    ".".to_string()
-                } else {
-                    let mut cats: Vec<u8> = self
-                        .deposits_at(cell)
-                        .iter()
-                        .map(|&r| self.category(r))
-                        .collect();
-                    cats.sort();
-                    cats.iter().map(|c| c.to_string()).collect::<String>()
-                };
-                out.push_str(&format!("{text:>3}"));
+        crate::render::board_text(&self.board, |cell| {
+            if let Some(i) = self.board.corners().iter().position(|&c| c == cell) {
+                format!("S{i}")
+            } else if self.deposits_at(cell).is_empty() {
+                ".".to_string()
+            } else {
+                let mut cats: Vec<u8> = self
+                    .deposits_at(cell)
+                    .iter()
+                    .map(|&r| self.category(r))
+                    .collect();
+                cats.sort();
+                cats.iter().map(|c| c.to_string()).collect::<String>()
             }
-            out.push('\n');
-        }
-        out
+        })
+    }
+
+    /// Anzahl Rohstoffkategorien auf dieser Karte.
+    pub fn category_count(&self) -> u8 {
+        self.resource_types
+            .iter()
+            .map(|t| t.category)
+            .max()
+            .unwrap_or(0)
     }
 
     pub fn resource_type(&self, id: ResourceId) -> &ResourceType {
@@ -203,7 +204,7 @@ impl Map {
             let dist = self.board.distances_from(start);
             let cat1 = self.cat1_type_of_corner(corner);
             let mut first: Option<u32> = None;
-            let mut near = [0u32; 3];
+            let mut near = vec![0u32; self.category_count() as usize];
             let mut cat1_in_territory = 0;
             for cell in self.board.cells() {
                 for &res in self.deposits_at(cell) {
@@ -249,7 +250,7 @@ impl Map {
                 });
             }
         }
-        for cat in 0..3 {
+        for cat in 0..self.category_count() as usize {
             let values: Vec<u32> = stats.iter().map(|s| s.near_counts[cat]).collect();
             let (min, max) = (
                 *values.iter().min().expect("mindestens eine Ecke"),
@@ -267,12 +268,12 @@ impl Map {
     }
 }
 
-/// Typen je Ecke: 1x Kat 1, 2x Kat 2, 3x Kat 3. IDs laufen ecken-weise durch.
-fn make_types(corners: usize) -> Vec<ResourceType> {
+/// Typen je Ecke: Kat k kommt k-mal vor (1x Kat 1, 2x Kat 2, ...). IDs laufen ecken-weise durch.
+fn make_types(corners: usize, categories: u8) -> Vec<ResourceType> {
     let mut types = Vec::new();
     for corner in 0..corners {
-        for (category, count) in [(1u8, 1usize), (2, 2), (3, 3)] {
-            for _ in 0..count {
+        for category in 1..=categories {
+            for _ in 0..category {
                 types.push(ResourceType {
                     id: ResourceId(types.len() as u16),
                     category,
@@ -295,24 +296,64 @@ fn place_all(
     let mut deposits: Vec<Vec<ResourceId>> = vec![Vec::new(); board.len()];
     let cap = config.max_resources_per_cell;
     let start_cells: Vec<CellId> = board.corners().to_vec();
+    let corners = board.corners().len();
+    let dists: Vec<Vec<u32>> = start_cells
+        .iter()
+        .map(|&c| board.distances_from(c))
+        .collect();
 
-    for corner in 0..board.corners().len() {
+    // Fairness bei Zufall: Jeder Typ (gleiche Position in der Typenliste jeder Ecke) bekommt einen
+    // gemeinsamen Zielabstand zum Start. Jede Ecke legt ihn in diesem Abstand ab, aber in eigener,
+    // zufaelliger Richtung. So hat jeder Spieler gleich viel in Reichweite.
+    let reach = (0..corners)
+        .map(|c| {
+            board
+                .cells()
+                .filter(|cell| territories[cell.idx()] == Some(c))
+                .map(|cell| dists[c][cell.idx()])
+                .max()
+                .unwrap_or(2)
+        })
+        .min()
+        .unwrap_or(2)
+        .max(2);
+    let pattern: Vec<&ResourceType> = types.iter().filter(|t| t.home_corner == 0).collect();
+    let targets: Vec<u32> = pattern
+        .iter()
+        .map(|t| {
+            if t.category == 1 {
+                1 + rng.below(2) as u32
+            } else {
+                2 + rng.below(reach as usize - 1) as u32
+            }
+        })
+        .collect();
+
+    for (corner, dist) in dists.iter().enumerate() {
         let start = board.corners()[corner];
-        let dist = board.distances_from(start);
         let in_home = |cell: CellId, deposits: &[Vec<ResourceId>]| {
             territories[cell.idx()] == Some(corner)
                 && cell != start
                 && deposits[cell.idx()].len() < cap
         };
 
-        for ty in types.iter().filter(|t| t.home_corner == corner) {
+        for (slot, ty) in types.iter().filter(|t| t.home_corner == corner).enumerate() {
             let size = config.cells_per_type[ty.category as usize - 1] as usize;
+            let target = targets[slot];
 
-            let seeds: Vec<CellId> = board
-                .cells()
-                .filter(|&c| in_home(c, &deposits))
-                .filter(|&c| ty.category != 1 || (1..=2).contains(&dist[c.idx()]))
-                .collect();
+            // Moeglichst genau im Zielabstand; wenn dort kein Platz ist, schrittweise daneben.
+            let mut seeds: Vec<CellId> = Vec::new();
+            for spread in 0..=reach {
+                seeds = board
+                    .cells()
+                    .filter(|&c| in_home(c, &deposits))
+                    .filter(|&c| dist[c.idx()].abs_diff(target) <= spread)
+                    .filter(|&c| ty.category != 1 || (1..=2).contains(&dist[c.idx()]))
+                    .collect();
+                if !seeds.is_empty() {
+                    break;
+                }
+            }
             let seed = *rng.pick(&seeds)?;
 
             let mut vein = vec![seed];
@@ -539,7 +580,7 @@ mod tests {
         for seed in 0..20 {
             let mut c = cfg(4, seed);
             c.stray_chance = 0.0;
-            c.cells_per_type = [3, 3, 4];
+            c.cells_per_type = [3, 3, 4, 4];
             let m = Map::generate(&c).unwrap();
             for t in &m.resource_types {
                 assert!(connected(&m, &deposit_cells(&m, t.id)), "{t:?} seed {seed}");
@@ -661,6 +702,77 @@ mod tests {
     }
 
     #[test]
+    fn every_player_count_gets_a_fair_map_on_its_own_grid() {
+        for players in [3u8, 5, 6, 7, 8] {
+            for seed in 0..25 {
+                let (c, m) = generate(players, seed);
+                assert_eq!(m.board.kind(), c.grid_kind());
+                assert!(m.fairness_issues(&c).is_empty());
+                for s in m.corner_stats(&c) {
+                    let d = s.cat1_first_distance.unwrap();
+                    assert!((1..=2).contains(&d), "{players} Spieler, seed {seed}");
+                }
+                for &corner in m.board.corners() {
+                    assert!(m.deposits_at(corner).is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn from_six_corners_on_there_is_a_fourth_category() {
+        for (players, cats) in [(5u8, 3u8), (6, 4), (8, 4)] {
+            let (c, m) = generate(players, 1);
+            assert_eq!(m.category_count(), cats);
+            let per_corner: usize = (1..=cats as usize).sum();
+            assert_eq!(m.resource_types.len(), c.corner_count() * per_corner);
+            for t in &m.resource_types {
+                let n = deposit_cells(&m, t.id).len() as u32;
+                assert_eq!(n, c.cells_per_type[t.category as usize - 1]);
+            }
+        }
+    }
+
+    #[test]
+    fn small_and_large_boards_of_every_kind_can_be_generated() {
+        for players in [3u8, 5, 6, 8] {
+            let probe = cfg(players, 0);
+            let (min, _) = probe.side_range();
+            for side in [min, min + 2, 14] {
+                for seed in 0..10 {
+                    let mut c = cfg(players, seed);
+                    c.side = side;
+                    Map::generate(&c).unwrap_or_else(|e| {
+                        panic!("{players} Spieler, Seite {side}, seed {seed}: {e}")
+                    });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ascii_rendering_works_for_triangles_and_hexes() {
+        for players in [3u8, 6] {
+            let (_, m) = generate(players, 2);
+            let text = m.render_ascii();
+            for i in 0..m.board.corners().len() {
+                assert_eq!(
+                    text.matches(&format!("S{i}")).count(),
+                    1,
+                    "{players} Spieler"
+                );
+            }
+            let marks = text
+                .matches(|c: char| c == '.' || c.is_ascii_digit())
+                .count();
+            assert!(
+                marks >= m.board.len() - m.board.corners().len(),
+                "jedes Feld erscheint"
+            );
+        }
+    }
+
+    #[test]
     fn ascii_rendering_has_one_line_per_row_and_marks_the_corners() {
         let (_, m) = generate(4, 2);
         let text = m.render_ascii();
@@ -668,6 +780,78 @@ mod tests {
         assert!(text.lines().all(|l| l.chars().count() >= 30));
         for tag in ["S0", "S1", "S2", "S3"] {
             assert_eq!(text.matches(tag).count(), 1, "{tag}");
+        }
+    }
+
+    /// Entwicklerwerkzeug: warum scheitert die Erzeugung? `-- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn diagnose_generation() {
+        for (players, side) in [
+            (3u8, 6u32),
+            (3, 7),
+            (3, 8),
+            (5, 6),
+            (5, 7),
+            (5, 8),
+            (6, 7),
+            (6, 8),
+            (7, 7),
+            (7, 8),
+            (8, 7),
+            (8, 8),
+        ] {
+            let mut c = cfg(players, 1);
+            c.side = side;
+            let board = c.make_board().unwrap();
+            let territories = board.territories();
+            let types = make_types(c.corner_count(), c.category_count());
+            let mut hist: BTreeMap<String, u32> = BTreeMap::new();
+            let mut base = Rng::new(1);
+            let mut placed = 0;
+            let mut fair = 0;
+            for attempt in 1..=200u64 {
+                let mut rng = base.fork(attempt);
+                match place_all(&c, &board, &territories, &types, &mut rng) {
+                    None => *hist.entry("kein Platz".into()).or_default() += 1,
+                    Some(deposits) => {
+                        placed += 1;
+                        let m = Map {
+                            board: board.clone(),
+                            resource_types: types.clone(),
+                            deposits,
+                            territories: territories.clone(),
+                            player_corners: c.player_corners(),
+                            attempts_used: 0,
+                        };
+                        let issues = m.fairness_issues(&c);
+                        if issues.is_empty() {
+                            fair += 1;
+                        }
+                        for issue in issues {
+                            let key = match issue {
+                                FairnessIssue::Cat1TooFarOrMissing { .. } => {
+                                    "Kat1 zu weit".to_string()
+                                }
+                                FairnessIssue::Cat1NotInTerritory { .. } => {
+                                    "Kat1 nicht im Gebiet".to_string()
+                                }
+                                FairnessIssue::NearCountsUneven { category, .. } => {
+                                    format!("ungleich Kat {category}")
+                                }
+                            };
+                            *hist.entry(key).or_default() += 1;
+                        }
+                    }
+                }
+            }
+            let sizes: Vec<usize> = (0..board.corners().len())
+                .map(|i| territories.iter().filter(|t| **t == Some(i)).count())
+                .collect();
+            println!(
+                "{players} Spieler, Seite {side}: {} Felder, Gebiete {sizes:?}, platziert {placed}/200, fair {fair}, {hist:?}",
+                board.len()
+            );
         }
     }
 
@@ -693,8 +877,8 @@ mod tests {
     #[test]
     fn invalid_configs_are_reported_not_panicked() {
         assert!(matches!(
-            Map::generate(&cfg(3, 1)),
-            Err(MapError::Config(ConfigError::UnsupportedPlayers(3)))
+            Map::generate(&cfg(9, 1)),
+            Err(MapError::Config(ConfigError::UnsupportedPlayers(9)))
         ));
         let mut c = cfg(2, 1);
         c.side = 3;
@@ -705,7 +889,7 @@ mod tests {
     fn impossible_density_fails_cleanly_instead_of_looping_forever() {
         let mut c = cfg(4, 1);
         c.side = 6;
-        c.cells_per_type = [5, 9, 9];
+        c.cells_per_type = [5, 9, 9, 9];
         c.max_resources_per_cell = 1;
         c.max_generator_attempts = 20;
         assert_eq!(

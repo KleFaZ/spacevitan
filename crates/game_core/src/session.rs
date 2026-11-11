@@ -213,10 +213,10 @@ mod tests {
     fn the_number_of_seats_must_match_the_players() {
         let config = Config::new(4, 1);
         assert!(Session::new(config, &[SeatKind::Human, SeatKind::Greedy]).is_err());
-        let config = Config::new(3, 1);
+        let config = Config::new(9, 1);
         assert!(
-            Session::new(config, &[SeatKind::Human; 3]).is_err(),
-            "3 Spieler noch nicht"
+            Session::new(config, &[SeatKind::Human; 9]).is_err(),
+            "9 Spieler gibt es nicht"
         );
     }
 

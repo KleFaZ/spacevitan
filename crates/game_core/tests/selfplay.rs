@@ -80,6 +80,37 @@ fn greedy_four_player_games_never_break_an_invariant() {
 }
 
 #[test]
+fn random_games_on_triangle_and_hex_boards_never_break_an_invariant() {
+    for players in [3u8, 5, 6, 7, 8] {
+        for seed in 0..4 {
+            let (game, _) = checked(players, seed, 60, &vec!["random"; players as usize]);
+            assert!(game.outcome().is_some());
+        }
+    }
+}
+
+#[test]
+fn greedy_games_on_triangle_and_hex_boards_never_break_an_invariant() {
+    for players in [3u8, 5, 6, 8] {
+        for seed in 0..2 {
+            let (game, _) = checked(players, seed, 120, &vec!["greedy"; players as usize]);
+            assert!(game.outcome().is_some());
+        }
+    }
+}
+
+#[test]
+fn greedy_bots_can_win_on_the_triangle() {
+    let winners = (0..10)
+        .filter(|&seed| matches!(checked(3, seed, 300, &["greedy"; 3]).1, Outcome::Winner(_)))
+        .count();
+    assert!(
+        winners >= 3,
+        "nur {winners} von 10 Dreier-Partien mit Sieger"
+    );
+}
+
+#[test]
 fn the_greedy_bot_beats_the_random_bot() {
     let mut greedy_wins = 0;
     for seed in 0..20 {
@@ -123,8 +154,8 @@ fn legal_actions_and_apply_agree_on_every_action_including_junk() {
     let mut rng = Rng::new(2024);
     let mut checked_states = 0;
     for seed in 0..10 {
-        for players in [2u8, 4] {
-            let mut game = Game::new(config(players, seed, 80)).expect("Karte");
+        for players in [2u8, 3, 4, 6] {
+            let mut game = Game::new(config(players, seed, 60)).expect("Karte");
             let mut driver = GreedyBot::new(seed);
             let mut turn = 0;
             while game.outcome().is_none() {

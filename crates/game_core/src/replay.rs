@@ -5,7 +5,6 @@
 //! Zellen, Figuren, Fabriken und Rohstoffe werden ueber ihre numerischen IDs referenziert.
 
 use crate::action::{Action, Event};
-use crate::board::GridKind;
 use crate::game::Game;
 use crate::ids::PlayerId;
 use crate::state::{Inventory, Outcome, PieceKind};
@@ -34,6 +33,21 @@ fn esc(s: &str) -> String {
 fn list<T>(items: impl IntoIterator<Item = T>, f: impl Fn(T) -> String) -> String {
     let parts: Vec<String> = items.into_iter().map(f).collect();
     format!("[{}]", parts.join(","))
+}
+
+/// Zahl mit hoechstens 4 Nachkommastellen, ohne ueberfluessige Nullen (`1.5`, `3`, `-0.25`).
+fn num(v: f64) -> String {
+    let s = format!("{v:.4}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" || s.is_empty() {
+        "0".to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+fn point(p: (f64, f64)) -> String {
+    format!("[{},{}]", num(p.0), num(p.1))
 }
 
 /// Rohstoffmengen als `[[typ, menge], ...]`.
@@ -195,18 +209,17 @@ pub fn state_json(game: &Game) -> String {
 pub fn header_json(game: &Game, bots: &[String]) -> String {
     let c = &game.config;
     let m = &game.map;
-    let kind = match m.board.kind() {
-        GridKind::Square => "square",
-    };
     let board = format!(
-        r#"{{"kind":{},"side":{},"cells":{},"corners":{}}}"#,
-        esc(kind),
+        r#"{{"kind":{},"side":{},"cells":{},"corners":{},"shapes":{},"outline":{}}}"#,
+        esc(m.board.kind().name()),
         m.board.side(),
-        list(m.board.cells(), |cell| {
-            let (x, y) = m.board.coord(cell);
-            format!("[{x},{y}]")
-        }),
-        list(m.board.corners().iter(), |cell| cell.0.to_string())
+        list(m.board.cells(), |cell| point(m.board.pos(cell))),
+        list(m.board.corners().iter(), |cell| cell.0.to_string()),
+        list(m.board.cells(), |cell| list(
+            m.board.shape(cell).iter(),
+            |&p| point(p)
+        )),
+        list(m.board.outline().iter(), |&p| point(p))
     );
     let types = list(m.resource_types.iter(), |t| {
         format!(
@@ -320,6 +333,28 @@ mod tests {
         assert!(validate("[1,2").is_err());
         assert!(validate("{} x").is_err());
         assert!(validate("\"offen").is_err());
+    }
+
+    #[test]
+    fn numbers_are_short_and_valid() {
+        assert_eq!(num(3.0), "3");
+        assert_eq!(num(1.5), "1.5");
+        assert_eq!(num(-0.25), "-0.25");
+        assert_eq!(num(-0.00001), "0");
+        assert_eq!(num(0.866_025_4), "0.866");
+        assert_eq!(point((2.0, 0.5)), "[2,0.5]");
+    }
+
+    #[test]
+    fn hex_and_triangle_games_export_their_shapes() {
+        for (players, kind) in [(3u8, "triangle"), (6, "hex")] {
+            let (game, json, _) = record(players, 4, &vec!["gierig"; players as usize]);
+            validate(&json).unwrap();
+            assert!(json.contains(&format!(r#""kind":"{kind}""#)));
+            assert!(json.contains(r#""shapes":[[["#));
+            assert!(json.contains(r#""outline":[["#));
+            assert!(game.map.board.len() > 50);
+        }
     }
 
     #[test]
