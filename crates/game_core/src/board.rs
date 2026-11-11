@@ -23,10 +23,9 @@ pub enum BoardError {
 impl std::fmt::Display for BoardError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BoardError::SideOutOfRange(s) => write!(
-                f,
-                "Seitenlaenge {s} ausserhalb von 2..={MAX_SQUARE_SIDE}"
-            ),
+            BoardError::SideOutOfRange(s) => {
+                write!(f, "Seitenlaenge {s} ausserhalb von 2..={MAX_SQUARE_SIDE}")
+            }
         }
     }
 }
@@ -286,7 +285,11 @@ mod tests {
         assert_eq!(b.step(corner, 2), None);
         assert_eq!(b.step(corner, 3), None);
         assert!(b.step(corner, 0).is_some());
-        assert_eq!(b.step(corner, 99), None, "ungueltige Richtung ist kein Absturz");
+        assert_eq!(
+            b.step(corner, 99),
+            None,
+            "ungueltige Richtung ist kein Absturz"
+        );
     }
 
     #[test]
@@ -325,7 +328,10 @@ mod tests {
         let b = board(6);
         for a in b.cells() {
             let da = b.distances_from(a);
-            assert!(da.iter().all(|&d| d != u32::MAX), "Brett nicht zusammenhaengend");
+            assert!(
+                da.iter().all(|&d| d != u32::MAX),
+                "Brett nicht zusammenhaengend"
+            );
             for c in b.cells() {
                 assert_eq!(da[c.idx()], b.distance(c, a));
             }

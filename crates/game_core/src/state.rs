@@ -164,12 +164,28 @@ impl State {
         self.factory_at[cell.idx()].and_then(|id| self.factories.get(&id))
     }
 
-    pub(crate) fn insert_piece(&mut self, owner: PlayerId, cell: CellId, kind: PieceKind) -> PieceId {
-        assert!(self.occupant[cell.idx()].is_none(), "Feld {cell:?} ist schon besetzt");
+    pub(crate) fn insert_piece(
+        &mut self,
+        owner: PlayerId,
+        cell: CellId,
+        kind: PieceKind,
+    ) -> PieceId {
+        assert!(
+            self.occupant[cell.idx()].is_none(),
+            "Feld {cell:?} ist schon besetzt"
+        );
         let id = PieceId(self.next_piece);
         self.next_piece += 1;
         self.occupant[cell.idx()] = Some(id);
-        self.pieces.insert(id, Piece { id, owner, cell, kind });
+        self.pieces.insert(
+            id,
+            Piece {
+                id,
+                owner,
+                cell,
+                kind,
+            },
+        );
         id
     }
 
@@ -180,7 +196,10 @@ impl State {
     }
 
     pub(crate) fn insert_factory(&mut self, owner: PlayerId, cell: CellId) -> FactoryId {
-        assert!(self.factory_at[cell.idx()].is_none(), "Feld {cell:?} hat schon eine Fabrik");
+        assert!(
+            self.factory_at[cell.idx()].is_none(),
+            "Feld {cell:?} hat schon eine Fabrik"
+        );
         let id = FactoryId(self.next_factory);
         self.next_factory += 1;
         self.factory_at[cell.idx()] = Some(id);

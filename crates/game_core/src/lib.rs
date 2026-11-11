@@ -5,10 +5,12 @@
 
 pub mod action;
 pub mod board;
+pub mod bot;
 pub mod config;
 pub mod game;
 pub mod ids;
 pub mod map;
+pub mod render;
 pub mod rng;
 pub mod state;
 

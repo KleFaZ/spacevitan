@@ -1,3 +1,299 @@
-fn main() {
-    println!("spacevitan cli (Geruest), game_core {}", game_core::VERSION);
+//! Text-Oberflaeche: Bots gegeneinander spielen lassen und zusehen oder Statistik sammeln.
+
+use game_core::action::Event;
+use game_core::bot::{play_out, Bot, GreedyBot, RandomBot};
+use game_core::config::Config;
+use game_core::game::Game;
+use game_core::ids::PlayerId;
+use game_core::render::{player_letter, render_game};
+use game_core::state::Outcome;
+use std::process::ExitCode;
+
+const HELP: &str = "\
+spacevitan - Bots spielen gegeneinander (Textansicht)
+
+Optionen:
+  --players N    2 oder 4 (Standard 2)
+  --seed N       Seed fuer Karte und Bots (Standard 1)
+  --side N       Kantenlaenge der Karte (Standard 10)
+  --rounds N     Unentschieden nach N Runden (Standard 300)
+  --bots LISTE   pro Spieler: gierig oder zufall, z. B. gierig,zufall (Standard: gierig)
+  --show         Partie Runde fuer Runde anzeigen
+  --games N      N Partien mit Seeds seed..seed+N-1 spielen und Statistik zeigen
+  --help         diese Hilfe
+
+Legende: A* Koenig von A, a2 Figur von A mit Stufe 2, #A Fabrik von A,
+         $ Beute, Ziffern = Rohstoffkategorien auf dem Feld, . leer";
+
+struct Options {
+    players: u8,
+    seed: u64,
+    side: u32,
+    rounds: u32,
+    bots: Vec<String>,
+    show: bool,
+    games: u32,
+}
+
+fn parse(args: &[String]) -> Result<Option<Options>, String> {
+    let mut o = Options {
+        players: 2,
+        seed: 1,
+        side: 10,
+        rounds: 300,
+        bots: Vec::new(),
+        show: false,
+        games: 1,
+    };
+    let mut i = 0;
+    let value = |i: usize| -> Result<&String, String> {
+        args.get(i + 1)
+            .ok_or_else(|| format!("{} braucht einen Wert", args[i]))
+    };
+    let number = |s: &String, name: &str| -> Result<u64, String> {
+        s.parse::<u64>()
+            .map_err(|_| format!("{name}: '{s}' ist keine Zahl"))
+    };
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => return Ok(None),
+            "--show" => o.show = true,
+            "--players" => {
+                o.players = number(value(i)?, "--players")? as u8;
+                i += 1;
+            }
+            "--seed" => {
+                o.seed = number(value(i)?, "--seed")?;
+                i += 1;
+            }
+            "--side" => {
+                o.side = number(value(i)?, "--side")? as u32;
+                i += 1;
+            }
+            "--rounds" => {
+                o.rounds = number(value(i)?, "--rounds")? as u32;
+                i += 1;
+            }
+            "--games" => {
+                o.games = (number(value(i)?, "--games")? as u32).max(1);
+                i += 1;
+            }
+            "--bots" => {
+                o.bots = value(i)?.split(',').map(|s| s.trim().to_string()).collect();
+                i += 1;
+            }
+            other => return Err(format!("unbekannte Option '{other}' (siehe --help)")),
+        }
+        i += 1;
+    }
+    Ok(Some(o))
+}
+
+fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
+    (0..o.players as usize)
+        .map(|i| {
+            let kind = o
+                .bots
+                .get(i)
+                .or(o.bots.last())
+                .map(String::as_str)
+                .unwrap_or("gierig");
+            let bot_seed = seed.wrapping_mul(1_000_003).wrapping_add(i as u64);
+            match kind {
+                "gierig" | "greedy" => Ok(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
+                "zufall" | "random" => Ok(Box::new(RandomBot::new(bot_seed)) as Box<dyn Bot>),
+                other => Err(format!("unbekannter Bot '{other}' (gierig oder zufall)")),
+            }
+        })
+        .collect()
+}
+
+#[derive(Default)]
+struct Stats {
+    wins: Vec<u32>,
+    draws: u32,
+    rounds: u64,
+    spawned: u64,
+    factories: u64,
+    captures: u64,
+}
+
+fn run() -> Result<(), String> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let Some(o) = parse(&args)? else {
+        println!("{HELP}");
+        return Ok(());
+    };
+
+    let mut stats = Stats {
+        wins: vec![0; o.players as usize],
+        ..Stats::default()
+    };
+
+    for g in 0..o.games {
+        let seed = o.seed + g as u64;
+        let mut config = Config::new(o.players, seed);
+        config.side = o.side;
+        config.max_rounds = o.rounds;
+        let mut game = Game::new(config).map_err(|e| e.to_string())?;
+        let mut bots = make_bots(&o, seed)?;
+
+        if o.show {
+            let names: Vec<String> = bots
+                .iter()
+                .enumerate()
+                .map(|(i, b)| format!("{}={}", player_letter(PlayerId(i as u8)), b.name()))
+                .collect();
+            println!(
+                "Seed {seed}, {} Spieler ({})\n",
+                o.players,
+                names.join(", ")
+            );
+            println!("Karte:\n{}", game.map.render_ascii());
+        }
+
+        let show = o.show;
+        if show {
+            println!("Start:\n{}", render_game(&game));
+        }
+        let mut last_round = 1;
+        let outcome = play_out(&mut game, &mut bots, |game, _player, _action, events| {
+            for e in events {
+                match e {
+                    Event::Spawned { .. } => stats.spawned += 1,
+                    Event::FactoryBuilt { .. } => stats.factories += 1,
+                    Event::Captured { .. } => stats.captures += 1,
+                    _ => {}
+                }
+                if show {
+                    if let Event::PlayerEliminated { player } = e {
+                        println!("Spieler {} ist ausgeschieden.", player_letter(*player));
+                    }
+                }
+            }
+            if show && game.outcome().is_none() && game.state.round != last_round {
+                println!("Nach Runde {last_round}:\n{}", render_game(game));
+                last_round = game.state.round;
+            }
+        });
+        if show {
+            println!("Endstand:\n{}", render_game(&game));
+        }
+        stats.rounds += game.state.round.min(o.rounds) as u64;
+
+        match outcome {
+            Outcome::Winner(p) => {
+                stats.wins[p.idx()] += 1;
+                if o.show || o.games == 1 {
+                    println!(
+                        "Ergebnis: Spieler {} gewinnt in Runde {}.",
+                        player_letter(p),
+                        game.state.round
+                    );
+                }
+            }
+            Outcome::Draw => {
+                stats.draws += 1;
+                if o.show || o.games == 1 {
+                    println!("Ergebnis: unentschieden nach {} Runden.", o.rounds);
+                }
+            }
+        }
+    }
+
+    if o.games > 1 {
+        let n = o.games as f64;
+        println!(
+            "{} Partien, {} Spieler, Seeds {}..{}",
+            o.games,
+            o.players,
+            o.seed,
+            o.seed + o.games as u64 - 1
+        );
+        for (i, w) in stats.wins.iter().enumerate() {
+            println!(
+                "  Siege {}: {w} ({:.0} %)",
+                player_letter(PlayerId(i as u8)),
+                *w as f64 / n * 100.0
+            );
+        }
+        println!(
+            "  Unentschieden: {} ({:.0} %)",
+            stats.draws,
+            stats.draws as f64 / n * 100.0
+        );
+        println!("  Runden im Schnitt: {:.1}", stats.rounds as f64 / n);
+        println!(
+            "  Pro Partie: {:.1} Fabriken, {:.1} Figuren erzeugt, {:.1} geschlagen",
+            stats.factories as f64 / n,
+            stats.spawned as f64 / n,
+            stats.captures as f64 / n
+        );
+    }
+    Ok(())
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Fehler: {e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(s: &str) -> Vec<String> {
+        s.split_whitespace().map(String::from).collect()
+    }
+
+    #[test]
+    fn defaults() {
+        let o = parse(&[]).unwrap().unwrap();
+        assert_eq!(
+            (o.players, o.seed, o.side, o.rounds, o.games, o.show),
+            (2, 1, 10, 300, 1, false)
+        );
+    }
+
+    #[test]
+    fn parses_all_options() {
+        let o = parse(&args(
+            "--players 4 --seed 9 --side 12 --rounds 50 --games 3 --show --bots gierig,zufall",
+        ))
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            (o.players, o.seed, o.side, o.rounds, o.games, o.show),
+            (4, 9, 12, 50, 3, true)
+        );
+        assert_eq!(o.bots, vec!["gierig", "zufall"]);
+    }
+
+    #[test]
+    fn help_and_errors() {
+        assert!(parse(&args("--help")).unwrap().is_none());
+        assert!(parse(&args("--seed")).is_err());
+        assert!(parse(&args("--seed abc")).is_err());
+        assert!(parse(&args("--frobnicate")).is_err());
+    }
+
+    #[test]
+    fn unknown_bot_names_are_rejected_and_the_last_bot_repeats() {
+        let mut o = parse(&args("--players 4 --bots zufall")).unwrap().unwrap();
+        assert_eq!(
+            make_bots(&o, 1)
+                .unwrap()
+                .iter()
+                .filter(|b| b.name() == "zufall")
+                .count(),
+            4
+        );
+        o.bots = vec!["schach".into()];
+        assert!(make_bots(&o, 1).is_err());
+    }
 }

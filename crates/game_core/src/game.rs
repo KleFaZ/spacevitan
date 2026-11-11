@@ -56,11 +56,17 @@ impl Game {
     }
 
     pub fn pieces_of(&self, player: PlayerId) -> impl Iterator<Item = &Piece> {
-        self.state.pieces.values().filter(move |p| p.owner == player)
+        self.state
+            .pieces
+            .values()
+            .filter(move |p| p.owner == player)
     }
 
     pub fn factories_of(&self, player: PlayerId) -> impl Iterator<Item = &Factory> {
-        self.state.factories.values().filter(move |f| f.owner == player)
+        self.state
+            .factories
+            .values()
+            .filter(move |f| f.owner == player)
     }
 
     pub fn alive_players(&self) -> Vec<PlayerId> {
@@ -106,7 +112,9 @@ impl Game {
                     }
                 }
             }
-            PieceKind::Unit { level: 1, range, .. } => {
+            PieceKind::Unit {
+                level: 1, range, ..
+            } => {
                 // Stufe 1: nur geradeaus, nicht ueber Figuren hinweg.
                 for dir in 0..board.dir_count() {
                     for cell in board.line(piece.cell, dir, *range as usize) {
@@ -195,7 +203,10 @@ impl Game {
 
         for piece in self.pieces_of(me) {
             for to in self.piece_destinations(piece.id) {
-                actions.push(Action::Move { piece: piece.id, to });
+                actions.push(Action::Move {
+                    piece: piece.id,
+                    to,
+                });
             }
         }
 
@@ -211,7 +222,9 @@ impl Game {
 
         for factory in self.factories_of(me) {
             if self.can_spawn(factory) {
-                actions.push(Action::SpawnPiece { factory: factory.id });
+                actions.push(Action::SpawnPiece {
+                    factory: factory.id,
+                });
             }
         }
 
@@ -327,8 +340,16 @@ impl Game {
 
         self.state.occupant[from.idx()] = None;
         self.state.occupant[to.idx()] = Some(id);
-        self.state.pieces.get_mut(&id).expect("Figur existiert").cell = to;
-        events.push(Event::Moved { piece: id, from, to });
+        self.state
+            .pieces
+            .get_mut(&id)
+            .expect("Figur existiert")
+            .cell = to;
+        events.push(Event::Moved {
+            piece: id,
+            from,
+            to,
+        });
 
         // Eine feindliche Fabrik auf dem Zielfeld wird eingenommen: zerstoert, Lager wird Beute.
         if let Some(fid) = self.state.factory_at[to.idx()] {
@@ -358,7 +379,11 @@ impl Game {
         debug_assert!(paid);
         self.state.ledger.spent_on_factories += cost as u64;
         let factory = self.state.insert_factory(actor, cell);
-        events.push(Event::FactoryBuilt { factory, owner: actor, cell });
+        events.push(Event::FactoryBuilt {
+            factory,
+            owner: actor,
+            cell,
+        });
     }
 
     fn do_spawn(&mut self, actor: PlayerId, id: FactoryId, events: &mut Vec<Event>) {
@@ -369,7 +394,11 @@ impl Game {
         let piece = self.state.insert_piece(
             actor,
             factory.cell,
-            PieceKind::Unit { level, range, colors },
+            PieceKind::Unit {
+                level,
+                range,
+                colors,
+            },
         );
         events.push(Event::Spawned {
             piece,
@@ -424,11 +453,16 @@ impl Game {
             if !gained.is_empty() {
                 let mut copy = gained.clone();
                 self.state.carried[actor.idx()].absorb(&mut copy);
-                events.push(Event::Collected { player: actor, cell: king_cell, gained });
+                events.push(Event::Collected {
+                    player: actor,
+                    cell: king_cell,
+                    gained,
+                });
             }
 
             if let Some(fid) = self.state.factory_at[king_cell.idx()] {
-                if self.state.factories[&fid].owner == actor && !self.state.carried[actor.idx()].is_empty()
+                if self.state.factories[&fid].owner == actor
+                    && !self.state.carried[actor.idx()].is_empty()
                 {
                     let mut load = std::mem::take(&mut self.state.carried[actor.idx()]);
                     let amount = load.clone();
@@ -438,7 +472,11 @@ impl Game {
                         .expect("Fabrik existiert")
                         .storage
                         .absorb(&mut load);
-                    events.push(Event::Unloaded { player: actor, factory: fid, amount });
+                    events.push(Event::Unloaded {
+                        player: actor,
+                        factory: fid,
+                        amount,
+                    });
                 }
             }
         }
@@ -464,7 +502,10 @@ impl Game {
                     .expect("Fabrik existiert")
                     .storage
                     .absorb(&mut copy);
-                events.push(Event::FactoryYield { factory: fid, gained });
+                events.push(Event::FactoryYield {
+                    factory: fid,
+                    gained,
+                });
             }
         }
     }
@@ -485,7 +526,9 @@ impl Game {
         self.state.current = PlayerId(i as u8);
         if self.state.round > self.config.max_rounds && self.state.outcome.is_none() {
             self.state.outcome = Some(Outcome::Draw);
-            events.push(Event::GameOver { outcome: Outcome::Draw });
+            events.push(Event::GameOver {
+                outcome: Outcome::Draw,
+            });
         }
     }
 
@@ -494,8 +537,15 @@ impl Game {
     /// Stellt eine Figur direkt aufs Brett. Fuer Tests und Szenarien, nicht fuer normale Zuege.
     pub fn setup_unit(&mut self, owner: PlayerId, cell: CellId, level: u8, range: u8) -> PieceId {
         let colors = (0..level).map(|i| ResourceId(i as u16)).collect();
-        self.state
-            .insert_piece(owner, cell, PieceKind::Unit { level, range, colors })
+        self.state.insert_piece(
+            owner,
+            cell,
+            PieceKind::Unit {
+                level,
+                range,
+                colors,
+            },
+        )
     }
 
     /// Stellt eine Fabrik direkt aufs Brett (ohne Kosten). Fuer Tests und Szenarien.
@@ -527,11 +577,18 @@ impl Game {
 
     /// Setzt eine Figur ohne Zug auf ein freies Feld. Fuer Tests und Szenarien.
     pub fn setup_teleport(&mut self, piece: PieceId, cell: CellId) {
-        assert!(self.state.occupant[cell.idx()].is_none(), "Zielfeld ist besetzt");
+        assert!(
+            self.state.occupant[cell.idx()].is_none(),
+            "Zielfeld ist besetzt"
+        );
         let from = self.state.pieces[&piece].cell;
         self.state.occupant[from.idx()] = None;
         self.state.occupant[cell.idx()] = Some(piece);
-        self.state.pieces.get_mut(&piece).expect("Figur existiert").cell = cell;
+        self.state
+            .pieces
+            .get_mut(&piece)
+            .expect("Figur existiert")
+            .cell = cell;
     }
 
     // ----- Selbstpruefung -------------------------------------------------------------------
@@ -546,7 +603,10 @@ impl Game {
         }
         let occupied = st.occupant.iter().flatten().count();
         if occupied != st.pieces.len() {
-            return Err(format!("{occupied} belegte Felder, aber {} Figuren", st.pieces.len()));
+            return Err(format!(
+                "{occupied} belegte Felder, aber {} Figuren",
+                st.pieces.len()
+            ));
         }
         for piece in st.pieces.values() {
             if piece.cell.idx() >= board_len {
@@ -555,7 +615,12 @@ impl Game {
             if st.occupant[piece.cell.idx()] != Some(piece.id) {
                 return Err(format!("{:?} fehlt im Feldindex", piece.id));
             }
-            if let PieceKind::Unit { level, range, colors } = &piece.kind {
+            if let PieceKind::Unit {
+                level,
+                range,
+                colors,
+            } = &piece.kind
+            {
                 if *level == 0 || *level as usize > self.config.corner_count() {
                     return Err(format!("{:?} hat ungueltige Stufe {level}", piece.id));
                 }
@@ -570,7 +635,10 @@ impl Game {
 
         let fcount = st.factory_at.iter().flatten().count();
         if fcount != st.factories.len() {
-            return Err(format!("{fcount} Fabrikfelder, aber {} Fabriken", st.factories.len()));
+            return Err(format!(
+                "{fcount} Fabrikfelder, aber {} Fabriken",
+                st.factories.len()
+            ));
         }
         for f in st.factories.values() {
             if st.factory_at[f.cell.idx()] != Some(f.id) {
@@ -585,7 +653,10 @@ impl Game {
             let dist = self.map.board.distances_from(a.cell);
             for b in &list[i + 1..] {
                 if dist[b.cell.idx()] < self.config.min_factory_distance {
-                    return Err(format!("{:?} und {:?} stehen zu nah beieinander", a.id, b.id));
+                    return Err(format!(
+                        "{:?} und {:?} stehen zu nah beieinander",
+                        a.id, b.id
+                    ));
                 }
             }
         }
@@ -598,11 +669,17 @@ impl Game {
                     return Err(format!("{player:?} lebt, hat aber {kings} Koenige"));
                 }
             } else {
-                if self.pieces_of(player).next().is_some() || self.factories_of(player).next().is_some() {
-                    return Err(format!("{player:?} ist ausgeschieden, hat aber noch Besitz"));
+                if self.pieces_of(player).next().is_some()
+                    || self.factories_of(player).next().is_some()
+                {
+                    return Err(format!(
+                        "{player:?} ist ausgeschieden, hat aber noch Besitz"
+                    ));
                 }
                 if !st.carried[p as usize].is_empty() {
-                    return Err(format!("{player:?} ist ausgeschieden, traegt aber noch Rohstoffe"));
+                    return Err(format!(
+                        "{player:?} ist ausgeschieden, traegt aber noch Rohstoffe"
+                    ));
                 }
             }
         }
@@ -619,7 +696,10 @@ impl Game {
         }
 
         let in_play: u64 = st.carried.iter().map(Inventory::total).sum::<u64>()
-            + st.factories.values().map(|f| f.storage.total()).sum::<u64>()
+            + st.factories
+                .values()
+                .map(|f| f.storage.total())
+                .sum::<u64>()
             + st.loot.values().map(Inventory::total).sum::<u64>();
         let l = st.ledger;
         let booked = in_play + l.spent_on_factories + l.consumed_by_spawns + l.vanished;

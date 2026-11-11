@@ -18,17 +18,60 @@ pub enum Action {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
-    Moved { piece: PieceId, from: CellId, to: CellId },
-    Captured { piece: PieceId, owner: PlayerId, at: CellId, by: PlayerId },
-    FactoryBuilt { factory: FactoryId, owner: PlayerId, cell: CellId },
-    FactoryDestroyed { factory: FactoryId, owner: PlayerId, cell: CellId, by: PlayerId, loot: Inventory },
-    Spawned { piece: PieceId, owner: PlayerId, factory: FactoryId, cell: CellId, level: u8, range: u8 },
-    Collected { player: PlayerId, cell: CellId, gained: Inventory },
-    Unloaded { player: PlayerId, factory: FactoryId, amount: Inventory },
-    FactoryYield { factory: FactoryId, gained: Inventory },
-    PlayerEliminated { player: PlayerId },
-    Passed { player: PlayerId },
-    GameOver { outcome: Outcome },
+    Moved {
+        piece: PieceId,
+        from: CellId,
+        to: CellId,
+    },
+    Captured {
+        piece: PieceId,
+        owner: PlayerId,
+        at: CellId,
+        by: PlayerId,
+    },
+    FactoryBuilt {
+        factory: FactoryId,
+        owner: PlayerId,
+        cell: CellId,
+    },
+    FactoryDestroyed {
+        factory: FactoryId,
+        owner: PlayerId,
+        cell: CellId,
+        by: PlayerId,
+        loot: Inventory,
+    },
+    Spawned {
+        piece: PieceId,
+        owner: PlayerId,
+        factory: FactoryId,
+        cell: CellId,
+        level: u8,
+        range: u8,
+    },
+    Collected {
+        player: PlayerId,
+        cell: CellId,
+        gained: Inventory,
+    },
+    Unloaded {
+        player: PlayerId,
+        factory: FactoryId,
+        amount: Inventory,
+    },
+    FactoryYield {
+        factory: FactoryId,
+        gained: Inventory,
+    },
+    PlayerEliminated {
+        player: PlayerId,
+    },
+    Passed {
+        player: PlayerId,
+    },
+    GameOver {
+        outcome: Outcome,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +104,9 @@ impl std::fmt::Display for IllegalReason {
             IllegalReason::OccupiedByOwnPiece => "auf dem Zielfeld steht eine eigene Figur",
             IllegalReason::CannotReach => "die Figur kann das Zielfeld nicht erreichen",
             IllegalReason::UnknownResource => "diesen Rohstoff gibt es nicht",
-            IllegalReason::PayTypeIsNotCategory1 => "bezahlt werden kann nur mit einem Kat-1-Rohstoff",
+            IllegalReason::PayTypeIsNotCategory1 => {
+                "bezahlt werden kann nur mit einem Kat-1-Rohstoff"
+            }
             IllegalReason::NotEnoughToPay => "der Koenig traegt nicht genug von diesem Rohstoff",
             IllegalReason::FactoryAlreadyHere => "hier steht schon eine Fabrik",
             IllegalReason::TooCloseToAnotherFactory => "zu nah an einer anderen Fabrik",

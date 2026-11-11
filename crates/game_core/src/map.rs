@@ -26,7 +26,9 @@ pub enum MapError {
     Config(ConfigError),
     Board(BoardError),
     /// Auch nach allen Versuchen keine faire Karte gefunden.
-    GenerationFailed { attempts: u32 },
+    GenerationFailed {
+        attempts: u32,
+    },
 }
 
 impl std::fmt::Display for MapError {
@@ -82,9 +84,20 @@ pub struct CornerStats {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FairnessIssue {
-    Cat1TooFarOrMissing { corner: usize, distance: Option<u32> },
-    Cat1NotInTerritory { corner: usize, found: u32, expected: u32 },
-    NearCountsUneven { category: u8, min: u32, max: u32 },
+    Cat1TooFarOrMissing {
+        corner: usize,
+        distance: Option<u32>,
+    },
+    Cat1NotInTerritory {
+        corner: usize,
+        found: u32,
+        expected: u32,
+    },
+    NearCountsUneven {
+        category: u8,
+        min: u32,
+        max: u32,
+    },
 }
 
 impl Map {
@@ -131,8 +144,11 @@ impl Map {
                 } else if self.deposits_at(cell).is_empty() {
                     ".".to_string()
                 } else {
-                    let mut cats: Vec<u8> =
-                        self.deposits_at(cell).iter().map(|&r| self.category(r)).collect();
+                    let mut cats: Vec<u8> = self
+                        .deposits_at(cell)
+                        .iter()
+                        .map(|&r| self.category(r))
+                        .collect();
                     cats.sort();
                     cats.iter().map(|c| c.to_string()).collect::<String>()
                 };
@@ -368,7 +384,11 @@ mod tests {
                 .filter(|t| t.category == cat && t.home_corner == 0)
                 .count();
             assert_eq!(per_corner, cat as usize, "Kategorie {cat}");
-            let total = m.resource_types.iter().filter(|t| t.category == cat).count();
+            let total = m
+                .resource_types
+                .iter()
+                .filter(|t| t.category == cat)
+                .count();
             assert_eq!(total, 4 * cat as usize);
         }
         for (i, t) in m.resource_types.iter().enumerate() {
@@ -382,7 +402,11 @@ mod tests {
             let (c, m) = generate(4, seed);
             for t in &m.resource_types {
                 let n = deposit_cells(&m, t.id).len() as u32;
-                assert_eq!(n, c.cells_per_type[t.category as usize - 1], "{t:?} seed {seed}");
+                assert_eq!(
+                    n,
+                    c.cells_per_type[t.category as usize - 1],
+                    "{t:?} seed {seed}"
+                );
             }
         }
     }
@@ -413,7 +437,10 @@ mod tests {
     fn cell_capacity_is_respected() {
         for seed in 0..30 {
             let (c, m) = generate(4, seed);
-            assert!(m.deposits.iter().all(|d| d.len() <= c.max_resources_per_cell));
+            assert!(m
+                .deposits
+                .iter()
+                .all(|d| d.len() <= c.max_resources_per_cell));
         }
     }
 
@@ -446,7 +473,11 @@ mod tests {
             let (_, m) = generate(4, seed);
             for t in m.resource_types.iter().filter(|t| t.category == 1) {
                 for cell in deposit_cells(&m, t.id) {
-                    assert_eq!(m.territories[cell.idx()], Some(t.home_corner), "seed {seed}");
+                    assert_eq!(
+                        m.territories[cell.idx()],
+                        Some(t.home_corner),
+                        "seed {seed}"
+                    );
                 }
             }
         }
@@ -492,7 +523,9 @@ mod tests {
         while changed {
             changed = false;
             for &c in cells {
-                if !seen.contains(&c) && seen.iter().any(|&s| map.board.neighbors(s).any(|n| n == c)) {
+                if !seen.contains(&c)
+                    && seen.iter().any(|&s| map.board.neighbors(s).any(|n| n == c))
+                {
                     seen.push(c);
                     changed = true;
                 }
@@ -551,7 +584,8 @@ mod tests {
             for seed in 0..60 {
                 let mut c = cfg(4, seed);
                 c.side = side;
-                let m = Map::generate(&c).unwrap_or_else(|e| panic!("side {side} seed {seed}: {e}"));
+                let m =
+                    Map::generate(&c).unwrap_or_else(|e| panic!("side {side} seed {seed}: {e}"));
                 assert!(m.fairness_issues(&c).is_empty());
             }
         }
@@ -565,9 +599,15 @@ mod tests {
             *histogram.entry(m.attempts_used).or_default() += 1;
         }
         let worst = *histogram.keys().max().unwrap();
-        assert!(worst <= 100, "Fairness zu streng eingestellt? {histogram:?}");
+        assert!(
+            worst <= 100,
+            "Fairness zu streng eingestellt? {histogram:?}"
+        );
         let first_try = histogram.get(&1).copied().unwrap_or(0);
-        assert!(first_try >= 20, "weniger als 10 Prozent im ersten Versuch: {histogram:?}");
+        assert!(
+            first_try >= 20,
+            "weniger als 10 Prozent im ersten Versuch: {histogram:?}"
+        );
     }
 
     #[test]
@@ -579,7 +619,10 @@ mod tests {
         }
         let issues = m.fairness_issues(&c);
         assert!(
-            issues.contains(&FairnessIssue::Cat1TooFarOrMissing { corner: 1, distance: None }),
+            issues.contains(&FairnessIssue::Cat1TooFarOrMissing {
+                corner: 1,
+                distance: None
+            }),
             "{issues:?}"
         );
     }
@@ -610,7 +653,9 @@ mod tests {
         }
         let issues = m.fairness_issues(&c);
         assert!(
-            issues.iter().any(|i| matches!(i, FairnessIssue::NearCountsUneven { category: 3, .. })),
+            issues
+                .iter()
+                .any(|i| matches!(i, FairnessIssue::NearCountsUneven { category: 3, .. })),
             "{issues:?}"
         );
     }
@@ -663,6 +708,9 @@ mod tests {
         c.cells_per_type = [5, 9, 9];
         c.max_resources_per_cell = 1;
         c.max_generator_attempts = 20;
-        assert_eq!(Map::generate(&c), Err(MapError::GenerationFailed { attempts: 20 }));
+        assert_eq!(
+            Map::generate(&c),
+            Err(MapError::GenerationFailed { attempts: 20 })
+        );
     }
 }

@@ -45,7 +45,10 @@ impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConfigError::UnsupportedPlayers(n) => {
-                write!(f, "{n} Spieler werden in Meilenstein 1 noch nicht unterstuetzt (2 oder 4)")
+                write!(
+                    f,
+                    "{n} Spieler werden in Meilenstein 1 noch nicht unterstuetzt (2 oder 4)"
+                )
             }
             ConfigError::SideOutOfRange { side, min, max } => {
                 write!(f, "Seitenlaenge {side} ausserhalb von {min}..={max}")
@@ -88,31 +91,45 @@ impl Config {
             });
         }
         if self.min_factory_distance == 0 {
-            return Err(ConfigError::Invalid("min_factory_distance muss mindestens 1 sein"));
+            return Err(ConfigError::Invalid(
+                "min_factory_distance muss mindestens 1 sein",
+            ));
         }
         if self.factory_cost == 0 {
             return Err(ConfigError::Invalid("factory_cost muss mindestens 1 sein"));
         }
         if self.yield_per_round == 0 {
-            return Err(ConfigError::Invalid("yield_per_round muss mindestens 1 sein"));
+            return Err(ConfigError::Invalid(
+                "yield_per_round muss mindestens 1 sein",
+            ));
         }
-        if self.cells_per_type.iter().any(|&n| n == 0) {
-            return Err(ConfigError::Invalid("cells_per_type: jeder Wert mindestens 1"));
+        if self.cells_per_type.contains(&0) {
+            return Err(ConfigError::Invalid(
+                "cells_per_type: jeder Wert mindestens 1",
+            ));
         }
         if !(0.0..=1.0).contains(&self.stray_chance) {
-            return Err(ConfigError::Invalid("stray_chance muss zwischen 0 und 1 liegen"));
+            return Err(ConfigError::Invalid(
+                "stray_chance muss zwischen 0 und 1 liegen",
+            ));
         }
         if self.max_resources_per_cell == 0 {
-            return Err(ConfigError::Invalid("max_resources_per_cell muss mindestens 1 sein"));
+            return Err(ConfigError::Invalid(
+                "max_resources_per_cell muss mindestens 1 sein",
+            ));
         }
         if self.max_rounds == 0 {
             return Err(ConfigError::Invalid("max_rounds muss mindestens 1 sein"));
         }
         if self.fairness_radius < 2 {
-            return Err(ConfigError::Invalid("fairness_radius muss mindestens 2 sein"));
+            return Err(ConfigError::Invalid(
+                "fairness_radius muss mindestens 2 sein",
+            ));
         }
         if self.max_generator_attempts == 0 {
-            return Err(ConfigError::Invalid("max_generator_attempts muss mindestens 1 sein"));
+            return Err(ConfigError::Invalid(
+                "max_generator_attempts muss mindestens 1 sein",
+            ));
         }
         Ok(())
     }
@@ -160,9 +177,15 @@ mod tests {
     fn side_limits_are_enforced() {
         let mut c = Config::new(2, 1);
         c.side = MIN_SIDE - 1;
-        assert!(matches!(c.validate(), Err(ConfigError::SideOutOfRange { .. })));
+        assert!(matches!(
+            c.validate(),
+            Err(ConfigError::SideOutOfRange { .. })
+        ));
         c.side = MAX_SQUARE_SIDE + 1;
-        assert!(matches!(c.validate(), Err(ConfigError::SideOutOfRange { .. })));
+        assert!(matches!(
+            c.validate(),
+            Err(ConfigError::SideOutOfRange { .. })
+        ));
         c.side = MIN_SIDE;
         assert_eq!(c.validate(), Ok(()));
         c.side = MAX_SQUARE_SIDE;

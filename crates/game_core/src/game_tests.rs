@@ -51,12 +51,18 @@ fn king_id(g: &Game, p: PlayerId) -> PieceId {
 }
 
 fn king_to(g: &Game, p: PlayerId, x: i32, y: i32) -> Action {
-    Action::Move { piece: king_id(g, p), to: c(g, x, y) }
+    Action::Move {
+        piece: king_id(g, p),
+        to: c(g, x, y),
+    }
 }
 
 fn apply_checked(g: &mut Game, a: Action) -> Vec<Event> {
-    let events = g.apply(a).unwrap_or_else(|e| panic!("{a:?} sollte erlaubt sein: {e}"));
-    g.check_invariants().unwrap_or_else(|e| panic!("Invariante verletzt nach {a:?}: {e}"));
+    let events = g
+        .apply(a)
+        .unwrap_or_else(|e| panic!("{a:?} sollte erlaubt sein: {e}"));
+    g.check_invariants()
+        .unwrap_or_else(|e| panic!("Invariante verletzt nach {a:?}: {e}"));
     events
 }
 
@@ -112,10 +118,7 @@ fn two_players_start_in_opposite_corners() {
 fn a_king_in_the_corner_has_exactly_two_moves_and_nothing_else() {
     let g = blank(2);
     let actions = g.legal_actions();
-    assert_eq!(
-        actions,
-        vec![king_to(&g, P0, 1, 0), king_to(&g, P0, 0, 1)]
-    );
+    assert_eq!(actions, vec![king_to(&g, P0, 1, 0), king_to(&g, P0, 0, 1)]);
 }
 
 #[test]
@@ -152,7 +155,10 @@ fn a_player_cannot_move_someone_elses_piece() {
     let enemy_king = king_id(&g, P1);
     let to = c(&g, 8, 9);
     assert_eq!(
-        g.apply(Action::Move { piece: enemy_king, to }),
+        g.apply(Action::Move {
+            piece: enemy_king,
+            to
+        }),
         Err(RuleError::Illegal(IllegalReason::NotYourPiece))
     );
 }
@@ -165,19 +171,31 @@ fn illegal_moves_are_explained() {
     let _ = own;
     let far = c(&g, 5, 5);
     assert_eq!(
-        g.apply(Action::Move { piece: king, to: far }),
+        g.apply(Action::Move {
+            piece: king,
+            to: far
+        }),
         Err(RuleError::Illegal(IllegalReason::CannotReach))
     );
     assert_eq!(
-        g.apply(Action::Move { piece: king, to: c(&g, 1, 0) }),
+        g.apply(Action::Move {
+            piece: king,
+            to: c(&g, 1, 0)
+        }),
         Err(RuleError::Illegal(IllegalReason::OccupiedByOwnPiece))
     );
     assert_eq!(
-        g.apply(Action::Move { piece: king, to: CellId(10_000) }),
+        g.apply(Action::Move {
+            piece: king,
+            to: CellId(10_000)
+        }),
         Err(RuleError::Illegal(IllegalReason::CellOutsideBoard))
     );
     assert_eq!(
-        g.apply(Action::Move { piece: PieceId(999), to: far }),
+        g.apply(Action::Move {
+            piece: PieceId(999),
+            to: far
+        }),
         Err(RuleError::Illegal(IllegalReason::NoSuchPiece))
     );
 }
@@ -188,7 +206,9 @@ fn an_illegal_action_changes_nothing() {
     let before = g.state.clone();
     let _ = g.apply(Action::Pass);
     let _ = g.apply(Action::BuildFactory { pay: cat1(0) });
-    let _ = g.apply(Action::SpawnPiece { factory: crate::ids::FactoryId(0) });
+    let _ = g.apply(Action::SpawnPiece {
+        factory: crate::ids::FactoryId(0),
+    });
     assert_eq!(g.state, before);
 }
 
@@ -201,8 +221,10 @@ fn every_legal_action_is_accepted_and_keeps_the_invariants() {
     for _ in 0..3 {
         for action in g.legal_actions() {
             let mut copy = g.clone();
-            copy.apply(action).unwrap_or_else(|e| panic!("{action:?}: {e}"));
-            copy.check_invariants().unwrap_or_else(|e| panic!("{action:?}: {e}"));
+            copy.apply(action)
+                .unwrap_or_else(|e| panic!("{action:?}: {e}"));
+            copy.check_invariants()
+                .unwrap_or_else(|e| panic!("{action:?}: {e}"));
         }
         let first = g.legal_actions()[0];
         act!(g, first);
@@ -243,7 +265,11 @@ fn the_king_collects_everything_on_his_cell_at_the_end_of_his_turn() {
     assert_eq!(carry(&g, P0, cat1(0)), 1);
     assert_eq!(carry(&g, P0, cat2(0, 0)), 1);
     assert_eq!(carry(&g, P0, cat3(1, 2)), 1);
-    assert_eq!(carry(&g, P0, cat3(0, 0)), 0, "Nachbarfeld wird nicht gesammelt");
+    assert_eq!(
+        carry(&g, P0, cat3(0, 0)),
+        0,
+        "Nachbarfeld wird nicht gesammelt"
+    );
     assert!(events.contains(&Event::Collected {
         player: P0,
         cell: c(&g, 1, 0),
@@ -271,8 +297,18 @@ fn the_king_keeps_collecting_every_turn_he_stays_on_a_deposit() {
     act!(g, king_to(&g, P0, 1, 0));
     assert_eq!(carry(&g, P0, cat1(0)), 1);
     act!(g, king_to(&g, P1, 8, 9));
-    act!(g, Action::Move { piece: unit, to: c(&g, 6, 5) });
-    assert_eq!(carry(&g, P0, cat1(0)), 2, "Koenig steht noch dort und sammelt wieder");
+    act!(
+        g,
+        Action::Move {
+            piece: unit,
+            to: c(&g, 6, 5)
+        }
+    );
+    assert_eq!(
+        carry(&g, P0, cat1(0)),
+        2,
+        "Koenig steht noch dort und sammelt wieder"
+    );
 }
 
 #[test]
@@ -281,7 +317,13 @@ fn only_the_king_collects_from_fields_other_pieces_do_not() {
     put(&mut g, 6, 5, cat2(0, 0));
     g.setup_unit(P0, c(&g, 5, 5), 1, 1);
     let unit = g.pieces_of(P0).find(|p| !p.is_king()).unwrap().id;
-    act!(g, Action::Move { piece: unit, to: c(&g, 6, 5) });
+    act!(
+        g,
+        Action::Move {
+            piece: unit,
+            to: c(&g, 6, 5)
+        }
+    );
     assert!(g.state.carried[P0.idx()].is_empty());
     assert_eq!(g.state.ledger.created, 0);
 }
@@ -291,7 +333,10 @@ fn only_the_king_collects_from_fields_other_pieces_do_not() {
 #[test]
 fn building_needs_a_category_1_resource_in_the_carry() {
     let mut g = blank(2);
-    assert!(!g.legal_actions().iter().any(|a| matches!(a, Action::BuildFactory { .. })));
+    assert!(!g
+        .legal_actions()
+        .iter()
+        .any(|a| matches!(a, Action::BuildFactory { .. })));
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat1(0) }),
         Err(RuleError::Illegal(IllegalReason::NotEnoughToPay))
@@ -302,7 +347,9 @@ fn building_needs_a_category_1_resource_in_the_carry() {
         Err(RuleError::Illegal(IllegalReason::PayTypeIsNotCategory1))
     );
     assert_eq!(
-        g.apply(Action::BuildFactory { pay: ResourceId(999) }),
+        g.apply(Action::BuildFactory {
+            pay: ResourceId(999)
+        }),
         Err(RuleError::Illegal(IllegalReason::UnknownResource))
     );
 }
@@ -332,7 +379,10 @@ fn the_factory_cost_is_configurable() {
     config.factory_cost = 2;
     let mut g = blank_with(config);
     g.setup_carry(P0, cat1(0), 1);
-    assert!(g.legal_actions().iter().all(|a| !matches!(a, Action::BuildFactory { .. })));
+    assert!(g
+        .legal_actions()
+        .iter()
+        .all(|a| !matches!(a, Action::BuildFactory { .. })));
     g.setup_carry(P0, cat1(0), 1);
     act!(g, Action::BuildFactory { pay: cat1(0) });
     assert_eq!(g.state.ledger.spent_on_factories, 2);
@@ -349,7 +399,9 @@ fn the_king_unloads_everything_into_the_factory_he_stands_on_at_turn_end() {
     let factory = g.factories_of(P0).next().unwrap();
     assert_eq!(factory.storage.get(cat1(0)), 1);
     assert!(g.state.carried[P0.idx()].is_empty());
-    assert!(events.iter().any(|e| matches!(e, Event::Unloaded { player, .. } if *player == P0)));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, Event::Unloaded { player, .. } if *player == P0)));
 }
 
 #[test]
@@ -359,17 +411,29 @@ fn the_king_does_not_unload_into_a_foreign_factory() {
     g.setup_carry(P0, cat2(0, 0), 1);
     act!(g, king_to(&g, P0, 1, 0));
     assert_eq!(carry(&g, P0, cat2(0, 0)), 1);
-    assert!(g.state.factory_at(c(&g, 1, 0)).is_none(), "die Fabrik wurde eingenommen");
+    assert!(
+        g.state.factory_at(c(&g, 1, 0)).is_none(),
+        "die Fabrik wurde eingenommen"
+    );
 }
 
 #[test]
 fn factories_keep_a_minimum_distance_to_each_other() {
     // Standard: Abstand mindestens 3.
-    for (fx, fy, allowed) in [(1, 0, false), (2, 0, false), (3, 0, true), (2, 1, true), (1, 1, false)] {
+    for (fx, fy, allowed) in [
+        (1, 0, false),
+        (2, 0, false),
+        (3, 0, true),
+        (2, 1, true),
+        (1, 1, false),
+    ] {
         let mut g = blank(2);
         g.setup_factory(P1, c(&g, fx, fy));
         g.setup_carry(P0, cat1(0), 1);
-        let offered = g.legal_actions().iter().any(|a| matches!(a, Action::BuildFactory { .. }));
+        let offered = g
+            .legal_actions()
+            .iter()
+            .any(|a| matches!(a, Action::BuildFactory { .. }));
         // (2,1) hat Abstand 3 zu (0,0), (1,1) hat Abstand 2.
         assert_eq!(offered, allowed, "Fabrik bei ({fx},{fy})");
     }
@@ -382,7 +446,10 @@ fn the_minimum_distance_is_configurable() {
     let mut g = blank_with(config);
     g.setup_factory(P1, c(&g, 2, 0));
     g.setup_carry(P0, cat1(0), 1);
-    assert!(g.legal_actions().iter().any(|a| matches!(a, Action::BuildFactory { .. })));
+    assert!(g
+        .legal_actions()
+        .iter()
+        .any(|a| matches!(a, Action::BuildFactory { .. })));
 }
 
 #[test]
@@ -433,7 +500,11 @@ fn factories_produce_only_on_their_owners_turn() {
     act!(g, king_to(&g, P0, 1, 0));
     assert_eq!(g.state.factories[&f].storage.get(cat2(0, 0)), 1);
     act!(g, king_to(&g, P1, 8, 9));
-    assert_eq!(g.state.factories[&f].storage.get(cat2(0, 0)), 1, "nicht im Zug des Gegners");
+    assert_eq!(
+        g.state.factories[&f].storage.get(cat2(0, 0)),
+        1,
+        "nicht im Zug des Gegners"
+    );
     act!(g, king_to(&g, P0, 2, 0));
     assert_eq!(g.state.factories[&f].storage.get(cat2(0, 0)), 2);
 }
@@ -476,11 +547,18 @@ fn spawning_dissolves_the_factory_into_a_piece_with_level_and_range_from_the_sto
     g.setup_storage(f, cat2(1, 1), 1);
     let events = act!(g, Action::SpawnPiece { factory: f });
     assert!(g.state.factories.is_empty());
-    let piece = g.state.piece_at(c(&g, 5, 5)).expect("Figur auf dem Fabrikfeld");
+    let piece = g
+        .state
+        .piece_at(c(&g, 5, 5))
+        .expect("Figur auf dem Fabrikfeld");
     assert_eq!(piece.owner, P0);
     assert_eq!(
         piece.kind,
-        PieceKind::Unit { level: 2, range: 3, colors: vec![cat1(0), cat1(1)] }
+        PieceKind::Unit {
+            level: 2,
+            range: 3,
+            colors: vec![cat1(0), cat1(1)]
+        }
     );
     assert!(events.contains(&Event::Spawned {
         piece: piece.id,
@@ -549,7 +627,9 @@ fn only_the_owner_may_spawn_from_a_factory() {
         Err(RuleError::Illegal(IllegalReason::NotYourFactory))
     );
     assert_eq!(
-        g.apply(Action::SpawnPiece { factory: crate::ids::FactoryId(77) }),
+        g.apply(Action::SpawnPiece {
+            factory: crate::ids::FactoryId(77)
+        }),
         Err(RuleError::Illegal(IllegalReason::NoSuchFactory))
     );
 }
@@ -557,7 +637,11 @@ fn only_the_owner_may_spawn_from_a_factory() {
 // ----- Bewegung der Figuren -----------------------------------------------------------------
 
 fn dests(g: &Game, piece: PieceId) -> Vec<(i32, i32)> {
-    let mut v: Vec<(i32, i32)> = g.piece_destinations(piece).iter().map(|&x| g.map.board.coord(x)).collect();
+    let mut v: Vec<(i32, i32)> = g
+        .piece_destinations(piece)
+        .iter()
+        .map(|&x| g.map.board.coord(x))
+        .collect();
     v.sort();
     v
 }
@@ -568,7 +652,9 @@ fn level_1_units_move_straight_up_to_their_range_and_never_diagonally() {
     let u = g.setup_unit(P0, c(&g, 5, 5), 1, 3);
     let d = dests(&g, u);
     assert_eq!(d.len(), 12);
-    assert!(d.contains(&(8, 5)) && d.contains(&(2, 5)) && d.contains(&(5, 2)) && d.contains(&(5, 8)));
+    assert!(
+        d.contains(&(8, 5)) && d.contains(&(2, 5)) && d.contains(&(5, 2)) && d.contains(&(5, 8))
+    );
     assert!(!d.contains(&(6, 6)), "keine Diagonale");
     let u1 = g.setup_unit(P0, c(&g, 1, 8), 1, 1);
     assert_eq!(dests(&g, u1).len(), 4);
@@ -578,7 +664,10 @@ fn level_1_units_move_straight_up_to_their_range_and_never_diagonally() {
 fn level_1_units_stop_at_the_edge_of_the_board() {
     let mut g = blank(2);
     let u = g.setup_unit(P0, c(&g, 8, 4), 1, 3);
-    let east: Vec<_> = dests(&g, u).into_iter().filter(|&(x, y)| y == 4 && x > 8).collect();
+    let east: Vec<_> = dests(&g, u)
+        .into_iter()
+        .filter(|&(x, y)| y == 4 && x > 8)
+        .collect();
     assert_eq!(east, vec![(9, 4)]);
 }
 
@@ -612,7 +701,10 @@ fn level_2_units_cannot_pass_through_pieces_but_can_capture_the_first_enemy() {
     g.setup_unit(P1, c(&g, 6, 5), 1, 1);
     let d = dests(&g, u);
     assert!(d.contains(&(6, 5)), "Gegner ist schlagbar");
-    assert!(!d.contains(&(7, 5)), "dahinter nur durch die Figur hindurch");
+    assert!(
+        !d.contains(&(7, 5)),
+        "dahinter nur durch die Figur hindurch"
+    );
 
     let mut g = blank(2);
     let u = g.setup_unit(P0, c(&g, 5, 5), 2, 3);
@@ -627,11 +719,26 @@ fn moving_onto_an_enemy_unit_captures_it() {
     let mut g = blank(2);
     let u = g.setup_unit(P0, c(&g, 5, 5), 1, 2);
     let victim = g.setup_unit(P1, c(&g, 7, 5), 1, 1);
-    let events = act!(g, Action::Move { piece: u, to: c(&g, 7, 5) });
-    assert!(g.state.pieces.get(&victim).is_none());
+    let events = act!(
+        g,
+        Action::Move {
+            piece: u,
+            to: c(&g, 7, 5)
+        }
+    );
+    assert!(!g.state.pieces.contains_key(&victim));
     assert_eq!(g.state.piece_at(c(&g, 7, 5)).unwrap().id, u);
-    assert!(events.contains(&Event::Captured { piece: victim, owner: P1, at: c(&g, 7, 5), by: P0 }));
-    assert_eq!(g.outcome(), None, "nur ein gefallener Koenig beendet das Spiel");
+    assert!(events.contains(&Event::Captured {
+        piece: victim,
+        owner: P1,
+        at: c(&g, 7, 5),
+        by: P0
+    }));
+    assert_eq!(
+        g.outcome(),
+        None,
+        "nur ein gefallener Koenig beendet das Spiel"
+    );
 }
 
 #[test]
@@ -639,7 +746,7 @@ fn a_king_can_capture_too() {
     let mut g = blank(2);
     let victim = g.setup_unit(P1, c(&g, 1, 0), 1, 1);
     act!(g, king_to(&g, P0, 1, 0));
-    assert!(g.state.pieces.get(&victim).is_none());
+    assert!(!g.state.pieces.contains_key(&victim));
 }
 
 #[test]
@@ -649,7 +756,10 @@ fn threatened_cells_cover_what_enemy_pieces_could_reach() {
     let threatened = g.threatened_cells(P0);
     assert!(threatened.contains(&c(&g, 7, 5)));
     assert!(!threatened.contains(&c(&g, 6, 6)));
-    assert!(threatened.contains(&c(&g, 8, 9)), "Feld neben dem gegnerischen Koenig");
+    assert!(
+        threatened.contains(&c(&g, 8, 9)),
+        "Feld neben dem gegnerischen Koenig"
+    );
     assert!(!threatened.contains(&c(&g, 0, 0)));
 }
 
@@ -662,14 +772,25 @@ fn walking_onto_an_enemy_factory_destroys_it_and_leaves_its_storage_as_loot() {
     g.setup_storage(f, cat3(1, 0), 2);
     g.setup_storage(f, cat2(1, 1), 1);
     let u = g.setup_unit(P0, c(&g, 3, 5), 1, 2);
-    let events = act!(g, Action::Move { piece: u, to: c(&g, 5, 5) });
+    let events = act!(
+        g,
+        Action::Move {
+            piece: u,
+            to: c(&g, 5, 5)
+        }
+    );
     assert!(g.state.factories.is_empty());
     assert_eq!(
         g.state.loot[&c(&g, 5, 5)],
         inv(&[(cat3(1, 0), 2), (cat2(1, 1), 1)])
     );
-    assert!(events.iter().any(|e| matches!(e, Event::FactoryDestroyed { by, .. } if *by == P0)));
-    assert_eq!(g.state.ledger.consumed_by_spawns, 0, "Beute ist nicht verbraucht");
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, Event::FactoryDestroyed { by, .. } if *by == P0)));
+    assert_eq!(
+        g.state.ledger.consumed_by_spawns, 0,
+        "Beute ist nicht verbraucht"
+    );
 }
 
 #[test]
@@ -678,7 +799,13 @@ fn walking_onto_your_own_factory_does_nothing_special() {
     let f = g.setup_factory(P0, c(&g, 5, 5));
     g.setup_storage(f, cat3(0, 0), 2);
     let u = g.setup_unit(P0, c(&g, 3, 5), 1, 2);
-    act!(g, Action::Move { piece: u, to: c(&g, 5, 5) });
+    act!(
+        g,
+        Action::Move {
+            piece: u,
+            to: c(&g, 5, 5)
+        }
+    );
     assert_eq!(g.state.factories.len(), 1);
     assert!(g.state.loot.is_empty());
 }
@@ -690,7 +817,13 @@ fn capturing_a_piece_that_stands_on_an_enemy_factory_takes_both() {
     g.setup_storage(f, cat3(1, 0), 1);
     g.setup_unit(P1, c(&g, 5, 5), 1, 1);
     let u = g.setup_unit(P0, c(&g, 3, 5), 1, 2);
-    act!(g, Action::Move { piece: u, to: c(&g, 5, 5) });
+    act!(
+        g,
+        Action::Move {
+            piece: u,
+            to: c(&g, 5, 5)
+        }
+    );
     assert!(g.state.factories.is_empty());
     assert_eq!(g.state.loot[&c(&g, 5, 5)], inv(&[(cat3(1, 0), 1)]));
 }
@@ -701,19 +834,37 @@ fn only_a_king_picks_up_loot_and_any_king_may() {
     let f = g.setup_factory(P1, c(&g, 5, 5));
     g.setup_storage(f, cat3(1, 0), 2);
     let u = g.setup_unit(P0, c(&g, 3, 5), 1, 2);
-    act!(g, Action::Move { piece: u, to: c(&g, 5, 5) });
+    act!(
+        g,
+        Action::Move {
+            piece: u,
+            to: c(&g, 5, 5)
+        }
+    );
 
     // Die Figur steht auf der Beute, nimmt sie aber nicht auf.
     act!(g, king_to(&g, P1, 8, 9));
     let king0 = king_id(&g, P0);
-    act!(g, Action::Move { piece: king0, to: c(&g, 1, 0) });
+    act!(
+        g,
+        Action::Move {
+            piece: king0,
+            to: c(&g, 1, 0)
+        }
+    );
     assert!(g.state.loot.contains_key(&c(&g, 5, 5)));
     assert!(g.state.carried[P0.idx()].is_empty());
 
     // Der Koenig des frueheren Besitzers schlaegt die Figur und holt die Beute zurueck.
     let king1 = king_id(&g, P1);
     g.setup_teleport(king1, c(&g, 5, 6));
-    act!(g, Action::Move { piece: king1, to: c(&g, 5, 5) });
+    act!(
+        g,
+        Action::Move {
+            piece: king1,
+            to: c(&g, 5, 5)
+        }
+    );
     assert!(g.state.loot.is_empty());
     assert_eq!(carry(&g, P1, cat3(1, 0)), 2);
 }
@@ -739,11 +890,19 @@ fn capturing_the_king_wins_a_two_player_game_and_removes_all_of_his_belongings()
     g.setup_unit(P1, c(&g, 6, 6), 1, 1);
     g.setup_carry(P1, cat1(1), 2);
     let hunter = g.setup_unit(P0, c(&g, 7, 9), 1, 2);
-    let events = act!(g, Action::Move { piece: hunter, to: c(&g, 9, 9) });
+    let events = act!(
+        g,
+        Action::Move {
+            piece: hunter,
+            to: c(&g, 9, 9)
+        }
+    );
 
     assert_eq!(g.outcome(), Some(Outcome::Winner(P0)));
     assert!(events.contains(&Event::PlayerEliminated { player: P1 }));
-    assert!(events.contains(&Event::GameOver { outcome: Outcome::Winner(P0) }));
+    assert!(events.contains(&Event::GameOver {
+        outcome: Outcome::Winner(P0)
+    }));
     assert!(g.pieces_of(P1).next().is_none());
     assert!(g.factories_of(P1).next().is_none());
     assert!(g.state.carried[P1.idx()].is_empty());
@@ -757,7 +916,13 @@ fn nothing_is_collected_after_the_game_is_over() {
     let mut g = blank(2);
     put(&mut g, 9, 9, cat2(0, 0));
     let hunter = g.setup_unit(P0, c(&g, 7, 9), 1, 2);
-    act!(g, Action::Move { piece: hunter, to: c(&g, 9, 9) });
+    act!(
+        g,
+        Action::Move {
+            piece: hunter,
+            to: c(&g, 9, 9)
+        }
+    );
     assert_eq!(g.state.ledger.created, 0);
 }
 
@@ -769,7 +934,13 @@ fn in_a_four_player_game_play_continues_and_the_eliminated_player_is_skipped() {
     g.setup_unit(P1, c(&g, 4, 4), 1, 1);
     g.setup_carry(P1, cat3(1, 1), 3);
     let hunter = g.setup_unit(P0, c(&g, 7, 0), 1, 2);
-    let events = act!(g, Action::Move { piece: hunter, to: c(&g, 9, 0) });
+    let events = act!(
+        g,
+        Action::Move {
+            piece: hunter,
+            to: c(&g, 9, 0)
+        }
+    );
 
     assert_eq!(g.outcome(), None);
     assert!(events.contains(&Event::PlayerEliminated { player: P1 }));
@@ -789,12 +960,22 @@ fn the_round_counter_survives_the_first_player_dropping_out() {
     let mut g = blank(4);
     g.setup_current(P1);
     let hunter = g.setup_unit(P1, c(&g, 2, 0), 1, 2);
-    act!(g, Action::Move { piece: hunter, to: c(&g, 0, 0) });
+    act!(
+        g,
+        Action::Move {
+            piece: hunter,
+            to: c(&g, 0, 0)
+        }
+    );
     assert_eq!(g.alive_players(), vec![P1, P2, P3]);
     assert_eq!(g.current_player(), P2);
     act!(g, king_to(&g, P2, 8, 9));
     act!(g, king_to(&g, P3, 1, 9));
-    assert_eq!((g.current_player(), g.state.round), (P1, 2), "neue Runde beginnt bei P1");
+    assert_eq!(
+        (g.current_player(), g.state.round),
+        (P1, 2),
+        "neue Runde beginnt bei P1"
+    );
 }
 
 #[test]
@@ -807,7 +988,13 @@ fn the_last_survivor_of_a_four_player_game_wins() {
         g.state.alive[out.idx()] = false;
     }
     let hunter = g.setup_unit(P0, c(&g, 2, 9), 1, 2);
-    act!(g, Action::Move { piece: hunter, to: c(&g, 0, 9) });
+    act!(
+        g,
+        Action::Move {
+            piece: hunter,
+            to: c(&g, 0, 9)
+        }
+    );
     assert_eq!(g.outcome(), Some(Outcome::Winner(P0)));
 }
 
@@ -823,7 +1010,9 @@ fn the_game_is_a_draw_after_the_maximum_number_of_rounds() {
     assert_eq!(g.outcome(), None);
     let events = act!(g, king_to(&g, P1, 9, 9));
     assert_eq!(g.outcome(), Some(Outcome::Draw));
-    assert!(events.contains(&Event::GameOver { outcome: Outcome::Draw }));
+    assert!(events.contains(&Event::GameOver {
+        outcome: Outcome::Draw
+    }));
     assert_eq!(g.state.turns_played, 4);
 }
 
@@ -845,7 +1034,13 @@ fn the_invariant_check_detects_broken_states() {
 
     let mut g = base.clone();
     g.setup_unit(P0, c(&g, 3, 3), 1, 1);
-    let king = g.state.pieces.values().find(|p| p.owner == P0 && !p.is_king()).unwrap().id;
+    let king = g
+        .state
+        .pieces
+        .values()
+        .find(|p| p.owner == P0 && !p.is_king())
+        .unwrap()
+        .id;
     g.state.pieces.get_mut(&king).unwrap().kind = PieceKind::King;
     assert!(g.check_invariants().unwrap_err().contains("Koenige"));
 

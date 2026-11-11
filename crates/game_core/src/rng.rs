@@ -99,7 +99,10 @@ mod tests {
             assert!(v < 10);
             seen[v] += 1;
         }
-        assert!(seen.iter().all(|&c| c > 800), "Verteilung auffaellig: {seen:?}");
+        assert!(
+            seen.iter().all(|&c| c > 800),
+            "Verteilung auffaellig: {seen:?}"
+        );
     }
 
     #[test]
@@ -138,7 +141,11 @@ mod tests {
         let mut sorted = v.clone();
         sorted.sort();
         assert_eq!(sorted, (0..50).collect::<Vec<u32>>());
-        assert_ne!(v, (0..50).collect::<Vec<u32>>(), "Mischen sollte etwas aendern");
+        assert_ne!(
+            v,
+            (0..50).collect::<Vec<u32>>(),
+            "Mischen sollte etwas aendern"
+        );
     }
 
     #[test]
