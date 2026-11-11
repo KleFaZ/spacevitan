@@ -18,11 +18,13 @@ spacevitan - Bots spielen gegeneinander (Textansicht)
 Ohne Optionen (z. B. per Doppelklick): eine neue Partie Runde fuer Runde anzeigen.
 
 Optionen:
-  --players N    2 oder 4 (Standard 2)
+  --players N    2 bis 8 (Standard 2)
   --seed N       Startwert fuer Karte und Bots; gleicher Wert = gleiche Partie
                  (Standard: jedes Mal neu, der Wert wird angezeigt)
   --side N       Kantenlaenge der Karte (Standard 10)
   --rounds N     Unentschieden nach N Runden (Standard 300)
+  --stock N      Vorrat je Rohstoffvorkommen in Einheiten (Standard 0 = unerschoepflich)
+  --kat1 N       Felder je Kat-1-Typ, also Bauplaetze fuer Fabriken je Ecke (Standard 2)
   --bots LISTE   pro Spieler: gierig oder zufall, z. B. gierig,zufall (Standard: gierig)
   --show         Partie Runde fuer Runde anzeigen
   --games N      N Partien mit Seeds seed..seed+N-1 spielen und Statistik zeigen
@@ -37,6 +39,8 @@ struct Options {
     seed: Option<u64>,
     side: u32,
     rounds: u32,
+    stock: u32,
+    kat1: u32,
     bots: Vec<String>,
     show: bool,
     games: u32,
@@ -49,6 +53,8 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
         seed: None,
         side: 10,
         rounds: 300,
+        stock: 0,
+        kat1: 0,
         bots: Vec::new(),
         show: false,
         games: 1,
@@ -81,6 +87,14 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
             }
             "--rounds" => {
                 o.rounds = number(value(i)?, "--rounds")? as u32;
+                i += 1;
+            }
+            "--stock" => {
+                o.stock = number(value(i)?, "--stock")? as u32;
+                i += 1;
+            }
+            "--kat1" => {
+                o.kat1 = number(value(i)?, "--kat1")? as u32;
                 i += 1;
             }
             "--games" => {
@@ -167,6 +181,10 @@ fn run() -> Result<(), String> {
         let mut config = Config::new(o.players, seed);
         config.side = o.side;
         config.max_rounds = o.rounds;
+        config.deposit_stock = o.stock;
+        if o.kat1 > 0 {
+            config.cells_per_type[0] = o.kat1;
+        }
         let mut game = Game::new(config).map_err(|e| e.to_string())?;
         let mut bots = make_bots(&o, seed)?;
 

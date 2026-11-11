@@ -33,6 +33,7 @@ Module in `game_core`:
 cargo run --release -- --show                  # eine Partie gierig gegen gierig ansehen
 cargo run --release -- --games 200             # Statistik ueber 200 Partien
 cargo run --release -- --players 4 --games 50 --bots gierig,zufall
+cargo run --release -- --games 200 --stock 5 --kat1 3   # Vorrat je Vorkommen, Kat-1-Felder je Ecke
 cargo run --release -- --help
 ```
 
@@ -95,9 +96,9 @@ cargo test --workspace
 
 Umgesetzt: 2 bis 8 Spieler (2 und 4: Quadrat, 3: Dreieck aus Dreiecksfeldern, 5 bis 8:
 regelmaessiges Vieleck aus Hexfeldern; ab 6 Spielern eine vierte Rohstoffkategorie); Kartengenerator mit Fairnesspruefung;
-Koenig sammelt, baut Fabriken, laedt ab; Fabriken sammeln Kat 2/3 vom eigenen Feld und den
+Koenig sammelt, baut Fabriken nur auf Kat-1-Vorkommen (das Vorkommen ist danach weg), laedt ab; Fabriken sammeln Kat 2/3 vom eigenen Feld und den
 Nachbarfeldern (im Quadratgitter 5 Felder); Aufloesen in Figuren (Stufe = Zahl der
-Kat-1-Farben, Reichweite = hoechste Kategorie); Stufe 1 zieht gerade, ab Stufe 2 frei;
+Kat-1-Farben, Reichweite = Stufe); Stufe 1 zieht gerade, ab Stufe 2 frei;
 Schlagen wie im Schach; Fabrik-Einnahme mit Beute, die nur Koenige aufnehmen; Koenig faellt =
 Spieler raus; Unentschieden nach `max_rounds`.
 

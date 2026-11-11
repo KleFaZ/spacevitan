@@ -186,8 +186,7 @@ impl Bot for GreedyBot {
         let cat1_cells: Vec<CellId> = board
             .cells()
             .filter(|&c| {
-                game.map
-                    .deposits_at(c)
+                game.available_deposits(c)
                     .iter()
                     .any(|&r| game.map.category(r) == 1)
             })

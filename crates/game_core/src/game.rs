@@ -86,13 +86,9 @@ impl Game {
         if colors.is_empty() {
             return None;
         }
-        let range = factory
-            .storage
-            .kinds()
-            .map(|r| self.map.category(r))
-            .max()
-            .unwrap_or(1);
-        Some((colors.len() as u8, range, colors))
+        // Reichweite = Stufe: ein Bauer (Stufe 1) zieht ein Feld weit.
+        let level = colors.len() as u8;
+        Some((level, level, colors))
     }
 
     /// Felder, auf die die Figur ziehen darf (inklusive Schlagen), sortiert.
@@ -171,6 +167,45 @@ impl Game {
         set
     }
 
+    /// Vorkommen auf dem Feld, die es noch gibt (nicht verbaut, nicht erschoepft).
+    pub fn available_deposits(&self, cell: CellId) -> Vec<ResourceId> {
+        self.map
+            .deposits_at(cell)
+            .iter()
+            .copied()
+            .filter(|&r| !self.state.depleted.contains(&(cell, r)))
+            .collect()
+    }
+
+    /// Wie viel ein Vorkommen noch hergibt (`None` = unerschoepflich, 0 = weg).
+    pub fn deposit_remaining(&self, cell: CellId, res: ResourceId) -> Option<u32> {
+        if self.state.depleted.contains(&(cell, res)) {
+            return Some(0);
+        }
+        match self.config.deposit_stock {
+            0 => None,
+            stock => Some(stock - self.state.harvested.get(&(cell, res)).copied().unwrap_or(0)),
+        }
+    }
+
+    /// Erntet bis zu `want` Einheiten; erschoepft das Vorkommen, wenn der Vorrat aufgebraucht ist.
+    fn harvest(&mut self, cell: CellId, res: ResourceId, want: u32) -> u32 {
+        let amount = match self.deposit_remaining(cell, res) {
+            None => want,
+            Some(left) => {
+                let take = want.min(left);
+                let done = self.state.harvested.entry((cell, res)).or_insert(0);
+                *done += take;
+                if *done >= self.config.deposit_stock {
+                    self.state.depleted.insert((cell, res));
+                }
+                take
+            }
+        };
+        self.state.ledger.created += amount as u64;
+        amount
+    }
+
     fn own_piece_at(&self, cell: CellId, owner: PlayerId) -> bool {
         self.state.piece_at(cell).is_some_and(|p| p.owner == owner)
     }
@@ -212,8 +247,8 @@ impl Game {
 
         if let Some(king) = self.king(me) {
             if self.state.factory_at(king.cell).is_none() && self.factory_distance_ok(king.cell) {
-                for (res, n) in self.state.carried[me.idx()].iter() {
-                    if self.map.category(res) == 1 && n >= self.config.factory_cost {
+                for res in self.available_deposits(king.cell) {
+                    if self.map.category(res) == 1 {
                         actions.push(Action::BuildFactory { pay: res });
                     }
                 }
@@ -262,10 +297,10 @@ impl Game {
                 if self.map.category(pay) != 1 {
                     return IllegalReason::PayTypeIsNotCategory1;
                 }
-                if self.state.carried[me.idx()].get(pay) < self.config.factory_cost {
-                    return IllegalReason::NotEnoughToPay;
-                }
                 if let Some(king) = self.king(me) {
+                    if !self.available_deposits(king.cell).contains(&pay) {
+                        return IllegalReason::NoCategory1DepositHere;
+                    }
                     if self.state.factory_at(king.cell).is_some() {
                         return IllegalReason::FactoryAlreadyHere;
                     }
@@ -373,12 +408,18 @@ impl Game {
     }
 
     fn do_build(&mut self, actor: PlayerId, pay: ResourceId, events: &mut Vec<Event>) {
-        let cost = self.config.factory_cost;
         let cell = self.king(actor).expect("Koenig lebt").cell;
-        let paid = self.state.carried[actor.idx()].take(pay, cost);
-        debug_assert!(paid);
-        self.state.ledger.spent_on_factories += cost as u64;
+        // Das Kat-1-Vorkommen geht in der Fabrik auf: es ist dauerhaft weg, liegt aber als
+        // eine Einheit im Lager. Sofort aufgeloest ergibt das einen Bauern.
+        self.state.depleted.insert((cell, pay));
+        self.state.ledger.created += 1;
         let factory = self.state.insert_factory(actor, cell);
+        self.state
+            .factories
+            .get_mut(&factory)
+            .expect("Fabrik existiert")
+            .storage
+            .add(pay, 1);
         events.push(Event::FactoryBuilt {
             factory,
             owner: actor,
@@ -443,9 +484,9 @@ impl Game {
 
         if let Some(king_cell) = self.king(actor).map(|k| k.cell) {
             let mut gained = Inventory::new();
-            for &res in self.map.deposits_at(king_cell) {
-                gained.add(res, yield_n);
-                self.state.ledger.created += yield_n as u64;
+            for res in self.available_deposits(king_cell) {
+                let amount = self.harvest(king_cell, res, yield_n);
+                gained.add(res, amount);
             }
             if let Some(mut pile) = self.state.loot.remove(&king_cell) {
                 gained.absorb(&mut pile);
@@ -486,11 +527,12 @@ impl Game {
         for (fid, cell) in own {
             let mut gained = Inventory::new();
             let cells = std::iter::once(cell).chain(self.map.board.neighbors(cell));
+            let cells: Vec<CellId> = cells.collect();
             for c in cells {
-                for &res in self.map.deposits_at(c) {
+                for res in self.available_deposits(c) {
                     if self.map.category(res) >= 2 {
-                        gained.add(res, yield_n);
-                        self.state.ledger.created += yield_n as u64;
+                        let amount = self.harvest(c, res, yield_n);
+                        gained.add(res, amount);
                     }
                 }
             }
@@ -624,7 +666,7 @@ impl Game {
                 if *level == 0 || *level as usize > self.config.corner_count() {
                     return Err(format!("{:?} hat ungueltige Stufe {level}", piece.id));
                 }
-                if !(1..=self.config.category_count()).contains(range) {
+                if *range == 0 || *range as usize > self.config.corner_count() {
                     return Err(format!("{:?} hat ungueltige Reichweite {range}", piece.id));
                 }
                 if colors.len() != *level as usize {
@@ -684,6 +726,22 @@ impl Game {
             }
         }
 
+        for &(cell, res) in &st.depleted {
+            if cell.idx() >= board_len || !self.map.deposits_at(cell).contains(&res) {
+                return Err(format!(
+                    "verbrauchtes Vorkommen {res:?} auf {cell:?} gibt es nicht"
+                ));
+            }
+        }
+        if self.config.deposit_stock > 0
+            && st
+                .harvested
+                .values()
+                .any(|&n| n > self.config.deposit_stock)
+        {
+            return Err("mehr geerntet als ein Vorkommen hergibt".into());
+        }
+
         if st.loot.values().any(|pile| pile.is_empty()) {
             return Err("leere Beute-Haufen".into());
         }
@@ -702,7 +760,7 @@ impl Game {
                 .sum::<u64>()
             + st.loot.values().map(Inventory::total).sum::<u64>();
         let l = st.ledger;
-        let booked = in_play + l.spent_on_factories + l.consumed_by_spawns + l.vanished;
+        let booked = in_play + l.consumed_by_spawns + l.vanished;
         if booked != l.created {
             return Err(format!(
                 "Rohstoffe stimmen nicht: erzeugt {} aber verbucht {booked} ({l:?}, im Spiel {in_play})",

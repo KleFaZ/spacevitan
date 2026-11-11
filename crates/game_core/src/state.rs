@@ -1,7 +1,7 @@
 //! Spielzustand: Figuren, Fabriken, Beute, Lager, Buchfuehrung.
 
 use crate::ids::{CellId, FactoryId, PieceId, PlayerId, ResourceId};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Rohstoffmengen nach Typ. Eintraege mit Menge 0 gibt es nicht.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -102,13 +102,11 @@ pub enum Outcome {
 }
 
 /// Rohstoff-Buchfuehrung. Es gilt immer:
-/// `created == in Gepaeck + in Lagern + als Beute + spent + consumed + vanished`.
+/// `created == in Gepaeck + in Lagern + als Beute + consumed + vanished`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Ledger {
-    /// Aus Vorkommen gesammelte Einheiten (Koenig oder Fabrik).
+    /// Aus Vorkommen gesammelte Einheiten (Koenig, Fabrik, beim Fabrikbau verbrauchtes Kat 1).
     pub created: u64,
-    /// Fuer Fabrikbau bezahlt.
-    pub spent_on_factories: u64,
     /// Beim Aufloesen einer Fabrik in eine Figur uebergegangen.
     pub consumed_by_spawns: u64,
     /// Mit einem ausgeschiedenen Spieler verschwunden (Gepaeck und Fabrikenlager).
@@ -130,6 +128,10 @@ pub struct State {
     pub turns_played: u32,
     pub outcome: Option<Outcome>,
     pub ledger: Ledger,
+    /// Vorkommen, die es nicht mehr gibt (Fabrik darauf gebaut oder Vorrat erschoepft).
+    pub depleted: BTreeSet<(CellId, ResourceId)>,
+    /// Bereits geerntete Menge je Vorkommen (nur bei begrenztem Vorrat gefuehrt).
+    pub harvested: BTreeMap<(CellId, ResourceId), u32>,
     pub(crate) occupant: Vec<Option<PieceId>>,
     pub(crate) factory_at: Vec<Option<FactoryId>>,
     next_piece: u32,
@@ -149,6 +151,8 @@ impl State {
             turns_played: 0,
             outcome: None,
             ledger: Ledger::default(),
+            depleted: BTreeSet::new(),
+            harvested: BTreeMap::new(),
             occupant: vec![None; cells],
             factory_at: vec![None; cells],
             next_piece: 0,

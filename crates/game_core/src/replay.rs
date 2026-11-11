@@ -194,14 +194,19 @@ pub fn state_json(game: &Game) -> String {
         format!(r#"{{"cell":{},"items":{}}}"#, cell.0, inv_json(inv))
     });
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"harvested":{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
         pieces,
         factories,
         loot,
-        list(st.carried.iter(), inv_json)
+        list(st.carried.iter(), inv_json),
+        list(st.depleted.iter(), |(c, r)| format!("[{},{}]", c.0, r.0)),
+        list(st.harvested.iter(), |((c, r), n)| format!(
+            "[{},{},{}]",
+            c.0, r.0, n
+        ))
     )
 }
 
@@ -228,8 +233,8 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"min_factory_distance":{},"factory_cost":{},"yield_per_round":{}}}"#,
-        c.side, c.max_rounds, c.min_factory_distance, c.factory_cost, c.yield_per_round
+        r#"{{"side":{},"max_rounds":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{}}}"#,
+        c.side, c.max_rounds, c.min_factory_distance, c.deposit_stock, c.yield_per_round
     );
     format!(
         r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{}"#,

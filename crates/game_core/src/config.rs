@@ -14,8 +14,8 @@ pub struct Config {
     pub seed: u64,
     /// Mindestabstand zwischen zwei Fabriken in Schritten (Regelwerk: 3, einstellbar 2 oder 3).
     pub min_factory_distance: u32,
-    /// Kosten einer Fabrik in Kat-1-Rohstoffen.
-    pub factory_cost: u32,
+    /// Vorrat je Rohstoffvorkommen in Einheiten; 0 = unerschoepflich.
+    pub deposit_stock: u32,
     /// Menge je Rohstoffvorkommen und Runde.
     pub yield_per_round: u32,
     /// Felder je Rohstofftyp fuer Kat 1 bis 4 (Adern aus zusammenhaengenden Feldern).
@@ -64,7 +64,7 @@ impl Config {
             side: 10,
             seed,
             min_factory_distance: 3,
-            factory_cost: 1,
+            deposit_stock: 0,
             yield_per_round: 1,
             cells_per_type: [2, 2, 2, 2],
             stray_chance: 0.15,
@@ -110,9 +110,6 @@ impl Config {
             return Err(ConfigError::Invalid(
                 "min_factory_distance muss mindestens 1 sein",
             ));
-        }
-        if self.factory_cost == 0 {
-            return Err(ConfigError::Invalid("factory_cost muss mindestens 1 sein"));
         }
         if self.yield_per_round == 0 {
             return Err(ConfigError::Invalid(
@@ -247,9 +244,6 @@ mod tests {
     fn nonsense_values_are_rejected() {
         let mut c = Config::new(2, 1);
         c.min_factory_distance = 0;
-        assert!(c.validate().is_err());
-        let mut c = Config::new(2, 1);
-        c.factory_cost = 0;
         assert!(c.validate().is_err());
         let mut c = Config::new(2, 1);
         c.yield_per_round = 0;

@@ -331,17 +331,18 @@ fn only_the_king_collects_from_fields_other_pieces_do_not() {
 // ----- Fabriken ------------------------------------------------------------------------------
 
 #[test]
-fn building_needs_a_category_1_resource_in_the_carry() {
+fn building_needs_a_category_1_deposit_under_the_king() {
     let mut g = blank(2);
+    g.setup_carry(P0, cat1(0), 3); // Gepaeck allein reicht nicht
     assert!(!g
         .legal_actions()
         .iter()
         .any(|a| matches!(a, Action::BuildFactory { .. })));
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat1(0) }),
-        Err(RuleError::Illegal(IllegalReason::NotEnoughToPay))
+        Err(RuleError::Illegal(IllegalReason::NoCategory1DepositHere))
     );
-    g.setup_carry(P0, cat2(0, 0), 5);
+    put(&mut g, 0, 0, cat2(0, 0));
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat2(0, 0) }),
         Err(RuleError::Illegal(IllegalReason::PayTypeIsNotCategory1))
@@ -352,40 +353,103 @@ fn building_needs_a_category_1_resource_in_the_carry() {
         }),
         Err(RuleError::Illegal(IllegalReason::UnknownResource))
     );
+    put(&mut g, 0, 0, cat1(1));
+    assert_eq!(
+        g.legal_actions()
+            .into_iter()
+            .filter(|a| matches!(a, Action::BuildFactory { .. }))
+            .collect::<Vec<_>>(),
+        vec![Action::BuildFactory { pay: cat1(1) }],
+        "nur das Kat-1-Vorkommen auf dem Feld zaehlt, nicht das Gepaeck"
+    );
 }
 
 #[test]
-fn building_costs_one_category_1_unit_and_creates_a_factory_under_the_king() {
+fn building_consumes_the_category_1_deposit_and_puts_it_into_the_storage() {
     let mut g = blank(2);
-    g.setup_carry(P0, cat1(0), 1);
-    g.setup_carry(P0, cat1(1), 1);
+    put(&mut g, 0, 0, cat1(1));
+    put(&mut g, 0, 0, cat2(0, 0));
     let events = act!(g, Action::BuildFactory { pay: cat1(1) });
-    let factory = g.factories_of(P0).next().expect("Fabrik");
+    let factory = g.factories_of(P0).next().expect("Fabrik").clone();
     assert_eq!(factory.cell, c(&g, 0, 0));
     assert!(events.contains(&Event::FactoryBuilt {
         factory: factory.id,
         owner: P0,
         cell: c(&g, 0, 0),
     }));
-    // Der Koenig hat beim Abladen alles in die Fabrik gegeben, bezahlt wurde mit Typ 6.
-    assert_eq!(factory.storage.get(cat1(0)), 1);
-    assert_eq!(factory.storage.get(cat1(1)), 0);
-    assert_eq!(g.state.ledger.spent_on_factories, 1);
+    assert!(g.state.depleted.contains(&(c(&g, 0, 0), cat1(1))));
+    assert_eq!(
+        g.available_deposits(c(&g, 0, 0)),
+        vec![cat2(0, 0)],
+        "nur Kat 1 ist weg"
+    );
+    // 1x Kat 1 aus dem Vorkommen; Kat 2 sammelt der Koenig am Zugende und laedt es ab,
+    // ausserdem erntet die Fabrik ihr eigenes Feld.
+    assert_eq!(factory.storage.get(cat1(1)), 1);
+    assert_eq!(factory.storage.get(cat2(0, 0)), 2);
+    assert_eq!(g.deposit_remaining(c(&g, 0, 0), cat1(1)), Some(0));
 }
 
 #[test]
-fn the_factory_cost_is_configurable() {
-    let mut config = Config::new(2, 1);
-    config.factory_cost = 2;
-    let mut g = blank_with(config);
-    g.setup_carry(P0, cat1(0), 1);
-    assert!(g
+fn a_used_category_1_deposit_never_comes_back() {
+    let mut g = blank(2);
+    put(&mut g, 1, 0, cat1(0));
+    act!(g, king_to(&g, P0, 1, 0));
+    act!(g, king_to(&g, P1, 8, 9));
+    act!(g, Action::BuildFactory { pay: cat1(0) });
+    let f = g.factories_of(P0).next().unwrap().id;
+    act!(g, king_to(&g, P1, 9, 9));
+    act!(g, king_to(&g, P0, 2, 0));
+    act!(g, king_to(&g, P1, 8, 9));
+    act!(g, Action::SpawnPiece { factory: f });
+    // Fabrik ist aufgeloest; das Feld hat kein Kat 1 mehr, hier kann nie wieder gebaut werden.
+    let pawn = g.state.piece_at(c(&g, 1, 0)).unwrap().id;
+    act!(g, king_to(&g, P1, 9, 9));
+    act!(
+        g,
+        Action::Move {
+            piece: pawn,
+            to: c(&g, 1, 1)
+        }
+    );
+    act!(g, king_to(&g, P1, 8, 9));
+    let before = g.state.ledger.created;
+    act!(g, king_to(&g, P0, 1, 0));
+    assert_eq!(g.state.ledger.created, before, "nichts mehr zu sammeln");
+    assert!(g.available_deposits(c(&g, 1, 0)).is_empty());
+    act!(g, king_to(&g, P1, 9, 9));
+    assert!(!g
         .legal_actions()
         .iter()
-        .all(|a| !matches!(a, Action::BuildFactory { .. })));
-    g.setup_carry(P0, cat1(0), 1);
+        .any(|a| matches!(a, Action::BuildFactory { .. })));
+}
+
+#[test]
+fn spawning_right_after_building_gives_only_a_pawn() {
+    let mut g = blank(2);
+    put(&mut g, 1, 0, cat1(0));
+    put(&mut g, 2, 0, cat3(0, 0));
+    act!(g, king_to(&g, P0, 1, 0));
+    act!(g, king_to(&g, P1, 8, 9));
     act!(g, Action::BuildFactory { pay: cat1(0) });
-    assert_eq!(g.state.ledger.spent_on_factories, 2);
+    act!(g, king_to(&g, P1, 9, 9));
+    act!(g, king_to(&g, P0, 1, 1));
+    act!(g, king_to(&g, P1, 8, 9));
+    let f = g.factories_of(P0).next().unwrap().id;
+    act!(g, Action::SpawnPiece { factory: f });
+    let piece = g.state.piece_at(c(&g, 1, 0)).unwrap();
+    assert!(
+        matches!(
+            piece.kind,
+            PieceKind::Unit {
+                level: 1,
+                range: 1,
+                ..
+            }
+        ),
+        "Kat 3 im Lager macht keine groessere Reichweite mehr: {:?}",
+        piece.kind
+    );
 }
 
 #[test]
@@ -395,9 +459,9 @@ fn the_king_unloads_everything_into_the_factory_he_stands_on_at_turn_end() {
     act!(g, king_to(&g, P0, 1, 0)); // sammelt 1 x Kat 1
     act!(g, king_to(&g, P1, 8, 9));
     let events = act!(g, Action::BuildFactory { pay: cat1(0) });
-    // Bezahlt, dann am Zugende erneut gesammelt und in die neue Fabrik geladen.
+    // 1 Einheit aus dem verbauten Vorkommen + 1 Einheit, die der Koenig trug und ablaedt.
     let factory = g.factories_of(P0).next().unwrap();
-    assert_eq!(factory.storage.get(cat1(0)), 1);
+    assert_eq!(factory.storage.get(cat1(0)), 2);
     assert!(g.state.carried[P0.idx()].is_empty());
     assert!(events
         .iter()
@@ -429,7 +493,7 @@ fn factories_keep_a_minimum_distance_to_each_other() {
     ] {
         let mut g = blank(2);
         g.setup_factory(P1, c(&g, fx, fy));
-        g.setup_carry(P0, cat1(0), 1);
+        put(&mut g, 0, 0, cat1(0));
         let offered = g
             .legal_actions()
             .iter()
@@ -445,7 +509,7 @@ fn the_minimum_distance_is_configurable() {
     config.min_factory_distance = 2;
     let mut g = blank_with(config);
     g.setup_factory(P1, c(&g, 2, 0));
-    g.setup_carry(P0, cat1(0), 1);
+    put(&mut g, 0, 0, cat1(0));
     assert!(g
         .legal_actions()
         .iter()
@@ -456,7 +520,7 @@ fn the_minimum_distance_is_configurable() {
 fn the_distance_rule_also_applies_to_the_own_factories_and_explains_itself() {
     let mut g = blank(2);
     g.setup_factory(P0, c(&g, 0, 2));
-    g.setup_carry(P0, cat1(0), 1);
+    put(&mut g, 0, 0, cat1(0));
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat1(0) }),
         Err(RuleError::Illegal(IllegalReason::TooCloseToAnotherFactory))
@@ -467,7 +531,7 @@ fn the_distance_rule_also_applies_to_the_own_factories_and_explains_itself() {
 fn no_second_factory_on_the_same_cell() {
     let mut g = blank(2);
     g.setup_factory(P0, c(&g, 0, 0));
-    g.setup_carry(P0, cat1(0), 1);
+    put(&mut g, 0, 0, cat1(0));
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat1(0) }),
         Err(RuleError::Illegal(IllegalReason::FactoryAlreadyHere))
@@ -556,7 +620,7 @@ fn spawning_dissolves_the_factory_into_a_piece_with_level_and_range_from_the_sto
         piece.kind,
         PieceKind::Unit {
             level: 2,
-            range: 3,
+            range: 2,
             colors: vec![cat1(0), cat1(1)]
         }
     );
@@ -566,24 +630,24 @@ fn spawning_dissolves_the_factory_into_a_piece_with_level_and_range_from_the_sto
         factory: f,
         cell: c(&g, 5, 5),
         level: 2,
-        range: 3,
+        range: 2,
     }));
     assert_eq!(g.state.ledger.consumed_by_spawns, 7);
 }
 
 #[test]
-fn range_is_the_highest_category_in_the_storage() {
-    for (extra, expected_range) in [(None, 1u8), (Some(cat2(0, 0)), 2), (Some(cat3(0, 0)), 3)] {
-        let mut g = blank(2);
+fn range_equals_the_level_whatever_else_is_in_the_storage() {
+    for (colors, expected) in [(1u16, 1u8), (2, 2), (3, 3)] {
+        let mut g = blank(4);
         let f = g.setup_factory(P0, c(&g, 5, 5));
-        g.setup_storage(f, cat1(0), 1);
-        if let Some(res) = extra {
-            g.setup_storage(f, res, 1);
+        for corner in 0..colors {
+            g.setup_storage(f, cat1(corner), 1);
         }
+        g.setup_storage(f, cat3(0, 0), 5);
         act!(g, Action::SpawnPiece { factory: f });
         let piece = g.state.piece_at(c(&g, 5, 5)).unwrap();
         assert!(
-            matches!(piece.kind, PieceKind::Unit { range, .. } if range == expected_range),
+            matches!(piece.kind, PieceKind::Unit { level, range, .. } if level == expected && range == expected),
             "{:?}",
             piece.kind
         );
@@ -1069,4 +1133,94 @@ fn identical_action_sequences_give_identical_states() {
         g.state
     };
     assert_eq!(play(), play());
+}
+
+// ----- Begrenzter Vorrat je Vorkommen -------------------------------------------------------
+
+fn with_stock(stock: u32, yield_n: u32) -> Game {
+    let mut config = Config::new(2, 1);
+    config.deposit_stock = stock;
+    config.yield_per_round = yield_n;
+    blank_with(config)
+}
+
+#[test]
+fn unlimited_deposits_never_run_out() {
+    let mut g = with_stock(0, 1);
+    put(&mut g, 1, 0, cat2(0, 0));
+    assert_eq!(g.deposit_remaining(c(&g, 1, 0), cat2(0, 0)), None);
+    act!(g, king_to(&g, P0, 1, 0));
+    for _ in 0..5 {
+        act!(g, king_to(&g, P1, 8, 9));
+        act!(g, king_to(&g, P0, 1, 1));
+        act!(g, king_to(&g, P1, 9, 9));
+        act!(g, king_to(&g, P0, 1, 0));
+    }
+    assert_eq!(carry(&g, P0, cat2(0, 0)), 6);
+    assert!(
+        g.state.harvested.is_empty(),
+        "ohne Grenze wird nichts mitgezaehlt"
+    );
+}
+
+#[test]
+fn a_limited_deposit_is_used_up_by_the_king() {
+    let mut g = with_stock(3, 1);
+    put(&mut g, 1, 0, cat2(0, 0));
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    act!(g, king_to(&g, P0, 1, 0));
+    assert_eq!(g.deposit_remaining(c(&g, 1, 0), cat2(0, 0)), Some(2));
+    // Der Koenig bleibt stehen und sammelt jede Runde; eine Figur pendelt, P1 auch.
+    let mut unit_at = (5, 5);
+    let mut p1_at = (9, 9);
+    for left in [1, 0, 0] {
+        p1_at = if p1_at == (9, 9) { (8, 9) } else { (9, 9) };
+        act!(g, king_to(&g, P1, p1_at.0, p1_at.1));
+        unit_at = if unit_at == (5, 5) { (6, 5) } else { (5, 5) };
+        act!(
+            g,
+            Action::Move {
+                piece: unit,
+                to: c(&g, unit_at.0, unit_at.1)
+            }
+        );
+        assert_eq!(g.deposit_remaining(c(&g, 1, 0), cat2(0, 0)), Some(left));
+    }
+    assert_eq!(
+        carry(&g, P0, cat2(0, 0)),
+        3,
+        "mehr als der Vorrat gibt es nicht"
+    );
+    assert!(g.available_deposits(c(&g, 1, 0)).is_empty());
+}
+
+#[test]
+fn a_large_yield_takes_only_what_is_left() {
+    let mut g = with_stock(3, 2);
+    put(&mut g, 1, 0, cat3(0, 0));
+    act!(g, king_to(&g, P0, 1, 0));
+    assert_eq!(carry(&g, P0, cat3(0, 0)), 2);
+    act!(g, king_to(&g, P1, 8, 9));
+    act!(g, king_to(&g, P0, 1, 1));
+    act!(g, king_to(&g, P1, 9, 9));
+    act!(g, king_to(&g, P0, 1, 0));
+    assert_eq!(carry(&g, P0, cat3(0, 0)), 3, "2 + der Rest von 1");
+    assert_eq!(g.deposit_remaining(c(&g, 1, 0), cat3(0, 0)), Some(0));
+}
+
+#[test]
+fn factories_drain_their_surroundings_with_a_limited_stock() {
+    let mut g = with_stock(1, 1);
+    let f = g.setup_factory(P0, c(&g, 5, 5));
+    put(&mut g, 5, 5, cat2(0, 0));
+    put(&mut g, 6, 5, cat3(0, 0));
+    act!(g, king_to(&g, P0, 1, 0));
+    act!(g, king_to(&g, P1, 8, 9));
+    act!(g, king_to(&g, P0, 2, 0));
+    assert_eq!(
+        g.state.factories[&f].storage,
+        inv(&[(cat2(0, 0), 1), (cat3(0, 0), 1)]),
+        "Vorrat 1: jedes Vorkommen gibt genau einmal etwas her"
+    );
+    assert_eq!(g.state.depleted.len(), 2);
 }

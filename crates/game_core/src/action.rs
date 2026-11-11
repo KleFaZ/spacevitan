@@ -8,7 +8,8 @@ use crate::state::{Inventory, Outcome};
 pub enum Action {
     /// Figur (auch der Koenig) auf ein Feld ziehen; steht dort ein Gegner, wird er geschlagen.
     Move { piece: PieceId, to: CellId },
-    /// Der Koenig baut auf seinem Feld eine Fabrik und bezahlt mit dem gewaehlten Kat-1-Typ.
+    /// Der Koenig baut auf seinem Feld eine Fabrik. Dafuer wird das Kat-1-Vorkommen `pay` auf
+    /// diesem Feld dauerhaft verbraucht; es liegt danach als eine Einheit im Lager.
     BuildFactory { pay: ResourceId },
     /// Fabrik aufloesen und daraus eine Figur machen.
     SpawnPiece { factory: FactoryId },
@@ -83,7 +84,7 @@ pub enum IllegalReason {
     CannotReach,
     UnknownResource,
     PayTypeIsNotCategory1,
-    NotEnoughToPay,
+    NoCategory1DepositHere,
     FactoryAlreadyHere,
     TooCloseToAnotherFactory,
     NoSuchFactory,
@@ -107,7 +108,9 @@ impl std::fmt::Display for IllegalReason {
             IllegalReason::PayTypeIsNotCategory1 => {
                 "bezahlt werden kann nur mit einem Kat-1-Rohstoff"
             }
-            IllegalReason::NotEnoughToPay => "der Koenig traegt nicht genug von diesem Rohstoff",
+            IllegalReason::NoCategory1DepositHere => {
+                "auf dem Feld des Koenigs liegt kein solches Kat-1-Vorkommen"
+            }
             IllegalReason::FactoryAlreadyHere => "hier steht schon eine Fabrik",
             IllegalReason::TooCloseToAnotherFactory => "zu nah an einer anderen Fabrik",
             IllegalReason::NoSuchFactory => "diese Fabrik gibt es nicht",

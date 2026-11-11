@@ -533,8 +533,13 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       ctx.beginPath(); ctx.ellipse(x, y - h * f, w, ry, 0, 0, Math.PI); ctx.stroke();
     }
   }
+  /** Vorkommen, die es im angezeigten Zug noch gibt (verbaute und erschoepfte fehlen). */
+  function liveDeposits(f, cell) {
+    const gone = f.gone || (f.gone = new Set((f.depleted || []).map(([c, r]) => c + ":" + r)));
+    return R.deposits[cell].filter((res) => !gone.has(cell + ":" + res));
+  }
   function drawDeposits(cell, dim) {
-    const list = R.deposits[cell];
+    const list = liveDeposits(R.frames[fi], cell);
     if (!list.length) return;
     const [x, y] = R.board.cells[cell];
     const [cx, cy] = iso(x, y);
@@ -741,7 +746,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     const occupied = new Set(f.pieces.map((p) => p.cell));
     const built = new Set(f.factories.map((x) => x.cell));
     for (let c = 0; c < R.deposits.length; c++) {
-      if (R.deposits[c].length) {
+      if (liveDeposits(f, c).length) {
         const [x, y] = R.board.cells[c];
         objs.push({ d: depth(x, y), o: 0, x, fn: () => drawDeposits(c, occupied.has(c) || built.has(c)) });
       }
@@ -996,11 +1001,19 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     const f = R.frames[fi];
     const t = R.territories[cell];
     const region = t >= 0 ? TERRAIN[t % TERRAIN.length].name : NEUTRAL.name;
-    const deps = R.deposits[cell].map((res) => {
+    const stock = R.config.deposit_stock || 0;
+    const deps = liveDeposits(f, cell).map((res) => {
       const info = typeInfo(res);
       const home = R.cornerPlayer[info.home] >= 0 ? `Gebiet ${playerName(R.cornerPlayer[info.home])}` : "freie Ecke";
-      return `Kat ${info.category} (Typ ${res}, ${home})`;
+      let left = "";
+      if (stock > 0) {
+        const h = (f.harvested || []).find(([c, r]) => c === cell && r === res);
+        left = `, noch ${stock - (h ? h[2] : 0)}`;
+      }
+      return `Kat ${info.category} (Typ ${res}, ${home}${left})`;
     });
+    const used = R.deposits[cell].length - deps.length;
+    if (used > 0) deps.push(`${used} Vorkommen verbraucht`);
     const piece = f.pieces.find((p) => p.cell === cell);
     const fac = f.factories.find((x) => x.cell === cell);
     const loot = f.loot.find((l) => l.cell === cell);
@@ -1047,8 +1060,8 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   function legend() {
     const items = [
       ["king", "König: sammelt, baut Fabriken. Fällt er, ist der Spieler raus."],
-      ["unit", "Figur: Zahl = Stufe (Kat-1-Farben), Punkte = Reichweite."],
-      ["factory", "Fabrik: sammelt ab Kat 2 alles von Feld und Nachbarn. Zahl = Lager."],
+      ["unit", "Figur: Zahl = Stufe (Kat-1-Farben im Lager), Punkte = Reichweite (= Stufe)."],
+      ["factory", "Fabrik: nur auf Kat 1 baubar (das Vorkommen ist danach weg); sammelt ab Kat 2 von Feld und Nachbarn. Zahl = Lager."],
       ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört."],
       ["ingot", "Kat 2"],
       ["grain", "Kat 3"],
@@ -1194,13 +1207,13 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   function actionLabel(a, f) {
     if (a.type === "build") {
       const king = f.pieces.find((p) => p.king && p.owner === f.current);
-      return `Fabrik bauen auf ${cellName(king.cell)} (kostet ${R.config.factory_cost}× Kat 1, ${homeName(a.pay)})`;
+      return `Fabrik bauen auf ${cellName(king.cell)} (verbraucht das Kat-1-Vorkommen, ${homeName(a.pay)})`;
     }
     if (a.type === "spawn") {
       const fac = f.fById.get(a.factory);
       const level = fac.storage.filter(([r]) => category(r) === 1).length;
-      const range = Math.max(...fac.storage.map(([r]) => category(r)));
-      return `Fabrik auf ${cellName(fac.cell)} auflösen: Figur Stufe ${level}, Reichweite ${range}`;
+      const tip = level === 1 ? " – mehr Farben im Lager ergeben eine höhere Stufe" : "";
+      return `Fabrik auf ${cellName(fac.cell)} auflösen: Figur Stufe ${level}, Reichweite ${level}${tip}`;
     }
     if (a.type === "pass") return "Passen";
     return a.type;

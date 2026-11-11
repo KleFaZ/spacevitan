@@ -93,12 +93,11 @@ pub fn render_game(game: &Game) -> String {
             format!("#{}", player_letter(f.owner))
         } else if game.state.loot.contains_key(&cell) {
             "$".to_string()
-        } else if game.map.deposits_at(cell).is_empty() {
+        } else if game.available_deposits(cell).is_empty() {
             ".".to_string()
         } else {
             let mut cats: Vec<u8> = game
-                .map
-                .deposits_at(cell)
+                .available_deposits(cell)
                 .iter()
                 .map(|&r| game.map.category(r))
                 .collect();
