@@ -247,7 +247,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     <details class="legend" open>
       <summary>Legende</summary>
       <dl id="legend"></dl>
-      <p class="note" style="margin-top:10px">Auf dem Quadrat heißen Felder wie beim Schach: Buchstabe für die Spalte, Zahl für die Reihe. Gebiete (Wald, Himmel, Steppe, Fels) sind nur Farbe, ohne Spielwirkung. Tippe oder zeige auf ein Feld für Details. Tasten: Leertaste, ← →, Pos1, Ende.</p>
+      <p class="note" style="margin-top:10px">Auf dem Quadrat heißen Felder wie beim Schach: Buchstabe für die Spalte, Zahl für die Reihe. Gebiete (Wald, Himmel, Steppe, Fels und mehr) sind nur Farbe, ohne Spielwirkung. Tippe oder zeige auf ein Feld für Details. Tasten: Leertaste, ← →, Pos1, Ende.</p>
     </details>
   </aside>
 </main>
@@ -264,6 +264,10 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     { name: "B", color: "#e9ad0c" },
     { name: "C", color: "#7a4fd6" },
     { name: "D", color: "#1d9e96" },
+    { name: "E", color: "#3a6fd8" },
+    { name: "F", color: "#e8762b" },
+    { name: "G", color: "#d64593" },
+    { name: "H", color: "#4f5866" },
   ];
   const FREE_CRYSTAL = ["#f3f2ec", "#3d3b45"]; // Kat-1-Farbe freier Ecken (bei 2 Spielern)
   const TERRAIN = [
@@ -271,11 +275,16 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     { name: "Himmel", top: "#a4c5df" },
     { name: "Steppe", top: "#dcc58d" },
     { name: "Fels", top: "#b9afbf" },
+    { name: "Schnee", top: "#dfe5ea" },
+    { name: "Moor", top: "#9ea888" },
+    { name: "Heide", top: "#d3acba" },
+    { name: "Lehm", top: "#c99a7e" },
   ];
   const NEUTRAL = { name: "Mitte", top: "#cfd4c8" };
   const INGOT = "#9aa6b1";
   const GRAIN = "#d9b257";
   const GOLD = "#f2c94c";
+  const BARREL = "#9a6a3c";
   const COLS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
   const $ = (id) => document.getElementById(id);
@@ -505,6 +514,25 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.fill();
     }
   }
+  function drawBarrel(x, y, s) {
+    const w = s * 0.32, h = s * 0.62, ry = w * 0.45;
+    const g = ctx.createLinearGradient(x - w, 0, x + w, 0);
+    g.addColorStop(0, shade(BARREL, 0.25)); g.addColorStop(0.6, BARREL); g.addColorStop(1, shade(BARREL, -0.45));
+    ctx.beginPath();
+    ctx.moveTo(x - w, y - h);
+    ctx.lineTo(x - w, y);
+    ctx.ellipse(x, y, w, ry, 0, Math.PI, 0, true);
+    ctx.lineTo(x + w, y - h);
+    ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(x, y - h, w, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = shade(BARREL, 0.3); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(40,30,20,0.75)";
+    for (const f of [0.3, 0.7]) {
+      ctx.beginPath(); ctx.ellipse(x, y - h * f, w, ry, 0, 0, Math.PI); ctx.stroke();
+    }
+  }
   function drawDeposits(cell, dim) {
     const list = R.deposits[cell];
     if (!list.length) return;
@@ -518,7 +546,8 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       const cat = category(res);
       if (cat === 1) drawCrystal(px, py, s, crystalColor(res));
       else if (cat === 2) drawIngot(px, py, s);
-      else drawGrain(px, py, s);
+      else if (cat === 3) drawGrain(px, py, s);
+      else drawBarrel(px, py, s);
     });
     ctx.globalAlpha = 1;
   }
@@ -856,7 +885,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     const f = R.frames[fi];
     const last = R.frames.length - 1;
     $("summary").innerHTML =
-      `<strong>Seed <span class="mono">${R.seed}</span></strong> · Karte ${R.side}×${R.side} · ` +
+      `<strong>Seed <span class="mono">${R.seed}</span></strong> · ${boardText()} · ` +
       `${R.players} Spieler · ${R.frames.length - 1} ${R.frames.length === 2 ? "Zug" : "Züge"}<br>Ergebnis: <strong>${outcomeText(R)}</strong>`;
 
     const players = $("players");
@@ -913,6 +942,13 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     $("play").setAttribute("aria-label", playing ? "Anhalten" : "Abspielen");
     $("playIcon").setAttribute("d", playing ? "M5 4h4v12H5zM11 4h4v12h-4z" : "M6 4v12l10-6z");
     renderTurnBox();
+  }
+  function boardText() {
+    const n = R.board.cells.length;
+    if (R.board.kind === "square") return `Karte ${R.side}×${R.side}`;
+    if (R.board.kind === "triangle") return `Dreieck, Seite ${R.side}, ${n} Felder`;
+    const names = { 5: "Fünfeck", 6: "Sechseck", 7: "Siebeneck", 8: "Achteck" };
+    return `${names[R.board.corners.length] || R.board.corners.length + "-Eck"}, Seite ${R.side}, ${n} Felder`;
   }
   function seatLabel(p) {
     const name = (R.bots || [])[p] || "";
@@ -1012,10 +1048,11 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     const items = [
       ["king", "König: sammelt, baut Fabriken. Fällt er, ist der Spieler raus."],
       ["unit", "Figur: Zahl = Stufe (Kat-1-Farben), Punkte = Reichweite."],
-      ["factory", "Fabrik: sammelt Kat 2 und 3 von Feld und Nachbarn. Zahl = Lager."],
+      ["factory", "Fabrik: sammelt ab Kat 2 alles von Feld und Nachbarn. Zahl = Lager."],
       ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört."],
       ["ingot", "Kat 2"],
       ["grain", "Kat 3"],
+      ["barrel", "Kat 4 (ab 6 Spielern)"],
       ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
     ];
     const dl = $("legend");
@@ -1043,6 +1080,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
         if (kind === "crystal") drawCrystal(20, 34, 22, PLAYER[3].color);
         if (kind === "ingot") drawIngot(20, 28, 24);
         if (kind === "grain") drawGrain(20, 32, 24);
+        if (kind === "barrel") drawBarrel(20, 34, 40);
         if (kind === "loot") drawLoot(20, 28);
       } finally {
         ctx = boardCtx;

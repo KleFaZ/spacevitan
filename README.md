@@ -53,7 +53,7 @@ WebAssembly direkt im Browser; es ist derselbe Rust-Kern wie in der CLI (`crates
 `web-build`.
 
 ```
-git fetch origin web-build:refs/remotes/origin/web-build
+git fetch origin +web-build:refs/remotes/origin/web-build
 git show origin/web-build:spacevitan.wasm > spacevitan.wasm
 python3 viewer/build.py spacevitan.html --wasm spacevitan.wasm --standalone
 ```

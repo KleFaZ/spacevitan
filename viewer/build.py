@@ -9,7 +9,7 @@ im Browser oeffnen.
 
 Partien erzeugt die CLI:  spacevitan --seed 1 --export partie.json
 Den Spielkern (--wasm) baut die CI in den Branch web-build:
-    git fetch origin web-build && git show origin/web-build:spacevitan.wasm > spacevitan.wasm
+    git fetch origin +web-build:refs/remotes/origin/web-build && git show origin/web-build:spacevitan.wasm > spacevitan.wasm
 Ohne --wasm funktioniert nur die Wiedergabe, nicht das Spielen.
 """
 
