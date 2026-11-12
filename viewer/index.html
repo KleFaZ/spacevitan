@@ -283,7 +283,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { name: "H", color: "#4f5866" },
   ];
   const FREE_CRYSTAL = ["#f3f2ec", "#3d3b45"]; // Kat-1-Farbe freier Ecken (bei 2 Spielern)
-  const CENTER_CRYSTAL = ["#e8c75a", "#b7e4e0", "#d9a6e8", "#9fd28a"]; // Zentrumsfarben
+  const CENTER_CRYSTAL = ["#a3e635", "#8d5b33", "#c0c7d1", "#5ce1e6"]; // Zentrumsfarben: Limette, Braun, Silber, Cyan (keine Spielerfarbe)
   const TERRAIN = [
     { name: "Wald", top: "#86a872" },
     { name: "Himmel", top: "#a4c5df" },
@@ -1183,7 +1183,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["king", "König: sammelt, baut Fabriken. Fällt er, ist der Spieler raus."],
       ["unit", "Figur: Zahl = Stufe (Farben + Ausbau + Karten), Punkte = Reichweite. Blauer Ring = Schild."],
       ["factory", "Fabrik: nur auf Kat 1 baubar (das Vorkommen ist danach weg); sammelt ab Kat 2 von Feld und Nachbarn. Je 10 Einheiten Kat 2/3 aus genug verschiedenen Typen: Stufe +1 (höchstens +2). Zahl = Lager."],
-      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Gold, Türkis usw. = Zentrumsfarben. Fabrik auf fremder Farbe = gleich Stufe 2."],
+      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Limette, Braun, Silber, Cyan = Zentrumsfarben. Fabrik auf fremder Farbe = gleich Stufe 2."],
       ["ingot", "Kat 2"],
       ["grain", "Kat 3"],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
@@ -1592,6 +1592,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; },
     get live() { return live; }, get mode() { return mode; }, get selected() { return selected; },
     get ready() { return wasm !== null; },
+    /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
+    get replay() { return R; },
     /** Feld einer Figur im angezeigten Zug (fuer automatische Tests). */
     pieceCell(id) {
       const p = R.frames[fi].byId.get(id);
