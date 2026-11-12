@@ -130,15 +130,59 @@ cargo test --workspace
 Kat 1 wird also zur Mitte hin dichter: in jeder Ecke ein Feld der eigenen Farbe, im
 Zwischenring eins je Spieler, in der Mitte drei je Zentrumsfarbe.
 
-## Karten (Version 1)
+## Karten
 
-Vor der Partie liegen `market_size` verschiedene Karten offen aus, jede beliebig oft kaufbar.
-Pro Zug hoechstens ein Kauf, zusaetzlich zur Aktion. Bezahlt wird aus einem Lager: Gepaeck des
-Koenigs oder eine eigene Fabrik. Karten fuer Figuren wirken auf eine Figur am Zahlfeld oder
-daneben. Im Deck: Ausbildung, Lange Beine, Laeuferschlag (nur Quadratkarten), Schild,
-Koenigsruestung, Koenigsschritt, Rekrut, Doppelschicht, Bergbau, Ackerbau, Doppelzug sowie die
-Sets Runenstein und Sternsplitter (drei Teile ergeben den Bonus). Kosten und Texte stehen in
-`crates/game_core/src/cards.rs`, der Entwurf mit 100 Karten im Projekt-Dokument.
+Vor jeder Partie zieht der Seed `market_size` verschiedene Karten aus dem Deck (bei 2 Spielern
+4 von 14), jede beliebig oft kaufbar. Pro Zug hoechstens ein Kauf, zusaetzlich zur Aktion.
+Bezahlt wird aus einem Ort: Gepaeck des Koenigs oder eine eigene Fabrik. Figurenkarten wirken
+auf eine beliebige eigene Figur (mit `card_target_near=1` nur auf oder neben dem Zahlfeld). Das
+Deck staerkt nur Angriff und Wirtschaft, Verteidigungskarten gibt es nicht. Texte und Preise:
+`crates/game_core/src/cards.rs`; der Entwurf mit 100 Karten steht im Projekt-Dokument.
+
+| Karte | Wirkung | Preis (Einheiten Kat 2/3) |
+|---|---|---|
+| Ausbildung | Figur: Stufe +1, Reichweite waechst mit | je Reichweite der Figur 2+2: Bauer 4, Reichweite 2: 8, Reichweite 3: 12 |
+| Lange Beine | Figur: Reichweite +1, hoechstens zweimal | je Reichweite 1+2: 3, 6, 9 |
+| Laeuferschlag | Figur schlaegt auch diagonal (nur Quadratkarten) | 3 |
+| Lanze | Figur schlaegt zwei Felder weit geradeaus | 4 |
+| Sprungfeder | Figur springt ueber eine Nachbarfigur | 3 |
+| Pferd | Figur springt auf jedes Feld im Abstand 2 | 4 |
+| Sturmangriff | in diesem Zug alle Figuren Reichweite +1 | 3 |
+| Rekrut | Bauer neben der zahlenden Fabrik, die Fabrik bleibt | 1 Farbe + 5 |
+| Doppelzug | in diesem Zug eine zweite Aktion | 5 |
+| Doppelschicht | alle Fabriken ernten sofort noch einmal | 4 |
+| Bergbau / Ackerbau | Fabriken ernten Kat 2 / Kat 3 doppelt | 5 |
+| Runenstein (Set) | der dritte gibt einer Figur Stufe +2 | 6, Set 18 |
+| Sternsplitter (Set) | der dritte legt ein Kat-1-Feld der eigenen Farbe unter den Koenig | 4, Set 12 |
+
+### Kartenwert-Messung
+
+`--gift` schenkt Spieler A eine Karte, sobald sie wirken kann (Figurenkarten an seine staerkste
+Figur, sobald er eine hat; Fabrikkarten mit der ersten Fabrik; Sets komplett). Beide Seiten
+`stark-pur`, kein Markt, 40 Partien mit Seeds 3000 bis 3039. Punkte = Siege + halbe Remis.
+Ohne Geschenk holt A 62,5 % (Anzugsvorteil). Zufallsschwankung bei 40 Partien: etwa ±10 Punkte,
+nur grosse Unterschiede sind belastbar.
+
+| Geschenk an A | Punkte A | Unterschied |
+|---|---|---|
+| nichts | 62,5 % | |
+| 2 / 4 Einheiten in Runde 3 | 71 / 88 % | +9 / +25 |
+| 2 / 4 Einheiten mit der ersten Figur | 69 / 71 % | +6 / +9 |
+| 2 / 4 Einheiten mit der ersten Fabrik | 60 / 68 % | −3 / +5 |
+| Runenstein-Set | 100 % | +38 |
+| Ausbildung | 92 % | +30 |
+| Lange Beine | 89 % | +26 |
+| Pferd, Bergbau | 66 % | +4 |
+| Rekrut, Doppelschicht, Ackerbau | 64 % | +1 |
+| Sprungfeder, Lanze, Laeuferschlag | 60 bis 63 % | um 0 |
+| Sternsplitter-Set | 58 % | −5 |
+
+Ergebnis: Reichweite auf der ersten starken Figur (meist Stufe 3 um Runde 9) entscheidet die
+Partie. Darum kosten Ausbildung und Lange Beine je Reichweitenpunkt, der Runenstein mehr. Die
+Bauernkarten (Sprungfeder, Lanze, Laeuferschlag, Pferd) bringen auf einer starken Figur nichts
+und bleiben billig; Pferd wurde von 6 auf 4 gesenkt. Doppelschicht ist beliebig oft kaufbar und
+kostet darum mehr als eine Ernte (2 auf 4). Sturmangriff und Doppelzug wirken nur einen Zug und
+lassen sich so nicht messen.
 
 ## Stand: Meilenstein 1
 
@@ -146,7 +190,7 @@ Umgesetzt: 2 bis 8 Spieler (2 und 4: Quadrat, 3: Dreieck aus Dreiecksfeldern, 5 
 regelmaessiges Vieleck aus Hexfeldern; ab 6 Spielern eine vierte Rohstoffkategorie); Kartengenerator mit Fairnesspruefung;
 Koenig sammelt, baut Fabriken nur auf Kat-1-Vorkommen (das Vorkommen ist danach weg; Kat 1 liegt
 zwei Felder vom Start Richtung Mitte, dazu Zentrumsfarben), laedt ab; Fabrik auf fremder Farbe =
-Stufe 2; Ausbau ueber Kat 2/3 im Lager; Kartenmarkt mit 13 Karten; Fabriken sammeln Kat 2/3 vom eigenen Feld und den
+Stufe 2; Ausbau ueber Kat 2/3 im Lager; Kartenmarkt mit 14 Karten (nur Angriff und Wirtschaft); Fabriken sammeln Kat 2/3 vom eigenen Feld und den
 Nachbarfeldern (im Quadratgitter 5 Felder); Aufloesen in Figuren (Stufe = Zahl der
 Kat-1-Farben, Reichweite = Stufe); Stufe 1 zieht gerade, ab Stufe 2 frei;
 Schlagen wie im Schach; Fabrik-Einnahme mit Beute, die nur Koenige aufnehmen; Koenig faellt =

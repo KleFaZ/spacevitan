@@ -207,7 +207,9 @@ impl Card {
             Card::DoubleShift => cost(0, 2, 1, 2, 2),
             Card::Mining => cost(0, 3, 2, 2, 1),
             Card::Farming => cost(0, 2, 1, 3, 2),
-            Card::Runestone => cost(0, 2, 1, 3, 1),
+            // Set: drei Teile, zusammen 18. Zwei Stufen auf einer Stufe-2-Figur kosten mit
+            // Ausbildung 8 + 12 = 20.
+            Card::Runestone => cost(0, 3, 1, 3, 1),
             Card::Starshard => cost(0, 2, 1, 2, 1),
         }
     }
