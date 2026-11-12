@@ -101,8 +101,9 @@ pub struct Weights {
     pub return_cost: i32,
     /// Je Feld Weg zu einer fremden Farbe, die die Fabrik noch nicht hat.
     pub source_step: i32,
-    /// Freier Bauplatz (Kat-1-Vorkommen) in Reichweite des Koenigs.
-    pub site_value: i32,
+    /// Freier Bauplatz (Kat-1-Vorkommen) in Reichweite des Koenigs, in Prozent des Werts der
+    /// Fabrik, die dort entstuende.
+    pub site_share: i32,
     pub site_step: i32,
     /// Getragene Farbe ohne eigene Fabrik.
     pub loose_color: i32,
@@ -113,6 +114,21 @@ pub struct Weights {
     pub trap: i32,
     /// Eigener Koenig naeher an einem gegnerischen Koenig, der keine Figuren mehr hat.
     pub king_hunt: i32,
+    /// Karten: Schild in Prozent des Figurenwerts (plus fester Anteil).
+    pub shield_share: i32,
+    pub diagonal: i32,
+    /// Je Feld zusaetzlicher Reichweite durch Karten.
+    pub extra_range: i32,
+    pub king_armor: i32,
+    pub king_step: i32,
+    /// Bergbau oder Ackerbau.
+    pub harvest_perk: i32,
+    /// Je gesammeltem Teil eines Sets.
+    pub set_piece: i32,
+    /// Eine weitere Aktion in diesem Zug (Doppelzug).
+    pub extra_action: i32,
+    /// Ein Kauf muss die Bewertung mindestens so weit verbessern.
+    pub buy_margin: i32,
     /// 0: jede Figur jagt den naechsten gegnerischen Koenig, eingekesselt wird jeder (Standard,
     /// in 60 Viererpartien 49 statt 27 Siege); 1: alle jagen denselben Zielkoenig.
     pub focus: i32,
@@ -138,13 +154,22 @@ impl Weights {
                 "carry_share" => &mut self.carry_share,
                 "return_cost" => &mut self.return_cost,
                 "source_step" => &mut self.source_step,
-                "site_value" => &mut self.site_value,
+                "site_share" => &mut self.site_share,
                 "site_step" => &mut self.site_step,
                 "loose_color" => &mut self.loose_color,
                 "hanging_king" => &mut self.hanging_king,
                 "trap" => &mut self.trap,
                 "king_hunt" => &mut self.king_hunt,
                 "focus" => &mut self.focus,
+                "shield_share" => &mut self.shield_share,
+                "diagonal" => &mut self.diagonal,
+                "extra_range" => &mut self.extra_range,
+                "king_armor" => &mut self.king_armor,
+                "king_step" => &mut self.king_step,
+                "harvest_perk" => &mut self.harvest_perk,
+                "set_piece" => &mut self.set_piece,
+                "extra_action" => &mut self.extra_action,
+                "buy_margin" => &mut self.buy_margin,
                 "pressure_radius" => {
                     self.pressure_radius = value.max(1) as u32;
                     continue;
@@ -168,13 +193,22 @@ impl Weights {
         carry_share: 60,
         return_cost: 2,
         source_step: 2,
-        site_value: 60,
+        site_share: 63,
         site_step: 3,
         loose_color: 20,
         hanging_king: 400,
         trap: 25,
         king_hunt: 6,
         focus: 0,
+        shield_share: 30,
+        diagonal: 20,
+        extra_range: 35,
+        king_armor: 150,
+        king_step: 40,
+        harvest_perk: 50,
+        set_piece: 50,
+        extra_action: 60,
+        buy_margin: 10,
     };
 }
 
@@ -304,7 +338,18 @@ impl SearchBot {
         self.aborted = false;
         self.killers.clear();
 
-        let mut moves = game.legal_actions();
+        let (buys, mut moves): (Vec<Action>, Vec<Action>) = game
+            .legal_actions()
+            .into_iter()
+            .partition(|a| matches!(a, Action::BuyCard { .. }));
+        // Kartenkauf zuerst: lohnt er sich nach der Bewertung, wird gekauft; den eigentlichen
+        // Zug sucht der Bot danach (er bleibt am Zug).
+        if let Some(b) = self.pick_buy(game, &buys) {
+            return b;
+        }
+        if moves.is_empty() {
+            moves.push(Action::Pass);
+        }
         // Gleich gute Zuege in zufaelliger, aber durch den Seed festgelegter Reihenfolge.
         self.rng.shuffle(&mut moves);
         let mut moves = self.ordered(game, self.root, moves, 0);
@@ -319,7 +364,7 @@ impl SearchBot {
                 let mut child = game.clone();
                 child.apply_unchecked(a);
                 debug_check(&child);
-                let v = self.min_node(&child, depth - 1, alpha, INF, 1, MAX_EXTENSIONS);
+                let v = self.after_own_move(&child, depth - 1, alpha, INF, 1, MAX_EXTENSIONS);
                 if self.aborted {
                     break;
                 }
@@ -350,6 +395,53 @@ impl SearchBot {
             score: best_score,
         };
         best
+    }
+
+    /// Nach einem eigenen Zug: ist der Bot noch am Zug (Doppelzug), folgt sein naechster Zug,
+    /// sonst die beste Antwort der Gegner.
+    fn after_own_move(
+        &mut self,
+        child: &Game,
+        depth: u32,
+        alpha: i32,
+        beta: i32,
+        ply: usize,
+        ext: u32,
+    ) -> i32 {
+        if child.state.outcome.is_none() && child.state.current == self.root {
+            self.max_node(child, depth, alpha, beta, ply, ext)
+        } else {
+            self.min_node(child, depth, alpha, beta, ply, ext)
+        }
+    }
+
+    /// Bester Kartenkauf nach der Bewertung, wenn er sie um mindestens `buy_margin` verbessert.
+    fn pick_buy(&mut self, game: &Game, buys: &[Action]) -> Option<Action> {
+        if buys.is_empty() {
+            return None;
+        }
+        let base = self.evaluate(game);
+        let mut best: Option<(i32, Action)> = None;
+        for &b in buys {
+            let mut child = game.clone();
+            child.apply_unchecked(b);
+            debug_check(&child);
+            let gain = self.evaluate(&child) - base;
+            if best.is_none_or(|(g, _)| gain > g) {
+                best = Some((gain, b));
+            }
+        }
+        let (gain, action) = best?;
+        if gain >= self.weights.buy_margin {
+            self.stats = SearchStats {
+                nodes: buys.len() as u64,
+                depth: 0,
+                score: gain,
+            };
+            Some(action)
+        } else {
+            None
+        }
     }
 
     fn tick(&mut self) -> bool {
@@ -399,7 +491,11 @@ impl SearchBot {
                 return self.quiesce(g, alpha, beta, true, self.params.quiescence_depth, ply);
             }
         }
-        let moves = g.legal_actions_for(self.root);
+        let moves: Vec<Action> = g
+            .legal_actions_for(self.root)
+            .into_iter()
+            .filter(|a| !matches!(a, Action::BuyCard { .. }))
+            .collect();
         let moves = self.ordered(g, self.root, moves, ply);
         let mut best = -INF;
         for a in moves {
@@ -407,7 +503,7 @@ impl SearchBot {
             child.state.current = self.root;
             child.apply_unchecked(a);
             debug_check(&child);
-            let v = self.min_node(&child, depth - 1, alpha, beta, ply + 1, ext);
+            let v = self.after_own_move(&child, depth - 1, alpha, beta, ply + 1, ext);
             if self.aborted {
                 return 0;
             }
@@ -554,7 +650,8 @@ impl SearchBot {
                 continue;
             }
             for a in g.legal_actions_for(who) {
-                if a == Action::Pass {
+                // Kaeufe der Gegner sieht die Suche nicht voraus (Naeherung, spart viel Zeit).
+                if a == Action::Pass || matches!(a, Action::BuyCard { .. }) {
                     continue;
                 }
                 if captures_only && !self.captures_from(g, &a, self.root) {
@@ -655,6 +752,7 @@ impl SearchBot {
             }
             Action::BuildFactory { .. } => 60_000,
             Action::SpawnPiece { .. } => 50_000,
+            Action::BuyCard { .. } => 45_000,
             Action::Pass => -100_000,
         }
     }
@@ -811,9 +909,19 @@ impl SearchBot {
 
         for piece in st.pieces.values() {
             if piece.owner == p {
+                let pk = piece.perks;
+                if piece.is_king() {
+                    v += if pk.shield { w.king_armor } else { 0 };
+                    v += if pk.king_step { w.king_step } else { 0 };
+                }
                 if let PieceKind::Unit { level, .. } = piece.kind {
                     let level = level as i32;
                     v += unit_value(level as usize);
+                    if pk.shield {
+                        v += unit_value(level as usize) * w.shield_share / 100 + 15;
+                    }
+                    v += if pk.diagonal { w.diagonal } else { 0 };
+                    v += w.extra_range * pk.extra_range as i32;
                     let mut d = radius;
                     if w.focus != 0 {
                         if let Some(t) = target {
@@ -874,40 +982,44 @@ impl SearchBot {
             }
         }
 
-        // Fabriken: kommende Figuren. Die mit den meisten Farben (bei Gleichstand die naechste)
-        // ist das Ziel fuer neue Farben.
+        // Fabriken: kommende Figuren, bewertet nach der Stufe, die sie jetzt ergaeben, plus
+        // Fortschritt zum naechsten Ausbau. Die mit dem hoechsten Wert (bei Gleichstand die
+        // naechste) ist das Ziel fuer alles, was der Koenig traegt.
         let is_cat1 = |r: ResourceId| g.map.category(r) == 1;
-        let colors_of = |f: &Factory| f.storage.kinds().filter(|&r| is_cat1(r)).count();
-        let mut target: Option<(&Factory, usize, u32)> = None;
+        let mut target: Option<(&Factory, i32, u32)> = None;
         for f in st.factories.values().filter(|f| f.owner == p) {
-            let colors = colors_of(f);
-            v += unit_value(colors) * w.factory_share / 100 + w.factory_base;
+            let fv = self.factory_value(g, &f.storage);
+            v += fv;
             let d = self.dist.get(board, kc, f.cell);
             let better = match target {
                 None => true,
-                Some((_, c, dd)) => colors > c || (colors == c && d < dd),
+                Some((_, val, dd)) => fv > val || (fv == val && d < dd),
             };
             if better {
-                target = Some((f, colors, d));
+                target = Some((f, fv, d));
             }
         }
 
-        let carried: Vec<ResourceId> = st.carried[p.idx()]
-            .kinds()
-            .filter(|&r| is_cat1(r))
-            .collect();
+        let carried = &st.carried[p.idx()];
         match target {
-            Some((f, colors, d_home)) => {
-                let new = carried.iter().filter(|&&r| f.storage.get(r) == 0).count();
-                if new > 0 {
-                    let gain = unit_value(colors + new) - unit_value(colors);
+            Some((f, fv, d_home)) => {
+                // Was der Koenig traegt, bringt der Fabrik beim Abladen Farben und Ausbau.
+                let mut with = f.storage.clone();
+                for (r, n) in carried.iter() {
+                    with.add(r, n);
+                }
+                let gain = self.factory_value(g, &with) - fv;
+                if gain > 0 {
                     v += gain * w.carry_share / 100 - w.return_cost * d_home as i32;
-                } else {
+                }
+                let new_color = carried.kinds().any(|r| is_cat1(r) && f.storage.get(r) == 0);
+                if !new_color {
                     // Naechste fremde Farbe: Vorkommen oder Beute mit einem Typ, den die
                     // Fabrik noch nicht hat. Der Wert entspricht dem, was der Koenig nach dem
                     // Einsammeln haette, abzueglich Hinweg.
+                    let colors = f.storage.kinds().filter(|&r| is_cat1(r)).count();
                     let gain = unit_value(colors + 1) - unit_value(colors);
-                    let base = gain * w.carry_share / 100 - 10;
+                    let base = gain * w.carry_share * w.factory_share / 10_000 - 10;
                     let mut best = 0;
                     let home = f.cell;
                     for i in 0..self.cat1.len() {
@@ -931,10 +1043,15 @@ impl SearchBot {
                     v += best;
                 }
             }
-            None => v += w.loose_color * carried.len() as i32,
+            None => {
+                let colors = carried.kinds().filter(|&r| is_cat1(r)).count();
+                v += w.loose_color * colors as i32;
+            }
         }
 
-        // Freie Bauplaetze in Reichweite des Koenigs.
+        // Freie Bauplaetze in Reichweite des Koenigs. Fremde Farben sind mehr wert, wenn der
+        // Bau dort gleich die eigene Farbe dazugibt.
+        let own = g.map.own_color(p);
         let mut best_site = 0;
         for i in 0..self.cat1.len() {
             let (cell, res) = self.cat1[i];
@@ -950,11 +1067,50 @@ impl SearchBot {
                 }
             }
             if free {
-                let val = w.site_value - w.site_step * self.dist.get(board, cell, kc) as i32;
+                let level = if g.config.foreign_build_bonus && res != own {
+                    2
+                } else {
+                    1
+                };
+                let fv = unit_value(level) * w.factory_share / 100 + w.factory_base;
+                let val =
+                    fv * w.site_share / 100 - w.site_step * self.dist.get(board, cell, kc) as i32;
                 best_site = best_site.max(val);
             }
         }
+        // Karten des Spielers.
+        let pp = st.player_perks[p.idx()];
+        v += w.harvest_perk * (pp.mining as i32 + pp.farming as i32);
+        v += w.set_piece * (pp.runes as i32 + pp.shards as i32);
+        if st.current == p {
+            v += w.extra_action * st.extra_actions as i32;
+        }
         v + best_site
+    }
+
+    /// Wert einer Fabrik mit diesem Lager: Anteil am Wert der Figur, die sie jetzt ergaebe,
+    /// plus anteilig der Schritt zur naechsten Stufe, je nach Fortschritt im Ausbau.
+    fn factory_value(&self, g: &Game, storage: &crate::state::Inventory) -> i32 {
+        let w = self.weights;
+        let colors = storage.kinds().filter(|&r| g.map.category(r) == 1).count();
+        if colors == 0 {
+            return w.factory_base;
+        }
+        let cap = g.config.corner_count();
+        let upgrade = g.upgrade_level(storage) as usize;
+        let level = (colors + upgrade).min(cap);
+        let mut value = unit_value(level) * 1000;
+        let step = g.config.upgrade_step as u64;
+        if step > 0 && upgrade < g.config.max_upgrades as usize && level < cap {
+            let (units, kinds) = g.upgrade_stock(storage);
+            let need_units = (upgrade as u64 + 1) * step;
+            let need_kinds = upgrade + 2;
+            let pu = (units.min(need_units) * 1000 / need_units) as i32;
+            let pk = (kinds.min(need_kinds) * 1000 / need_kinds) as i32;
+            let progress = pu.min(pk);
+            value += (unit_value(level + 1) - unit_value(level)) * progress;
+        }
+        value / 1000 * w.factory_share / 100 + w.factory_base
     }
 }
 

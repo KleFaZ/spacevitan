@@ -1,9 +1,19 @@
 //! Aktionen, Ereignisse und Fehler.
 
+use crate::cards::Card;
 use crate::ids::{CellId, FactoryId, PieceId, PlayerId, ResourceId};
 use crate::state::{Inventory, Outcome};
 
-/// Pro Zug genau eine Aktion.
+/// Woraus eine Karte bezahlt wird.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PaySource {
+    /// Gepaeck des Koenigs.
+    King,
+    /// Lager einer eigenen Fabrik.
+    Factory(FactoryId),
+}
+
+/// Pro Zug genau eine Aktion (dazu hoechstens ein Kartenkauf).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Action {
     /// Figur (auch der Koenig) auf ein Feld ziehen; steht dort ein Gegner, wird er geschlagen.
@@ -13,6 +23,13 @@ pub enum Action {
     BuildFactory { pay: ResourceId },
     /// Fabrik aufloesen und daraus eine Figur machen.
     SpawnPiece { factory: FactoryId },
+    /// Eine Karte aus dem Markt kaufen (hoechstens einmal pro Zug, zusaetzlich zur Aktion).
+    /// `target`: die Figur oder der Koenig, auf die die Karte wirkt.
+    BuyCard {
+        card: Card,
+        from: PaySource,
+        target: Option<PieceId>,
+    },
     /// Nur erlaubt, wenn es sonst keine Aktion gibt.
     Pass,
 }
@@ -73,6 +90,32 @@ pub enum Event {
     GameOver {
         outcome: Outcome,
     },
+    CardBought {
+        player: PlayerId,
+        card: Card,
+        from: PaySource,
+        target: Option<PieceId>,
+        paid: Inventory,
+    },
+    /// Ein Schild (oder die Koenigsruestung) hat einen Schlag abgehalten.
+    ShieldBlocked {
+        piece: PieceId,
+        owner: PlayerId,
+        at: CellId,
+        by: PlayerId,
+    },
+    /// Rekrut: ein Bauer neben der Fabrik.
+    Recruited {
+        piece: PieceId,
+        owner: PlayerId,
+        factory: FactoryId,
+        cell: CellId,
+    },
+    /// Sternsplitter: neues Kat-1-Vorkommen.
+    DepositCreated {
+        cell: CellId,
+        resource: ResourceId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +135,10 @@ pub enum IllegalReason {
     FactoryHasNoCategory1,
     SpawnCellOccupied,
     PassNotAllowed,
+    CardNotInMarket,
+    AlreadyBoughtThisTurn,
+    CannotPayCard,
+    InvalidCardTarget,
     /// Sollte nie vorkommen: die Aktion ist unzulaessig, aber keine Einzelregel erklaert es.
     Unspecified,
 }
@@ -118,6 +165,12 @@ impl std::fmt::Display for IllegalReason {
             IllegalReason::FactoryHasNoCategory1 => "die Fabrik hat keinen Kat-1-Rohstoff im Lager",
             IllegalReason::SpawnCellOccupied => "das Fabrikfeld ist besetzt",
             IllegalReason::PassNotAllowed => "Passen ist nur ohne andere Aktion erlaubt",
+            IllegalReason::CardNotInMarket => "diese Karte liegt nicht im Markt",
+            IllegalReason::AlreadyBoughtThisTurn => "in diesem Zug wurde schon eine Karte gekauft",
+            IllegalReason::CannotPayCard => "die Rohstoffe an diesem Ort reichen nicht",
+            IllegalReason::InvalidCardTarget => {
+                "die Karte kann so nicht wirken (Figur nicht am Zahlfeld oder schon verbessert)"
+            }
             IllegalReason::Unspecified => "unzulaessige Aktion",
         };
         write!(f, "{text}")

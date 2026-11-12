@@ -3,7 +3,9 @@
 //! Regeln aus dem Regelwerk (Abschnitt 3):
 //! - je Startecke 1 Kat-1-Typ, 2 Kat-2-Typen, 3 Kat-3-Typen (ab 6 Ecken zusaetzlich 4 Kat-4-Typen)
 //! - Rohstoffe liegen primaer im Gebiet ihrer Ecke (Startposition bis Mitte), vereinzelt anderswo
-//! - Kat 1 liegt immer im Gebiet der Ecke, der erste Fundort 1 bis 2 Schritte vom Start
+//! - Kat 1 liegt immer im Gebiet der Ecke, nie auf oder neben dem Start: der erste Fundort genau
+//!   `cat1_distance` Schritte vom Start in Richtung Mitte (Standard 2), die Ader nicht naeher
+//! - dazu neutrale Kat-1-Typen ("Zentrumsfarben") rund um die Kartenmitte, fuer jeden gleich weit
 //! - Adern: zusammenhaengende Felder; ein Feld kann mehrere Rohstoffe tragen
 //! - die Startfelder selbst sind frei
 
@@ -17,8 +19,9 @@ pub struct ResourceType {
     pub id: ResourceId,
     /// 1 = Hauptrohstoff (am seltensten), 2, 3, 4.
     pub category: u8,
-    /// Ecke (Index in `Board::corners`), zu deren Gebiet der Rohstoff gehoert.
-    pub home_corner: usize,
+    /// Ecke (Index in `Board::corners`), zu deren Gebiet der Rohstoff gehoert;
+    /// `None` = Zentrumsfarbe (neutraler Kat-1-Typ in der Kartenmitte).
+    pub home_corner: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,6 +83,8 @@ pub struct CornerStats {
     pub near_counts: Vec<u32>,
     /// Vorkommen des eigenen Kat-1-Typs im eigenen Gebiet.
     pub cat1_in_territory: u32,
+    /// Kuerzester Abstand vom Start zu einer Zentrumsfarbe (`None`: es gibt keine).
+    pub center_distance: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -98,6 +103,13 @@ pub enum FairnessIssue {
         min: u32,
         max: u32,
     },
+    /// Die Zentrumsfarben sind fuer manche Spieler deutlich naeher als fuer andere.
+    CenterUneven {
+        min: u32,
+        max: u32,
+    },
+    /// Eine Zentrumsfarbe fehlt oder hat zu wenige Felder.
+    CenterMissing,
 }
 
 impl Map {
@@ -106,7 +118,11 @@ impl Map {
         config.validate()?;
         let board = config.make_board()?;
         let territories = board.territories();
-        let resource_types = make_types(config.corner_count(), config.category_count());
+        let resource_types = make_types(
+            config.corner_count(),
+            config.category_count(),
+            effective_center_colors(config, &board),
+        );
         let mut base = Rng::new(config.seed);
         for attempt in 1..=config.max_generator_attempts {
             let mut rng = base.fork(attempt as u64);
@@ -186,7 +202,19 @@ impl Map {
     pub fn types_of_corner(&self, corner: usize) -> impl Iterator<Item = &ResourceType> {
         self.resource_types
             .iter()
-            .filter(move |t| t.home_corner == corner)
+            .filter(move |t| t.home_corner == Some(corner))
+    }
+
+    /// Die neutralen Kat-1-Typen der Kartenmitte.
+    pub fn center_types(&self) -> impl Iterator<Item = &ResourceType> {
+        self.resource_types
+            .iter()
+            .filter(|t| t.home_corner.is_none())
+    }
+
+    /// Die eigene Farbe (Kat-1-Typ der Startecke) eines Spielers.
+    pub fn own_color(&self, player: PlayerId) -> ResourceId {
+        self.cat1_type_of_corner(self.player_corners[player.idx()])
     }
 
     /// Der Kat-1-Typ einer Ecke.
@@ -204,18 +232,25 @@ impl Map {
             let dist = self.board.distances_from(start);
             let cat1 = self.cat1_type_of_corner(corner);
             let mut first: Option<u32> = None;
+            let mut center: Option<u32> = None;
             let mut near = vec![0u32; self.category_count() as usize];
             let mut cat1_in_territory = 0;
             for cell in self.board.cells() {
                 for &res in self.deposits_at(cell) {
                     let d = dist[cell.idx()];
+                    if self.resource_type(res).home_corner.is_none() {
+                        center = Some(center.map_or(d, |c| c.min(d)));
+                    }
                     if res == cat1 {
                         first = Some(first.map_or(d, |f| f.min(d)));
                         if self.territories[cell.idx()] == Some(corner) {
                             cat1_in_territory += 1;
                         }
                     }
-                    if d <= config.fairness_radius {
+                    // Zentrumsfarben prueft `fairness_issues` gesondert (gleicher Abstand fuer alle).
+                    if d <= config.effective_fairness_radius()
+                        && self.resource_type(res).home_corner.is_some()
+                    {
                         near[self.category(res) as usize - 1] += 1;
                     }
                 }
@@ -225,6 +260,7 @@ impl Map {
                 cat1_first_distance: first,
                 near_counts: near,
                 cat1_in_territory,
+                center_distance: center,
             });
         }
         out
@@ -236,7 +272,7 @@ impl Map {
         let mut issues = Vec::new();
         for s in &stats {
             match s.cat1_first_distance {
-                Some(d) if (1..=2).contains(&d) => {}
+                Some(d) if d == config.cat1_distance => {}
                 other => issues.push(FairnessIssue::Cat1TooFarOrMissing {
                     corner: s.corner,
                     distance: other,
@@ -264,12 +300,37 @@ impl Map {
                 });
             }
         }
+        // Zentrumsfarben: fuer jeden Spieler (nicht fuer freie Ecken) etwa gleich weit.
+        let wanted = config.cells_per_type[0] as usize;
+        for t in self.center_types() {
+            let cells = self.deposits.iter().filter(|d| d.contains(&t.id)).count();
+            if cells != wanted {
+                issues.push(FairnessIssue::CenterMissing);
+            }
+        }
+        if self.center_types().next().is_some() {
+            let dists: Vec<Option<u32>> = self
+                .player_corners
+                .iter()
+                .map(|&c| stats[c].center_distance)
+                .collect();
+            if dists.iter().any(|d| d.is_none()) {
+                issues.push(FairnessIssue::CenterMissing);
+            } else {
+                let d: Vec<u32> = dists.into_iter().flatten().collect();
+                let (min, max) = (*d.iter().min().unwrap_or(&0), *d.iter().max().unwrap_or(&0));
+                if max - min > config.fairness_tolerance {
+                    issues.push(FairnessIssue::CenterUneven { min, max });
+                }
+            }
+        }
         issues
     }
 }
 
-/// Typen je Ecke: Kat k kommt k-mal vor (1x Kat 1, 2x Kat 2, ...). IDs laufen ecken-weise durch.
-fn make_types(corners: usize, categories: u8) -> Vec<ResourceType> {
+/// Typen je Ecke: Kat k kommt k-mal vor (1x Kat 1, 2x Kat 2, ...). IDs laufen ecken-weise durch,
+/// danach folgen die Zentrumsfarben.
+fn make_types(corners: usize, categories: u8, center_colors: u32) -> Vec<ResourceType> {
     let mut types = Vec::new();
     for corner in 0..corners {
         for category in 1..=categories {
@@ -277,12 +338,51 @@ fn make_types(corners: usize, categories: u8) -> Vec<ResourceType> {
                 types.push(ResourceType {
                     id: ResourceId(types.len() as u16),
                     category,
-                    home_corner: corner,
+                    home_corner: Some(corner),
                 });
             }
         }
     }
+    for _ in 0..center_colors {
+        types.push(ResourceType {
+            id: ResourceId(types.len() as u16),
+            category: 1,
+            home_corner: None,
+        });
+    }
     types
+}
+
+/// Wie viele Zentrumsfarben die Karte wirklich bekommt: hoechstens eine je 40 Felder, damit
+/// kleine Karten nicht ueberlaufen (6x6: keine, 8x8: eine). Auf den Standardkarten gilt
+/// `center_colors`.
+pub fn effective_center_colors(config: &Config, board: &Board) -> u32 {
+    config.center_colors.min(board.len() as u32 / 40)
+}
+
+/// Abstand jedes Feldes zur Kartenmitte. Mitte = die Felder, deren groesster Abstand zu einer
+/// Ecke am kleinsten ist (bei geraden Seitenlaengen mehrere).
+pub fn center_distances(board: &Board) -> Vec<u32> {
+    let corner_dists: Vec<Vec<u32>> = board
+        .corners()
+        .iter()
+        .map(|&c| board.distances_from(c))
+        .collect();
+    let ecc = |cell: CellId| {
+        corner_dists
+            .iter()
+            .map(|d| d[cell.idx()])
+            .max()
+            .unwrap_or(0)
+    };
+    let best = board.cells().map(ecc).min().unwrap_or(0);
+    let mut out = vec![u32::MAX; board.len()];
+    for c in board.cells().filter(|&c| ecc(c) == best) {
+        for (i, d) in board.distances_from(c).into_iter().enumerate() {
+            out[i] = out[i].min(d);
+        }
+    }
+    out
 }
 
 /// Ein Platzierungsversuch. `None`, wenn irgendwo kein Platz mehr war.
@@ -301,6 +401,42 @@ fn place_all(
         .iter()
         .map(|&c| board.distances_from(c))
         .collect();
+    let center = center_distances(board);
+    let is_cat1 = |r: ResourceId| types[r.idx()].category == 1;
+
+    // Zentrumsfarben zuerst, damit die Mitte Platz fuer sie hat. Kein Feld traegt zwei Kat-1-Typen.
+    let cat1_free = |cell: CellId, deposits: &[Vec<ResourceId>]| {
+        !start_cells.contains(&cell)
+            && deposits[cell.idx()].len() < cap
+            && !deposits[cell.idx()].iter().any(|&r| is_cat1(r))
+    };
+    for ty in types.iter().filter(|t| t.home_corner.is_none()) {
+        let size = config.cells_per_type[0] as usize;
+        // Der Anfang liegt im Radius, die Ader darf ein Feld darueber hinaus wachsen (sonst
+        // passen auf kleinen Dreieckskarten keine zwei Adern in die Mitte).
+        let radius = config.effective_center_radius();
+        let near_center = |cell: CellId, deposits: &[Vec<ResourceId>], r: u32| {
+            center[cell.idx()] <= r && cat1_free(cell, deposits)
+        };
+        let seeds: Vec<CellId> = board
+            .cells()
+            .filter(|&c| near_center(c, &deposits, radius))
+            .collect();
+        let mut vein = vec![*rng.pick(&seeds)?];
+        while vein.len() < size {
+            let mut frontier: Vec<CellId> = vein
+                .iter()
+                .flat_map(|&c| board.neighbors(c))
+                .filter(|n| !vein.contains(n) && near_center(*n, &deposits, radius + 1))
+                .collect();
+            frontier.sort();
+            frontier.dedup();
+            vein.push(*rng.pick(&frontier)?);
+        }
+        for cell in vein {
+            deposits[cell.idx()].push(ty.id);
+        }
+    }
 
     // Fairness bei Zufall: Jeder Typ (gleiche Position in der Typenliste jeder Ecke) bekommt einen
     // gemeinsamen Zielabstand zum Start. Jede Ecke legt ihn in diesem Abstand ab, aber in eigener,
@@ -317,12 +453,12 @@ fn place_all(
         .min()
         .unwrap_or(2)
         .max(2);
-    let pattern: Vec<&ResourceType> = types.iter().filter(|t| t.home_corner == 0).collect();
+    let pattern: Vec<&ResourceType> = types.iter().filter(|t| t.home_corner == Some(0)).collect();
     let targets: Vec<u32> = pattern
         .iter()
         .map(|t| {
             if t.category == 1 {
-                1 + rng.below(2) as u32
+                config.cat1_distance
             } else {
                 2 + rng.below(reach as usize - 1) as u32
             }
@@ -337,22 +473,37 @@ fn place_all(
                 && deposits[cell.idx()].len() < cap
         };
 
-        for (slot, ty) in types.iter().filter(|t| t.home_corner == corner).enumerate() {
+        for (slot, ty) in types
+            .iter()
+            .filter(|t| t.home_corner == Some(corner))
+            .enumerate()
+        {
             let size = config.cells_per_type[ty.category as usize - 1] as usize;
             let target = targets[slot];
+            let cat1 = ty.category == 1;
+            // Kat 1: genau im Zielabstand und davon die Felder, die der Mitte am naechsten sind;
+            // die Ader waechst nur nach aussen (nie naeher an den Start).
+            let fits = |c: CellId, deposits: &[Vec<ResourceId>]| {
+                in_home(c, deposits)
+                    && (!cat1 || (dist[c.idx()] >= target && cat1_free(c, deposits)))
+            };
 
             // Moeglichst genau im Zielabstand; wenn dort kein Platz ist, schrittweise daneben.
             let mut seeds: Vec<CellId> = Vec::new();
             for spread in 0..=reach {
                 seeds = board
                     .cells()
-                    .filter(|&c| in_home(c, &deposits))
+                    .filter(|&c| fits(c, &deposits))
                     .filter(|&c| dist[c.idx()].abs_diff(target) <= spread)
-                    .filter(|&c| ty.category != 1 || (1..=2).contains(&dist[c.idx()]))
+                    .filter(|&c| !cat1 || dist[c.idx()] == target)
                     .collect();
                 if !seeds.is_empty() {
                     break;
                 }
+            }
+            if cat1 {
+                let best = seeds.iter().map(|c| center[c.idx()]).min()?;
+                seeds.retain(|c| center[c.idx()] == best);
             }
             let seed = *rng.pick(&seeds)?;
 
@@ -361,7 +512,7 @@ fn place_all(
                 let mut frontier: Vec<CellId> = vein
                     .iter()
                     .flat_map(|&c| board.neighbors(c))
-                    .filter(|n| !vein.contains(n) && in_home(*n, &deposits))
+                    .filter(|n| !vein.contains(n) && fits(*n, &deposits))
                     .collect();
                 frontier.sort();
                 frontier.dedup();
@@ -416,22 +567,35 @@ mod tests {
 
     #[test]
     fn type_counts_follow_the_one_two_three_pattern() {
-        let (_, m) = generate(4, 1);
-        assert_eq!(m.resource_types.len(), 24);
+        let (c, m) = generate(4, 1);
+        assert_eq!(c.center_colors, 2);
+        assert_eq!(
+            m.resource_types.len(),
+            24 + 2,
+            "4 Ecken mal 6 Typen plus 2 Zentrumsfarben"
+        );
         for cat in 1..=3u8 {
             let per_corner = m
                 .resource_types
                 .iter()
-                .filter(|t| t.category == cat && t.home_corner == 0)
+                .filter(|t| t.category == cat && t.home_corner == Some(0))
                 .count();
             assert_eq!(per_corner, cat as usize, "Kategorie {cat}");
             let total = m
                 .resource_types
                 .iter()
-                .filter(|t| t.category == cat)
+                .filter(|t| t.category == cat && t.home_corner.is_some())
                 .count();
             assert_eq!(total, 4 * cat as usize);
         }
+        let center: Vec<_> = m.center_types().collect();
+        assert_eq!(center.len(), 2);
+        assert!(center.iter().all(|t| t.category == 1));
+        assert_eq!(
+            center[0].id,
+            ResourceId(24),
+            "Zentrumsfarben folgen nach den Ecken"
+        );
         for (i, t) in m.resource_types.iter().enumerate() {
             assert_eq!(t.id.idx(), i, "IDs sind fortlaufend");
         }
@@ -498,27 +662,166 @@ mod tests {
     }
 
     #[test]
-    fn first_cat1_deposit_is_one_or_two_steps_from_the_start_for_every_corner() {
-        for seed in 0..50 {
-            let (c, m) = generate(4, seed);
-            for s in m.corner_stats(&c) {
-                let d = s.cat1_first_distance.expect("Kat 1 vorhanden");
-                assert!((1..=2).contains(&d), "seed {seed}, Ecke {}: {d}", s.corner);
+    fn first_own_cat1_deposit_is_exactly_two_steps_from_the_start_for_every_corner() {
+        for players in [2, 3, 4, 6] {
+            for seed in 0..20 {
+                let (c, m) = generate(players, seed);
+                assert_eq!(c.cat1_distance, 2);
+                for s in m.corner_stats(&c) {
+                    let d = s.cat1_first_distance.expect("Kat 1 vorhanden");
+                    assert_eq!(d, 2, "{players} Spieler, seed {seed}, Ecke {}", s.corner);
+                }
             }
         }
     }
 
     #[test]
-    fn cat1_never_leaves_its_home_territory() {
+    fn no_category_1_lies_on_or_next_to_a_start_cell() {
+        for players in [2, 3, 4, 5, 8] {
+            for seed in 0..10 {
+                let (_, m) = generate(players, seed);
+                for &start in m.board.corners() {
+                    let dist = m.board.distances_from(start);
+                    for cell in m.board.cells() {
+                        if m.deposits_at(cell).iter().any(|&r| m.category(r) == 1) {
+                            assert!(dist[cell.idx()] >= 2, "{players} Spieler, seed {seed}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_own_cat1_points_towards_the_centre() {
+        for seed in 0..20 {
+            let (_, m) = generate(4, seed);
+            let center = center_distances(&m.board);
+            for corner in 0..4 {
+                let start = m.board.corners()[corner];
+                let own = m.cat1_type_of_corner(corner);
+                for cell in deposit_cells(&m, own) {
+                    assert!(
+                        center[cell.idx()] < center[start.idx()],
+                        "seed {seed}: Kat 1 liegt nicht naeher an der Mitte als der Start"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_cat1_distance_can_be_configured() {
+        for d in [1, 3] {
+            let mut c = cfg(4, 7);
+            c.cat1_distance = d;
+            let m = Map::generate(&c).unwrap();
+            for s in m.corner_stats(&c) {
+                assert_eq!(s.cat1_first_distance, Some(d));
+            }
+        }
+    }
+
+    #[test]
+    fn centre_colours_lie_around_the_middle_and_are_fair() {
+        for players in [2, 3, 4, 6, 8] {
+            for seed in 0..10 {
+                let (c, m) = generate(players, seed);
+                let center = center_distances(&m.board);
+                let types: Vec<ResourceId> = m.center_types().map(|t| t.id).collect();
+                assert_eq!(types.len() as u32, c.center_colors);
+                for ty in types {
+                    let cells = deposit_cells(&m, ty);
+                    assert_eq!(cells.len() as u32, c.cells_per_type[0]);
+                    for cell in cells {
+                        assert!(
+                            center[cell.idx()] <= c.effective_center_radius() + 1,
+                            "seed {seed}"
+                        );
+                    }
+                }
+                let dists: Vec<u32> = m
+                    .corner_stats(&c)
+                    .iter()
+                    .filter(|s| m.player_corners.contains(&s.corner))
+                    .map(|s| s.center_distance.expect("Zentrumsfarbe erreichbar"))
+                    .collect();
+                let spread = dists.iter().max().unwrap() - dists.iter().min().unwrap();
+                assert!(
+                    spread <= c.fairness_tolerance,
+                    "{players} Spieler: {dists:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn small_boards_get_fewer_centre_colours() {
+        let mut c = cfg(4, 1);
+        c.side = 6;
+        let m = Map::generate(&c).unwrap();
+        assert_eq!(c.center_colors, 2);
+        assert_eq!(
+            m.center_types().count(),
+            0,
+            "36 Felder: keine Zentrumsfarbe"
+        );
+        c.side = 8;
+        let m = Map::generate(&c).unwrap();
+        assert_eq!(m.center_types().count(), 1, "64 Felder: eine");
+        let (c8, m8) = generate(8, 1);
+        assert_eq!(m8.center_types().count() as u32, c8.center_colors);
+    }
+
+    #[test]
+    fn without_centre_colours_there_are_none() {
+        let mut c = cfg(4, 3);
+        c.center_colors = 0;
+        let m = Map::generate(&c).unwrap();
+        assert_eq!(m.center_types().count(), 0);
+        assert_eq!(m.resource_types.len(), 24);
+    }
+
+    #[test]
+    fn no_cell_holds_two_category_1_types() {
+        for players in [2, 4, 6] {
+            for seed in 0..20 {
+                let (_, m) = generate(players, seed);
+                for cell in m.board.cells() {
+                    let n = m
+                        .deposits_at(cell)
+                        .iter()
+                        .filter(|&&r| m.category(r) == 1)
+                        .count();
+                    assert!(n <= 1, "seed {seed}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_centre_of_a_square_board_is_its_middle() {
+        let (_, m) = generate(4, 1);
+        let center = center_distances(&m.board);
+        let zero: Vec<CellId> = m.board.cells().filter(|c| center[c.idx()] == 0).collect();
+        let coords: Vec<_> = zero.iter().map(|&c| m.board.coord(c)).collect();
+        assert_eq!(zero.len(), 4, "{coords:?}");
+        for &corner in m.board.corners() {
+            assert_eq!(center[corner.idx()], 8, "von der Ecke bis zur Mitte");
+        }
+    }
+
+    #[test]
+    fn own_cat1_never_leaves_its_home_territory() {
         for seed in 0..50 {
             let (_, m) = generate(4, seed);
-            for t in m.resource_types.iter().filter(|t| t.category == 1) {
+            for t in m
+                .resource_types
+                .iter()
+                .filter(|t| t.category == 1 && t.home_corner.is_some())
+            {
                 for cell in deposit_cells(&m, t.id) {
-                    assert_eq!(
-                        m.territories[cell.idx()],
-                        Some(t.home_corner),
-                        "seed {seed}"
-                    );
+                    assert_eq!(m.territories[cell.idx()], t.home_corner, "seed {seed}");
                 }
             }
         }
@@ -530,9 +833,9 @@ mod tests {
             let mut c = cfg(4, seed);
             c.stray_chance = 0.0;
             let m = Map::generate(&c).unwrap();
-            for t in &m.resource_types {
+            for t in m.resource_types.iter().filter(|t| t.home_corner.is_some()) {
                 for cell in deposit_cells(&m, t.id) {
-                    assert_eq!(m.territories[cell.idx()], Some(t.home_corner));
+                    assert_eq!(m.territories[cell.idx()], t.home_corner);
                 }
             }
         }
@@ -548,7 +851,7 @@ mod tests {
             for t in m.resource_types.iter().filter(|t| t.category != 1) {
                 outside += deposit_cells(&m, t.id)
                     .iter()
-                    .filter(|cell| m.territories[cell.idx()] != Some(t.home_corner))
+                    .filter(|cell| m.territories[cell.idx()] != t.home_corner)
                     .count();
             }
         }
@@ -614,9 +917,13 @@ mod tests {
                 .map(|&c| m.board.distance(start, c))
                 .min()
                 .unwrap();
-            assert!((1..=2).contains(&d));
+            assert_eq!(d, 2);
         }
-        assert_eq!(m.resource_types.len(), 24, "2 Spieler: Karte wie bei 4");
+        assert_eq!(
+            m.resource_types.len(),
+            24 + 1,
+            "2 Spieler: Karte wie bei 4, dazu eine Zentrumsfarbe"
+        );
     }
 
     #[test]
@@ -725,7 +1032,10 @@ mod tests {
             let (c, m) = generate(players, 1);
             assert_eq!(m.category_count(), cats);
             let per_corner: usize = (1..=cats as usize).sum();
-            assert_eq!(m.resource_types.len(), c.corner_count() * per_corner);
+            assert_eq!(
+                m.resource_types.len(),
+                c.corner_count() * per_corner + c.center_colors as usize
+            );
             for t in &m.resource_types {
                 let n = deposit_cells(&m, t.id).len() as u32;
                 assert_eq!(n, c.cells_per_type[t.category as usize - 1]);
@@ -805,7 +1115,11 @@ mod tests {
             c.side = side;
             let board = c.make_board().unwrap();
             let territories = board.territories();
-            let types = make_types(c.corner_count(), c.category_count());
+            let types = make_types(
+                c.corner_count(),
+                c.category_count(),
+                effective_center_colors(&c, &board),
+            );
             let mut hist: BTreeMap<String, u32> = BTreeMap::new();
             let mut base = Rng::new(1);
             let mut placed = 0;
@@ -839,6 +1153,10 @@ mod tests {
                                 FairnessIssue::NearCountsUneven { category, .. } => {
                                     format!("ungleich Kat {category}")
                                 }
+                                FairnessIssue::CenterUneven { .. } => {
+                                    "Zentrum ungleich".to_string()
+                                }
+                                FairnessIssue::CenterMissing => "Zentrum fehlt".to_string(),
                             };
                             *hist.entry(key).or_default() += 1;
                         }

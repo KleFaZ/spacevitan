@@ -106,6 +106,12 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .summary { font-size: 0.9rem; color: var(--muted); }
 .summary strong { color: var(--ink); font-weight: 650; }
 .players { display: flex; flex-direction: column; gap: 6px; }
+.market { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.market li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; }
+.market b { font-size: 0.88rem; }
+.market .cost { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 1px; }
+.perks { color: var(--muted); font-size: 0.76rem; }
+details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; margin: 2px 0 6px; }
 .player {
   display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 10px; align-items: center;
   padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
@@ -221,7 +227,10 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
             <option value="8">8 (Achteck)</option>
           </select>
         </label>
-        <label for="setOpp">Gegner
+        <label for="setSelf">Spieler A
+          <select id="setSelf"><option value="2" selected>Du</option><option value="3">Bot „stark“</option><option value="0">Bot „gierig“</option></select>
+        </label>
+        <label class="wide" for="setOpp">Gegner (alle anderen)
           <select id="setOpp"><option value="3" selected>Bot „stark“</option><option value="0">Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
         </label>
         <label class="wide" for="setSeed">Seed (leer = zufällig)
@@ -239,6 +248,10 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     <div>
       <h2>Spieler</h2>
       <div class="players" id="players"></div>
+    </div>
+    <div id="marketBox" hidden>
+      <h2>Kartenmarkt</h2>
+      <ul class="market" id="market"></ul>
     </div>
     <div>
       <h2>Dieser Zug</h2>
@@ -270,6 +283,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     { name: "H", color: "#4f5866" },
   ];
   const FREE_CRYSTAL = ["#f3f2ec", "#3d3b45"]; // Kat-1-Farbe freier Ecken (bei 2 Spielern)
+  const CENTER_CRYSTAL = ["#e8c75a", "#b7e4e0", "#d9a6e8", "#9fd28a"]; // Zentrumsfarben
   const TERRAIN = [
     { name: "Wald", top: "#86a872" },
     { name: "Himmel", top: "#a4c5df" },
@@ -317,7 +331,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   let hoverCell = null;
   let mode = "view";   // "play" oder "view"
   let wasm = null;     // Exporte des Spielkerns
-  let live = null;     // laufende Partie: { legal, humanToMove, outcome, seats, opponent }
+  let live = null;     // laufende Partie: { legal, humanToMove, outcome, seats, opponent, watch }
   let liveR = null;    // vorbereitete laufende Partie (waechst Zug fuer Zug)
   let botTimer = null;
   let selected = null; // ausgewaehlte eigene Figur
@@ -353,7 +367,40 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   const typeInfo = (res) => R.resource_types[res];
   const category = (res) => typeInfo(res).category;
   const total = (inv) => inv.reduce((s, [, n]) => s + n, 0);
-  const crystalColor = (res) => R.cornerColor[typeInfo(res).home];
+  const crystalColor = (res) => {
+    const home = typeInfo(res).home;
+    if (home === null || home === undefined) {
+      const k = R.resource_types.filter((t) => t.home === null).findIndex((t) => t.id === res);
+      return CENTER_CRYSTAL[Math.max(0, k) % CENTER_CRYSTAL.length];
+    }
+    return R.cornerColor[home];
+  };
+  /** Wem gehoert eine Farbe? Text fuer Tooltips und Knoepfe. */
+  const colorOwner = (res) => {
+    const home = typeInfo(res).home;
+    if (home === null || home === undefined) return "Zentrumsfarbe";
+    return R.cornerPlayer[home] >= 0 ? `Farbe ${playerName(R.cornerPlayer[home])}` : "Farbe einer freien Ecke";
+  };
+  const CARD = (key) => (R.market || []).find((c) => c.key === key) || { key, name: key, text: "" };
+  function costText(c) {
+    const parts = [];
+    const k = c.cost;
+    if (k.color) parts.push(`${k.color}× Farbe`);
+    if (k.foreign_color) parts.push(`${k.foreign_color}× fremde Farbe`);
+    if (k.k2) parts.push(`${k.k2}× Kat 2${k.k2_distinct && k.k2 > 1 ? " versch." : ""}`);
+    if (k.k3) parts.push(`${k.k3}× Kat 3${k.k3_distinct && k.k3 > 1 ? " versch." : ""}`);
+    return parts.join(" + ");
+  }
+  function perkText(pk, king) {
+    if (!pk) return "";
+    const out = [];
+    if (pk.shield) out.push(king ? "Königsrüstung" : "Schild");
+    if (pk.diagonal) out.push("Läuferschlag");
+    if (pk.extra_range) out.push(`Lange Beine ×${pk.extra_range}`);
+    if (pk.card_levels) out.push(`+${pk.card_levels} Stufe durch Karten`);
+    if (pk.king_step) out.push("Königsschritt");
+    return out.join(", ");
+  }
 
   function roundOf(i) {
     // Runde, in der der Zug i gespielt wurde (Frame i-1 haelt den Zustand davor).
@@ -536,7 +583,9 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   /** Vorkommen, die es im angezeigten Zug noch gibt (verbaute und erschoepfte fehlen). */
   function liveDeposits(f, cell) {
     const gone = f.gone || (f.gone = new Set((f.depleted || []).map(([c, r]) => c + ":" + r)));
-    return R.deposits[cell].filter((res) => !gone.has(cell + ":" + res));
+    const extra = (f.extra_deposits || []).find(([c]) => c === cell);
+    const all = extra ? R.deposits[cell].concat(extra[1]) : R.deposits[cell];
+    return all.filter((res) => !gone.has(cell + ":" + res));
   }
   function drawDeposits(cell, dim) {
     const list = liveDeposits(R.frames[fi], cell);
@@ -810,8 +859,28 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   function drawPiece(p, x, y) {
     const [cx, cy] = iso(x, y);
     const color = PLAYER[p.owner].color;
+    const pk = p.perks || {};
+    if (pk.shield) {
+      // Schild oder Koenigsruestung: heller Ring um den Sockel.
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + geo.W * 0.03, geo.W * 0.27, geo.W * 0.12, 0, 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(2, geo.W * 0.035);
+      ctx.strokeStyle = "rgba(120,200,255,0.95)";
+      ctx.stroke();
+    }
     if (p.king) drawKing(cx, cy + geo.W * 0.02, color);
     else drawUnit(cx, cy + geo.W * 0.02, color, p.level, p.range);
+    if (pk.diagonal || pk.king_step) {
+      // Kleines Abzeichen: x = Laeuferschlag, >> = Koenigsschritt.
+      const bx = cx + geo.W * 0.2, by = cy - geo.W * 0.42, r = Math.max(5, geo.W * 0.08);
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff"; ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.stroke();
+      ctx.fillStyle = "#222";
+      ctx.font = `700 ${Math.round(r * 1.3)}px sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(pk.diagonal ? "×" : "»", bx, by + 0.5);
+    }
   }
 
   // ----- Texte -------------------------------------------------------------------------------
@@ -847,13 +916,26 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     } else if (a.type === "spawn") {
       const sp = f.events.find((e) => e.type === "spawned");
       text = `Fabrik auf ${cellName(sp.cell)} wird zur Figur: Stufe ${sp.level}, Reichweite ${sp.range}`;
+    } else if (a.type === "buy") {
+      text = `kauft „${CARD(a.card).name}“${buyWhere(a, prev)}`;
     } else {
       text = "passt";
     }
     return { who, text };
   }
+  /** Wo bezahlt wird und fuer wen die Karte ist (fuer Knoepfe und Zugtext). */
+  function buyWhere(a, f) {
+    const src = a.from === "king" ? "aus dem Gepäck" : `aus der Fabrik auf ${cellName(f.fById.get(a.from).cell)}`;
+    if (a.target === null || a.target === undefined) return `, bezahlt ${src}`;
+    const t = f.byId.get(a.target);
+    return ` für ${pieceLabel(t)} auf ${t ? cellName(t.cell) : "?"}, bezahlt ${src}`;
+  }
   function eventText(e) {
     switch (e.type) {
+      case "card_bought": return `${playerName(e.player)} kauft „${CARD(e.card).name}“ und zahlt ${invText(e.paid)}.`;
+      case "shield_blocked": return `Schild hält: ${playerName(e.by)} prallt auf ${cellName(e.at)} ab.`;
+      case "recruited": return `${playerName(e.owner)} bekommt einen Rekruten auf ${cellName(e.cell)}.`;
+      case "deposit_created": return `Neues Kat-1-Vorkommen auf ${cellName(e.cell)} (${colorOwner(e.resource)}).`;
       case "moved": return null;
       case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
       case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
@@ -914,13 +996,31 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       if (isWinner) tag = `<span class="tag win">Sieger</span>`;
       else if (!f.alive[p]) tag = `<span class="tag">ausgeschieden</span>`;
       else if (turn) tag = `<span class="tag">am Zug</span>`;
+      const pp = (f.player_perks || [])[p];
+      const cardBits = [];
+      if (pp) {
+        if (pp.mining) cardBits.push("Bergbau");
+        if (pp.farming) cardBits.push("Ackerbau");
+        if (pp.runes) cardBits.push(`Runen ${pp.runes}/3`);
+        if (pp.shards) cardBits.push(`Splitter ${pp.shards}/3`);
+        if (pp.cards_bought) cardBits.push(`${pp.cards_bought} Karten gekauft`);
+      }
+      const facLevels = facs.map((x) => x.level).filter((l) => l > 0);
+      const facText = facLevels.length ? ` → St.${facLevels.join("/")}` : "";
       div.innerHTML =
         `<span class="chip" style="background:${PLAYER[p].color}">${PLAYER[p].name}</span>` +
         `<div class="pname">Spieler ${PLAYER[p].name} <small>${seatLabel(p)}</small> ${tag}</div>` +
-        `<div class="pstats"><span>Figuren ${levelText}</span><span>Fabriken ${facs.length} (Lager ${stock})</span>` +
-        `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span></div>`;
+        `<div class="pstats"><span>Figuren ${levelText}</span><span>Fabriken ${facs.length}${facText} (Lager ${stock})</span>` +
+        `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span></div>` +
+        (cardBits.length ? `<div class="perks">${escapeHtml(cardBits.join(" · "))}</div>` : "");
       players.appendChild(div);
     }
+
+    const market = R.market || [];
+    $("marketBox").hidden = market.length === 0;
+    $("market").innerHTML = market.map((c) =>
+      `<li><b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(c.text)}` +
+      `<span class="cost">Kosten: ${escapeHtml(costText(c))}</span></li>`).join("");
 
     const list = $("events");
     list.innerHTML = "";
@@ -975,11 +1075,24 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     fi = next;
     renderPanel();
     requestAnimationFrame(draw);
-    if (fi === R.frames.length - 1) setPlaying(false);
+    if (fi === R.frames.length - 1 && !watching()) setPlaying(false);
   }
 
   let timer = null;
   function setPlaying(on) {
+    if (watching()) {
+      // Bot gegen Bot: Abspielen = Bots ziehen lassen, Anhalten = Bots warten.
+      playing = on && !live.outcome;
+      clearTimeout(timer);
+      if (playing) {
+        goTo(R.frames.length - 1, false);
+        scheduleBots();
+      } else {
+        clearTimeout(botTimer);
+      }
+      renderPanel();
+      return;
+    }
     playing = on;
     clearTimeout(timer);
     if (playing) {
@@ -1004,7 +1117,8 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     const stock = R.config.deposit_stock || 0;
     const deps = liveDeposits(f, cell).map((res) => {
       const info = typeInfo(res);
-      const home = R.cornerPlayer[info.home] >= 0 ? `Gebiet ${playerName(R.cornerPlayer[info.home])}` : "freie Ecke";
+      const home = info.home === null || info.home === undefined ? "Zentrum"
+        : R.cornerPlayer[info.home] >= 0 ? `Gebiet ${playerName(R.cornerPlayer[info.home])}` : "freie Ecke";
       let left = "";
       if (stock > 0) {
         const h = (f.harvested || []).find(([c, r]) => c === cell && r === res);
@@ -1012,14 +1126,21 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       }
       return `Kat ${info.category} (Typ ${res}, ${home}${left})`;
     });
-    const used = R.deposits[cell].length - deps.length;
+    const extraHere = (f.extra_deposits || []).find(([c]) => c === cell);
+    const used = R.deposits[cell].length + (extraHere ? extraHere[1].length : 0) - deps.length;
     if (used > 0) deps.push(`${used} Vorkommen verbraucht`);
     const piece = f.pieces.find((p) => p.cell === cell);
     const fac = f.factories.find((x) => x.cell === cell);
     const loot = f.loot.find((l) => l.cell === cell);
     const rows = [];
-    if (piece) rows.push(piece.king ? `König von ${playerName(piece.owner)}` : `Figur von ${playerName(piece.owner)}: Stufe ${piece.level}, Reichweite ${piece.range}`);
-    if (fac) rows.push(`Fabrik von ${playerName(fac.owner)}, Lager: ${invText(fac.storage)}`);
+    if (piece) {
+      const extra = perkText(piece.perks, piece.king);
+      rows.push((piece.king ? `König von ${playerName(piece.owner)}` : `Figur von ${playerName(piece.owner)}: Stufe ${piece.level}, Reichweite ${piece.range}`) + (extra ? ` (${extra})` : ""));
+    }
+    if (fac) {
+      const lvl = fac.level ? `, ergäbe Stufe ${fac.level}` : "";
+      rows.push(`Fabrik von ${playerName(fac.owner)}, Lager: ${invText(fac.storage)}${lvl}`);
+    }
     if (loot) rows.push(`Beute: ${invText(loot.items)}`);
     tip.innerHTML =
       `<b>${cellName(cell)}</b> · ${region}` +
@@ -1060,9 +1181,9 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   function legend() {
     const items = [
       ["king", "König: sammelt, baut Fabriken. Fällt er, ist der Spieler raus."],
-      ["unit", "Figur: Zahl = Stufe (Kat-1-Farben im Lager), Punkte = Reichweite (= Stufe)."],
-      ["factory", "Fabrik: nur auf Kat 1 baubar (das Vorkommen ist danach weg); sammelt ab Kat 2 von Feld und Nachbarn. Zahl = Lager."],
-      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört."],
+      ["unit", "Figur: Zahl = Stufe (Farben + Ausbau + Karten), Punkte = Reichweite. Blauer Ring = Schild."],
+      ["factory", "Fabrik: nur auf Kat 1 baubar (das Vorkommen ist danach weg); sammelt ab Kat 2 von Feld und Nachbarn. Je 10 Einheiten Kat 2/3 aus genug verschiedenen Typen: Stufe +1 (höchstens +2). Zahl = Lager."],
+      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Gold, Türkis usw. = Zentrumsfarben. Fabrik auf fremder Farbe = gleich Stufe 2."],
       ["ingot", "Kat 2"],
       ["grain", "Kat 3"],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
@@ -1106,6 +1227,18 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   function canAct() {
     return mode === "play" && live && !live.outcome && live.humanToMove && R === liveR && fi === R.frames.length - 1;
   }
+  /** Laufende Partie ganz ohne Menschen: Abspielen/Anhalten steuert die Bots. */
+  function watching() {
+    return mode === "play" && live && live.watch && R === liveR;
+  }
+  function botOnce() {
+    if (!live || live.outcome || live.humanToMove) return;
+    try {
+      pushStep(callWasm("sv_bot_step"));
+    } catch (err) {
+      showPlayError(err.message);
+    }
+  }
   function destinations(pieceId) {
     return live.legal.filter((a) => a.type === "move" && a.piece === pieceId).map((a) => a.to);
   }
@@ -1142,16 +1275,22 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     (window.crypto || window.msCrypto).getRandomValues(a);
     return a[0] % 1000000;
   }
-  function startLive(players, opponent, seed) {
+  function startLive(players, opponent, seed, self) {
     clearTimeout(botTimer);
     playing = false; clearTimeout(timer);
     const s = seed === null || seed === undefined ? randomSeed() : seed;
-    const out = callWasm("sv_new_game", players, s % 4294967296, Math.floor(s / 4294967296), 0, opponent);
+    const seatA = self === undefined || self === null ? 2 : self;
+    const lo = s % 4294967296, hi = Math.floor(s / 4294967296);
+    const out = seatA === 2 || typeof wasm.sv_new_game_seats !== "function"
+      ? callWasm("sv_new_game", players, lo, hi, 0, opponent)
+      : callWasm("sv_new_game_seats", players, lo, hi, 0, seatA, opponent);
     const header = out.header;
     header.frames = [out.frame];
     header.outcome = out.outcome;
     liveR = prepare(header);
-    live = { legal: out.legal, humanToMove: out.human_to_move, outcome: out.outcome, seats: out.seats, opponent };
+    const watch = out.seats.every((x) => x !== "mensch");
+    live = { legal: out.legal, humanToMove: out.human_to_move, outcome: out.outcome, seats: out.seats, opponent, watch };
+    playing = watch; // Zuschauen laeuft sofort los
     R = liveR;
     selected = null; fi = 0; tween = null; hoverCell = null;
     showPlayError("");
@@ -1167,6 +1306,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     live.legal = out.legal;
     live.humanToMove = out.human_to_move;
     live.outcome = out.outcome;
+    if (live.watch && out.outcome) playing = false;
     if (R !== liveR) return;
     if (follow) goTo(liveR.frames.length - 1, true);
     else renderPanel();
@@ -1183,12 +1323,14 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     }
   }
   function botDelay() {
-    return Math.max(120, Math.min(700, Number($("speed").value)));
+    const speed = Number($("speed").value);
+    return live && live.watch ? Math.max(40, speed) : Math.max(120, Math.min(700, speed));
   }
   function scheduleBots() {
     clearTimeout(botTimer);
     renderTurnBox();
     if (mode !== "play" || !live || live.outcome || live.humanToMove) return;
+    if (live.watch && (!playing || R !== liveR)) return;
     botTimer = setTimeout(() => {
       if (mode !== "play" || !live) return;
       try {
@@ -1201,8 +1343,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     }, botDelay());
   }
   function homeName(res) {
-    const p = R.cornerPlayer[typeInfo(res).home];
-    return p >= 0 ? `Farbe ${playerName(p)}` : "Farbe einer freien Ecke";
+    return colorOwner(res);
   }
   function actionLabel(a, f) {
     if (a.type === "build") {
@@ -1211,9 +1352,12 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     }
     if (a.type === "spawn") {
       const fac = f.fById.get(a.factory);
-      const level = fac.storage.filter(([r]) => category(r) === 1).length;
-      const tip = level === 1 ? " – mehr Farben im Lager ergeben eine höhere Stufe" : "";
+      const level = fac.level || fac.storage.filter(([r]) => category(r) === 1).length;
+      const tip = level === 1 ? " – mehr Farben oder mehr Kat 2/3 im Lager ergeben eine höhere Stufe" : "";
       return `Fabrik auf ${cellName(fac.cell)} auflösen: Figur Stufe ${level}, Reichweite ${level}${tip}`;
+    }
+    if (a.type === "buy") {
+      return `„${CARD(a.card).name}“${buyWhere(a, f)}`;
     }
     if (a.type === "pass") return "Passen";
     return a.type;
@@ -1224,9 +1368,13 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     box.hidden = false;
     const last = liveR.frames.length - 1;
     const now = liveR.frames[last];
-    const hotseat = live.opponent === 2;
+    const hotseat = live.opponent === 2 || live.watch;
     let hint, sub = "";
-    if (live.outcome) {
+    if (live.watch && !live.outcome) {
+      hint = playing ? `Bot gegen Bot: Spieler ${playerName(now.current)} ist am Zug …` : "Bot gegen Bot: angehalten.";
+      sub = playing ? "▶/⏸ oder Leertaste hält an. Das Tempo stellst du unten rechts ein."
+        : "▶ oder Leertaste läuft weiter, → macht einen einzelnen Zug, ← blättert zurück.";
+    } else if (live.outcome) {
       if (live.outcome.type === "winner") {
         const w = live.outcome.player;
         hint = hotseat ? `Spieler ${playerName(w)} gewinnt!`
@@ -1250,6 +1398,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     const actions = $("actions");
     actions.innerHTML = "";
     if (canAct()) {
+      const buys = [];
       live.legal.forEach((a, i) => {
         if (a.type === "move") return;
         const b = document.createElement("button");
@@ -1257,8 +1406,20 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
         b.className = "btn";
         b.textContent = actionLabel(a, now);
         b.addEventListener("click", () => humanAct(i));
-        actions.appendChild(b);
+        if (a.type === "buy") buys.push(b);
+        else actions.appendChild(b);
       });
+      if (buys.length) {
+        // Kaeufe gesammelt; ein Kauf zaehlt nicht als Zug.
+        const box = document.createElement("details");
+        box.className = "buys";
+        box.innerHTML = `<summary>Karte kaufen (${buys.length} Möglichkeiten, zusätzlich zum Zug)</summary>`;
+        const inner = document.createElement("div");
+        inner.className = "actions";
+        buys.forEach((b) => inner.appendChild(b));
+        box.appendChild(inner);
+        actions.appendChild(box);
+      }
     }
   }
   function setMode(m) {
@@ -1273,7 +1434,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
     if (m === "play") {
       if (!liveR) {
         // Erste Partie mit den Voreinstellungen des Formulars (Gegner: stark).
-        startLive(Number($("setPlayers").value) || 2, Number($("setOpp").value), null);
+        startLive(Number($("setPlayers").value) || 2, Number($("setOpp").value), null, Number($("setSelf").value));
         return;
       }
       R = liveR;
@@ -1359,7 +1520,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
       }
     }
     try {
-      startLive(Number($("setPlayers").value), Number($("setOpp").value), seed);
+      startLive(Number($("setPlayers").value), Number($("setOpp").value), seed, Number($("setSelf").value));
     } catch (err) {
       showPlayError(err.message);
     }
@@ -1386,14 +1547,23 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   });
   $("first").addEventListener("click", () => { setPlaying(false); goTo(0, false); });
   $("prev").addEventListener("click", () => { setPlaying(false); goTo(fi - 1, false); });
-  $("next").addEventListener("click", () => { setPlaying(false); goTo(fi + 1, true); });
+  function stepForward() {
+    if (watching() && fi === R.frames.length - 1) {
+      setPlaying(false);
+      botOnce();
+      return;
+    }
+    setPlaying(false);
+    goTo(fi + 1, true);
+  }
+  $("next").addEventListener("click", stepForward);
   $("last").addEventListener("click", () => { setPlaying(false); goTo(R.frames.length - 1, false); });
   $("play").addEventListener("click", () => setPlaying(!playing));
   $("scrub").addEventListener("input", (e) => { setPlaying(false); goTo(Number(e.target.value), false); });
   document.addEventListener("keydown", (e) => {
     if (!R || e.target.closest && e.target.closest("select, input")) return;
     if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
-    else if (e.key === "ArrowRight") { setPlaying(false); goTo(fi + 1, true); }
+    else if (e.key === "ArrowRight") stepForward();
     else if (e.key === "ArrowLeft") { setPlaying(false); goTo(fi - 1, false); }
     else if (e.key === "Home") { setPlaying(false); goTo(0, false); }
     else if (e.key === "End") { setPlaying(false); goTo(R.frames.length - 1, false); }

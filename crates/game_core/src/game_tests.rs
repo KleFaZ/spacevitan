@@ -1224,3 +1224,142 @@ fn factories_drain_their_surroundings_with_a_limited_stock() {
     );
     assert_eq!(g.state.depleted.len(), 2);
 }
+
+// ----- Hoehere Stufen: Bau auf fremder Farbe, Ausbau ueber das Lager -----------------------
+
+fn level_of(g: &Game, f: crate::ids::FactoryId) -> u8 {
+    g.spawn_preview(&g.state.factories[&f])
+        .expect("aufloesbar")
+        .0
+}
+
+#[test]
+fn building_on_a_foreign_colour_adds_the_own_colour() {
+    let mut g = blank(2);
+    put(&mut g, 0, 0, cat1(1)); // Farbe der freien Ecke 1
+    act!(g, Action::BuildFactory { pay: cat1(1) });
+    let f = g.factories_of(P0).next().expect("Fabrik").clone();
+    assert_eq!(f.storage.get(cat1(1)), 1);
+    assert_eq!(f.storage.get(cat1(0)), 1, "die eigene Farbe kommt dazu");
+    assert_eq!(level_of(&g, f.id), 2);
+}
+
+#[test]
+fn building_on_the_own_colour_gives_no_bonus() {
+    let mut g = blank(2);
+    put(&mut g, 0, 0, cat1(0));
+    act!(g, Action::BuildFactory { pay: cat1(0) });
+    let f = g.factories_of(P0).next().expect("Fabrik").clone();
+    assert_eq!(f.storage.get(cat1(0)), 1);
+    assert_eq!(level_of(&g, f.id), 1);
+}
+
+#[test]
+fn a_centre_colour_counts_as_foreign_for_everyone() {
+    let mut g = blank(2);
+    let centre = g.map.center_types().next().expect("Zentrumsfarbe").id;
+    put(&mut g, 0, 0, centre);
+    act!(g, Action::BuildFactory { pay: centre });
+    let f = g.factories_of(P0).next().expect("Fabrik").clone();
+    assert_eq!(f.storage.get(centre), 1);
+    assert_eq!(f.storage.get(cat1(0)), 1);
+    assert_eq!(level_of(&g, f.id), 2);
+}
+
+#[test]
+fn the_foreign_bonus_can_be_switched_off() {
+    let mut config = Config::new(2, 1);
+    config.foreign_build_bonus = false;
+    let mut g = blank_with(config);
+    put(&mut g, 0, 0, cat1(1));
+    act!(g, Action::BuildFactory { pay: cat1(1) });
+    let f = g.factories_of(P0).next().expect("Fabrik").clone();
+    assert_eq!(f.storage.get(cat1(0)), 0);
+    assert_eq!(level_of(&g, f.id), 1);
+}
+
+#[test]
+fn the_level_rises_with_varied_stock_in_the_storage() {
+    let mut g = blank(2);
+    assert_eq!((g.config.upgrade_step, g.config.max_upgrades), (10, 2));
+    let f = g.setup_factory(P0, c(&g, 3, 3));
+    g.setup_storage(f, cat1(0), 1);
+    assert_eq!(level_of(&g, f), 1);
+    g.setup_storage(f, cat2(0, 0), 9);
+    assert_eq!(level_of(&g, f), 1, "9 Einheiten reichen nicht");
+    g.setup_storage(f, cat2(0, 0), 1);
+    assert_eq!(level_of(&g, f), 1, "10 Einheiten, aber nur ein Typ");
+    g.setup_storage(f, cat3(0, 0), 1);
+    assert_eq!(level_of(&g, f), 2, "11 Einheiten aus 2 Typen");
+    g.setup_storage(f, cat3(0, 1), 9);
+    assert_eq!(level_of(&g, f), 3, "20 Einheiten aus 3 Typen");
+    g.setup_storage(f, cat2(0, 1), 30);
+    assert_eq!(level_of(&g, f), 3, "hoechstens 2 Ausbaustufen");
+    assert_eq!(g.upgrade_stock(&g.state.factories[&f].storage), (50, 4));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn spawning_turns_colours_and_upgrade_into_level_and_range() {
+    let mut g = blank(2);
+    let f = g.setup_factory(P0, c(&g, 3, 3));
+    g.setup_storage(f, cat1(0), 1);
+    g.setup_storage(f, cat1(1), 1);
+    g.setup_storage(f, cat2(0, 0), 5);
+    g.setup_storage(f, cat3(0, 0), 5);
+    act!(g, Action::SpawnPiece { factory: f });
+    let unit = g.state.piece_at(c(&g, 3, 3)).expect("Figur");
+    match &unit.kind {
+        PieceKind::Unit {
+            level,
+            range,
+            colors,
+        } => {
+            assert_eq!((*level, *range), (3, 3), "2 Farben + 1 Ausbau");
+            assert_eq!(colors.len(), 2);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_level_never_exceeds_the_number_of_corners() {
+    let mut g = blank(3);
+    assert_eq!(g.config.corner_count(), 3);
+    let f = g.setup_factory(P0, g.map.start_cell(P1));
+    g.setup_storage(f, ResourceId(0), 1);
+    g.setup_storage(f, ResourceId(6), 1);
+    g.setup_storage(f, ResourceId(1), 20);
+    g.setup_storage(f, ResourceId(2), 1);
+    g.setup_storage(f, ResourceId(3), 1);
+    assert_eq!(
+        level_of(&g, f),
+        3,
+        "2 Farben + 2 Ausbau, gedeckelt auf 3 Ecken"
+    );
+}
+
+#[test]
+fn without_an_upgrade_step_only_colours_count() {
+    let mut config = Config::new(2, 1);
+    config.upgrade_step = 0;
+    let mut g = blank_with(config);
+    let f = g.setup_factory(P0, c(&g, 3, 3));
+    g.setup_storage(f, cat1(0), 1);
+    g.setup_storage(f, cat2(0, 0), 50);
+    g.setup_storage(f, cat3(0, 0), 50);
+    assert_eq!(level_of(&g, f), 1);
+}
+
+#[test]
+fn the_king_speeds_up_the_upgrade_by_unloading() {
+    let mut g = blank(2);
+    let f = g.setup_factory(P0, c(&g, 0, 1));
+    g.setup_storage(f, cat1(0), 1);
+    g.setup_carry(P0, cat2(0, 0), 6);
+    g.setup_carry(P0, cat3(0, 0), 4);
+    assert_eq!(level_of(&g, f), 1);
+    act!(g, king_to(&g, P0, 0, 1));
+    assert!(g.state.carried[P0.idx()].is_empty(), "alles abgeladen");
+    assert_eq!(level_of(&g, f), 2);
+}

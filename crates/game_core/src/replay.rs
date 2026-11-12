@@ -4,7 +4,8 @@
 //! Frame 0 ist der Startzustand, Frame k der Zustand nach dem k-ten Zug.
 //! Zellen, Figuren, Fabriken und Rohstoffe werden ueber ihre numerischen IDs referenziert.
 
-use crate::action::{Action, Event};
+use crate::action::{Action, Event, PaySource};
+use crate::cards::Card;
 use crate::game::Game;
 use crate::ids::PlayerId;
 use crate::state::{Inventory, Outcome, PieceKind};
@@ -50,6 +51,41 @@ fn point(p: (f64, f64)) -> String {
     format!("[{},{}]", num(p.0), num(p.1))
 }
 
+fn source_json(from: &PaySource) -> String {
+    match from {
+        PaySource::King => r#""king""#.to_string(),
+        PaySource::Factory(f) => f.0.to_string(),
+    }
+}
+
+fn opt_piece(p: &Option<crate::ids::PieceId>) -> String {
+    p.map_or("null".to_string(), |p| p.0.to_string())
+}
+
+/// Karte im Markt: Kurzname, Name, Wirkung, Kosten, Ziel.
+fn card_json(card: &Card) -> String {
+    let c = card.cost();
+    let target = match card.target() {
+        crate::cards::CardTarget::Player => "player",
+        crate::cards::CardTarget::Unit => "unit",
+        crate::cards::CardTarget::King => "king",
+    };
+    format!(
+        r#"{{"key":{},"name":{},"text":{},"target":{},"set":{},"cost":{{"color":{},"foreign_color":{},"k2":{},"k2_distinct":{},"k3":{},"k3_distinct":{}}}}}"#,
+        esc(card.key()),
+        esc(card.name()),
+        esc(card.text()),
+        esc(target),
+        card.is_set_piece(),
+        c.color,
+        c.foreign_color,
+        c.k2,
+        c.k2_distinct,
+        c.k3,
+        c.k3_distinct
+    )
+}
+
 /// Rohstoffmengen als `[[typ, menge], ...]`.
 fn inv_json(inv: &Inventory) -> String {
     list(inv.iter(), |(r, n)| format!("[{},{}]", r.0, n))
@@ -65,6 +101,12 @@ pub fn action_json(action: &Action) -> String {
             format!(r#"{{"type":"spawn","factory":{}}}"#, factory.0)
         }
         Action::Pass => r#"{"type":"pass"}"#.to_string(),
+        Action::BuyCard { card, from, target } => format!(
+            r#"{{"type":"buy","card":{},"from":{},"target":{}}}"#,
+            esc(card.key()),
+            source_json(from),
+            opt_piece(target)
+        ),
     }
 }
 
@@ -156,45 +198,105 @@ pub fn event_json(event: &Event) -> String {
             r#"{{"type":"game_over","outcome":{}}}"#,
             outcome_json(*outcome)
         ),
+        Event::CardBought {
+            player,
+            card,
+            from,
+            target,
+            paid,
+        } => format!(
+            r#"{{"type":"card_bought","player":{},"card":{},"from":{},"target":{},"paid":{}}}"#,
+            player.0,
+            esc(card.key()),
+            source_json(from),
+            opt_piece(target),
+            inv_json(paid)
+        ),
+        Event::ShieldBlocked {
+            piece,
+            owner,
+            at,
+            by,
+        } => format!(
+            r#"{{"type":"shield_blocked","piece":{},"owner":{},"at":{},"by":{}}}"#,
+            piece.0, owner.0, at.0, by.0
+        ),
+        Event::Recruited {
+            piece,
+            owner,
+            factory,
+            cell,
+        } => format!(
+            r#"{{"type":"recruited","piece":{},"owner":{},"factory":{},"cell":{}}}"#,
+            piece.0, owner.0, factory.0, cell.0
+        ),
+        Event::DepositCreated { cell, resource } => format!(
+            r#"{{"type":"deposit_created","cell":{},"resource":{}}}"#,
+            cell.0, resource.0
+        ),
     }
 }
 
 /// Der veraenderliche Teil des Spielstands (ohne Karte).
 pub fn state_json(game: &Game) -> String {
     let st = &game.state;
+    let perks = |pk: &crate::state::Perks| {
+        format!(
+            r#""perks":{{"shield":{},"diagonal":{},"extra_range":{},"card_levels":{},"king_step":{}}}"#,
+            pk.shield, pk.diagonal, pk.extra_range, pk.card_levels, pk.king_step
+        )
+    };
     let pieces = list(st.pieces.values(), |p| match &p.kind {
         PieceKind::King => format!(
-            r#"{{"id":{},"owner":{},"cell":{},"king":true}}"#,
-            p.id.0, p.owner.0, p.cell.0
+            r#"{{"id":{},"owner":{},"cell":{},"king":true,{}}}"#,
+            p.id.0,
+            p.owner.0,
+            p.cell.0,
+            perks(&p.perks)
         ),
         PieceKind::Unit {
             level,
             range,
             colors,
         } => format!(
-            r#"{{"id":{},"owner":{},"cell":{},"king":false,"level":{},"range":{},"colors":{}}}"#,
+            r#"{{"id":{},"owner":{},"cell":{},"king":false,"level":{},"range":{},"colors":{},{}}}"#,
             p.id.0,
             p.owner.0,
             p.cell.0,
             level,
             range,
-            list(colors.iter(), |c| c.0.to_string())
+            list(colors.iter(), |c| c.0.to_string()),
+            perks(&p.perks)
         ),
     });
-    let factories = list(st.factories.values(), |f| {
+    let player_perks = list(st.player_perks.iter(), |pp| {
         format!(
-            r#"{{"id":{},"owner":{},"cell":{},"storage":{}}}"#,
+            r#"{{"mining":{},"farming":{},"runes":{},"shards":{},"cards_bought":{}}}"#,
+            pp.mining, pp.farming, pp.runes, pp.shards, pp.cards_bought
+        )
+    });
+    let factories = list(st.factories.values(), |f| {
+        // Stufe der Figur, die beim Aufloesen jetzt entstuende (0 = keine Farbe), und der
+        // Ausbau-Fortschritt: Einheiten und Typen ab Kat 2.
+        let level = game.spawn_preview(f).map_or(0, |(l, _, _)| l);
+        let (units, kinds) = game.upgrade_stock(&f.storage);
+        format!(
+            r#"{{"id":{},"owner":{},"cell":{},"storage":{},"level":{},"upgrade":{},"upgrade_units":{},"upgrade_kinds":{}}}"#,
             f.id.0,
             f.owner.0,
             f.cell.0,
-            inv_json(&f.storage)
+            inv_json(&f.storage),
+            level,
+            game.upgrade_level(&f.storage),
+            units,
+            kinds
         )
     });
     let loot = list(st.loot.iter(), |(cell, inv)| {
         format!(r#"{{"cell":{},"items":{}}}"#, cell.0, inv_json(inv))
     });
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"harvested":{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"extra_deposits":{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
@@ -206,6 +308,14 @@ pub fn state_json(game: &Game) -> String {
         list(st.harvested.iter(), |((c, r), n)| format!(
             "[{},{},{}]",
             c.0, r.0, n
+        )),
+        player_perks,
+        st.bought_this_turn,
+        st.extra_actions,
+        list(st.extra_deposits.iter(), |(c, rs)| format!(
+            "[{},{}]",
+            c.0,
+            list(rs.iter(), |r| r.0.to_string())
         ))
     )
 }
@@ -229,15 +339,26 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
     let types = list(m.resource_types.iter(), |t| {
         format!(
             r#"{{"id":{},"category":{},"home":{}}}"#,
-            t.id.0, t.category, t.home_corner
+            t.id.0,
+            t.category,
+            t.home_corner.map_or("null".to_string(), |c| c.to_string())
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{}}}"#,
-        c.side, c.max_rounds, c.min_factory_distance, c.deposit_stock, c.yield_per_round
+        r#"{{"side":{},"max_rounds":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"foreign_build_bonus":{},"upgrade_step":{},"max_upgrades":{},"market_size":{}}}"#,
+        c.side,
+        c.max_rounds,
+        c.min_factory_distance,
+        c.deposit_stock,
+        c.yield_per_round,
+        c.cat1_distance,
+        c.foreign_build_bonus,
+        c.upgrade_step,
+        c.max_upgrades,
+        c.market_size
     );
     format!(
-        r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{}"#,
+        r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{}"#,
         esc(FORMAT),
         VERSION,
         c.seed,
@@ -249,7 +370,8 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         list(m.deposits.iter(), |d| list(d.iter(), |r| r.0.to_string())),
         list(m.territories.iter(), |t| t
             .map_or("-1".to_string(), |i| i.to_string())),
-        list(m.player_corners.iter(), |i| i.to_string())
+        list(m.player_corners.iter(), |i| i.to_string()),
+        list(game.state.market.iter(), card_json)
     )
 }
 
@@ -392,10 +514,10 @@ mod tests {
         let start0 = game.map.start_cell(PlayerId(0)).0;
         let start1 = game.map.start_cell(PlayerId(1)).0;
         assert!(json.contains(&format!(
-            r#"{{"id":0,"owner":0,"cell":{start0},"king":true}}"#
+            r#"{{"id":0,"owner":0,"cell":{start0},"king":true,"perks":{{"shield":false"#
         )));
         assert!(json.contains(&format!(
-            r#"{{"id":1,"owner":1,"cell":{start1},"king":true}}"#
+            r#"{{"id":1,"owner":1,"cell":{start1},"king":true,"perks":"#
         )));
         assert!(json.contains("\"outcome\":null"));
         assert!(json.contains(r#""factories":[]"#));

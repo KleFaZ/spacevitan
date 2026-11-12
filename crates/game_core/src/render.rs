@@ -117,7 +117,7 @@ mod tests {
         let mut g = Game::new(Config::new(2, 4)).unwrap();
         let cell = |g: &Game, x, y| g.map.board.cell_at(x, y).unwrap();
         let u = cell(&g, 4, 4);
-        g.setup_unit(PlayerId(1), u, 3, 1);
+        g.setup_unit(PlayerId(1), u, 3, 3);
         let f = cell(&g, 6, 6);
         g.setup_factory(PlayerId(0), f);
         let l = cell(&g, 2, 7);

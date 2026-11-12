@@ -32,6 +32,26 @@ pub struct Config {
     pub fairness_tolerance: u32,
     /// Wie viele Generator-Versuche, bevor die Erzeugung aufgibt.
     pub max_generator_attempts: u32,
+    /// Eigene Kat-1-Vorkommen liegen mindestens so viele Schritte vom Start entfernt, das erste
+    /// genau so weit und in Richtung Kartenmitte. Standard 2: nicht auf und nicht neben dem Start.
+    pub cat1_distance: u32,
+    /// Neutrale Kat-1-Typen ("Zentrumsfarben") rund um die Kartenmitte, je mit
+    /// `cells_per_type[0]` Feldern. Sie sind fuer jeden Spieler eine fremde Farbe.
+    pub center_colors: u32,
+    /// Zentrumsfarben liegen hoechstens so viele Schritte von der Kartenmitte entfernt.
+    pub center_radius: u32,
+    /// Baut ein Koenig auf einem fremden Kat-1-Vorkommen (Zentrum, freie Ecke, Gegner), bekommt
+    /// die Fabrik zusaetzlich eine Einheit seiner eigenen Farbe: sie hat dann gleich zwei
+    /// Farben, die Figur also Stufe 2.
+    pub foreign_build_bonus: bool,
+    /// Ausbau: Je `upgrade_step` Einheiten ab Kat 2 im Lager steigt die Stufe der kommenden
+    /// Figur um 1, wenn genug verschiedene Typen dabei sind (siehe `Game::upgrade_level`).
+    /// 0 = kein Ausbau, nur Farben zaehlen.
+    pub upgrade_step: u32,
+    /// Hoechstens so viele Ausbaustufen.
+    pub max_upgrades: u8,
+    /// Karten, die im Markt ausliegen (verschiedene, je beliebig oft kaufbar); 0 = ohne Karten.
+    pub market_size: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,7 +93,81 @@ impl Config {
             fairness_radius: 4,
             fairness_tolerance: 2,
             max_generator_attempts: 500,
+            cat1_distance: 2,
+            center_colors: Config::default_center_colors(players),
+            center_radius: 2,
+            foreign_build_bonus: true,
+            upgrade_step: 10,
+            max_upgrades: 2,
+            market_size: Config::default_market_size(players),
         }
+    }
+
+    /// Zwei Karten je Spieler bis 4 Spieler, ab 5 Spielern eine je Spieler.
+    pub fn default_market_size(players: u8) -> u32 {
+        if players <= 4 {
+            2 * players as u32
+        } else {
+            players as u32
+        }
+    }
+
+    /// Setzt eine Regel-Einstellung nach Namen, z. B. aus `--rule upgrade_step=6` oder aus dem
+    /// Browser. Bekannt sind die Regel-Felder dieser Struktur; Wahrheitswerte als 0 oder 1.
+    pub fn set(&mut self, key: &str, value: i64) -> Result<(), String> {
+        let as_u32 = |v: i64| u32::try_from(v).map_err(|_| format!("{key}: {v} ist ungueltig"));
+        match key {
+            "cat1_distance" => self.cat1_distance = as_u32(value)?,
+            "center_colors" => self.center_colors = as_u32(value)?,
+            "center_radius" => self.center_radius = as_u32(value)?,
+            "foreign_build_bonus" => self.foreign_build_bonus = value != 0,
+            "upgrade_step" => self.upgrade_step = as_u32(value)?,
+            "max_upgrades" => {
+                self.max_upgrades =
+                    u8::try_from(value).map_err(|_| format!("{key}: {value} ist ungueltig"))?
+            }
+            "deposit_stock" => self.deposit_stock = as_u32(value)?,
+            "min_factory_distance" => self.min_factory_distance = as_u32(value)?,
+            "max_rounds" => self.max_rounds = as_u32(value)?,
+            "side" => self.side = as_u32(value)?,
+            "cat1_cells" => self.cells_per_type[0] = as_u32(value)?,
+            "market_size" => self.market_size = as_u32(value)?,
+            other => return Err(format!("unbekannte Regel '{other}'")),
+        }
+        Ok(())
+    }
+
+    /// Wie `set`, fuer eine Liste `name=wert,name=wert`.
+    pub fn set_all(&mut self, list: &str) -> Result<(), String> {
+        for item in list.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let (key, value) = item
+                .split_once('=')
+                .ok_or_else(|| format!("'{item}': erwartet name=wert"))?;
+            let value: i64 = value
+                .trim()
+                .parse()
+                .map_err(|_| format!("'{item}': keine ganze Zahl"))?;
+            self.set(key.trim(), value)?;
+        }
+        Ok(())
+    }
+
+    /// Eine Zentrumsfarbe je zwei Spieler (aufgerundet).
+    pub fn default_center_colors(players: u8) -> u32 {
+        (players as u32).div_ceil(2)
+    }
+
+    /// Fairness-Radius, den die Pruefung wirklich nutzt: auf kleinen Karten hoechstens zwei
+    /// Fuenftel der Seitenlaenge, sonst zaehlt er schon die Rohstoffe der Nachbarn mit.
+    pub fn effective_fairness_radius(&self) -> u32 {
+        self.fairness_radius.min((self.side * 2 / 5).max(2))
+    }
+
+    /// Radius, den der Generator fuer die Zentrumsfarben wirklich nutzt: auf kleinen Karten
+    /// schrumpft er (ein Fuenftel der Seitenlaenge), damit die Mitte nicht bis an die Startecken
+    /// reicht.
+    pub fn effective_center_radius(&self) -> u32 {
+        self.center_radius.min((self.side / 5).max(1))
     }
 
     /// Welches Gitter zur Spielerzahl gehoert.
@@ -142,6 +236,19 @@ impl Config {
         if self.max_generator_attempts == 0 {
             return Err(ConfigError::Invalid(
                 "max_generator_attempts muss mindestens 1 sein",
+            ));
+        }
+        if self.cat1_distance == 0 || self.cat1_distance > self.side / 2 {
+            return Err(ConfigError::Invalid(
+                "cat1_distance muss zwischen 1 und der halben Seitenlaenge liegen",
+            ));
+        }
+        if self.center_colors > 8 {
+            return Err(ConfigError::Invalid("hoechstens 8 Zentrumsfarben"));
+        }
+        if self.center_colors > 0 && (self.center_radius == 0 || self.center_radius > self.side) {
+            return Err(ConfigError::Invalid(
+                "center_radius muss zwischen 1 und der Seitenlaenge liegen",
             ));
         }
         Ok(())
@@ -263,6 +370,43 @@ mod tests {
         let mut c = Config::new(2, 1);
         c.fairness_radius = 1;
         assert!(c.validate().is_err());
+        let mut c = Config::new(2, 1);
+        c.cat1_distance = 0;
+        assert!(c.validate().is_err());
+        c.cat1_distance = 6;
+        assert!(c.validate().is_err(), "mehr als die halbe Seite");
+        let mut c = Config::new(2, 1);
+        c.center_colors = 9;
+        assert!(c.validate().is_err());
+        let mut c = Config::new(2, 1);
+        c.center_radius = 0;
+        assert!(c.validate().is_err());
+        c.center_colors = 0;
+        assert_eq!(
+            c.validate(),
+            Ok(()),
+            "ohne Zentrumsfarben ist der Radius egal"
+        );
+    }
+
+    #[test]
+    fn rules_can_be_set_by_name() {
+        let mut c = Config::new(4, 1);
+        c.set_all("upgrade_step=6, foreign_build_bonus=0,center_colors=3")
+            .unwrap();
+        assert_eq!(c.upgrade_step, 6);
+        assert!(!c.foreign_build_bonus);
+        assert_eq!(c.center_colors, 3);
+        assert!(c.set("upgrade_step", -1).is_err());
+        assert!(c.set("schach", 1).is_err());
+        assert!(c.set_all("upgrade_step").is_err());
+        assert!(c.set_all("upgrade_step=x").is_err());
+    }
+
+    #[test]
+    fn one_center_colour_per_two_players() {
+        let n: Vec<u32> = (2..=8).map(Config::default_center_colors).collect();
+        assert_eq!(n, vec![1, 2, 2, 3, 3, 4, 4]);
     }
 
     #[test]

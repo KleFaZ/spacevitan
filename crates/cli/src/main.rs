@@ -29,6 +29,9 @@ Optionen:
   --rounds N     Unentschieden nach N Runden (Standard 300)
   --stock N      Vorrat je Rohstoffvorkommen in Einheiten (Standard 0 = unerschoepflich)
   --kat1 N       Felder je Kat-1-Typ, also Bauplaetze fuer Fabriken je Ecke (Standard 2)
+  --rule LISTE   weitere Regeln, z. B. upgrade_step=6,foreign_build_bonus=0
+                 (cat1_distance, center_colors, center_radius, foreign_build_bonus,
+                 upgrade_step, max_upgrades, min_factory_distance)
   --bots LISTE   pro Spieler: stark, gierig oder zufall, z. B. stark,gierig
                  (Standard: gierig)
   --nodes N      Rechenbudget von \"stark\": Stellungen pro Zug (Standard 20000)
@@ -47,6 +50,7 @@ struct Options {
     rounds: u32,
     stock: u32,
     kat1: u32,
+    rules: String,
     bots: Vec<String>,
     nodes: u64,
     show: bool,
@@ -62,6 +66,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
         rounds: 300,
         stock: 0,
         kat1: 0,
+        rules: String::new(),
         bots: Vec::new(),
         nodes: SearchParams::DEFAULT.node_budget,
         show: false,
@@ -103,6 +108,15 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
             }
             "--kat1" => {
                 o.kat1 = number(value(i)?, "--kat1")? as u32;
+                i += 1;
+            }
+            "--rule" | "--rules" => {
+                let list = value(i)?;
+                Config::new(2, 0).set_all(list)?;
+                if !o.rules.is_empty() {
+                    o.rules.push(',');
+                }
+                o.rules.push_str(list);
                 i += 1;
             }
             "--games" => {
@@ -208,6 +222,8 @@ struct Stats {
     spawned: u64,
     factories: u64,
     captures: u64,
+    cards: u64,
+    cards_by_kind: BTreeMap<&'static str, u64>,
 }
 
 fn run() -> Result<(), String> {
@@ -241,6 +257,7 @@ fn run() -> Result<(), String> {
         if o.kat1 > 0 {
             config.cells_per_type[0] = o.kat1;
         }
+        config.set_all(&o.rules)?;
         let mut game = Game::new(config).map_err(|e| e.to_string())?;
         let mut bots: Vec<Box<dyn Bot>> = make_bots(&o, seed)?
             .into_iter()
@@ -287,6 +304,10 @@ fn run() -> Result<(), String> {
                     Event::Spawned { .. } => stats.spawned += 1,
                     Event::FactoryBuilt { .. } => stats.factories += 1,
                     Event::Captured { .. } => stats.captures += 1,
+                    Event::CardBought { card, .. } => {
+                        stats.cards += 1;
+                        *stats.cards_by_kind.entry(card.name()).or_default() += 1;
+                    }
                     _ => {}
                 }
                 if show {
@@ -379,11 +400,19 @@ fn run() -> Result<(), String> {
             }
         }
         println!(
-            "  Pro Partie: {:.1} Fabriken, {:.1} Figuren erzeugt, {:.1} geschlagen",
+            "  Pro Partie: {:.1} Fabriken, {:.1} Figuren erzeugt, {:.1} geschlagen, {:.1} Karten gekauft",
             stats.factories as f64 / n,
             stats.spawned as f64 / n,
-            stats.captures as f64 / n
+            stats.captures as f64 / n,
+            stats.cards as f64 / n
         );
+        if !stats.cards_by_kind.is_empty() {
+            let mut kinds: Vec<(&str, u64)> =
+                stats.cards_by_kind.iter().map(|(k, v)| (*k, *v)).collect();
+            kinds.sort_by_key(|k| std::cmp::Reverse(k.1));
+            let text: Vec<String> = kinds.iter().map(|(k, v)| format!("{k} {v}")).collect();
+            println!("  Karten: {}", text.join(", "));
+        }
     }
     if interactive {
         println!("\nEnter druecken zum Beenden.");

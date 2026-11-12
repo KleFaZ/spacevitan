@@ -1,5 +1,6 @@
 //! Spielzustand: Figuren, Fabriken, Beute, Lager, Buchfuehrung.
 
+use crate::cards::Card;
 use crate::ids::{CellId, FactoryId, PieceId, PlayerId, ResourceId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -73,12 +74,43 @@ pub enum PieceKind {
     },
 }
 
+/// Dauerhafte Verbesserungen einer Figur oder des Koenigs durch Karten.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Perks {
+    /// Der naechste Schlag gegen die Figur prallt ab (Schild, Koenigsruestung).
+    pub shield: bool,
+    /// Schlaegt zusaetzlich diagonal auf ein Nachbarfeld (Laeuferschlag).
+    pub diagonal: bool,
+    /// Zusaetzliche Reichweite durch "Lange Beine". Es gilt: Reichweite = Stufe + diese Zahl.
+    pub extra_range: u8,
+    /// Stufen durch Karten (Ausbildung, Runensteine), zusaetzlich zu Farben und Ausbau.
+    pub card_levels: u8,
+    /// Koenig zieht bis zu zwei Felder geradeaus (Koenigsschritt).
+    pub king_step: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Piece {
     pub id: PieceId,
     pub owner: PlayerId,
     pub cell: CellId,
     pub kind: PieceKind,
+    pub perks: Perks,
+}
+
+/// Was ein Spieler durch Karten dauerhaft hat oder gesammelt hat.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PlayerPerks {
+    /// Bergbau: Fabriken ernten Kat 2 doppelt.
+    pub mining: bool,
+    /// Ackerbau: Fabriken ernten Kat 3 doppelt.
+    pub farming: bool,
+    /// Gekaufte Runensteine seit dem letzten vollen Set.
+    pub runes: u8,
+    /// Gekaufte Sternsplitter seit dem letzten vollen Set.
+    pub shards: u8,
+    /// Wie viele Karten der Spieler insgesamt gekauft hat (Statistik).
+    pub cards_bought: u32,
 }
 
 impl Piece {
@@ -102,7 +134,7 @@ pub enum Outcome {
 }
 
 /// Rohstoff-Buchfuehrung. Es gilt immer:
-/// `created == in Gepaeck + in Lagern + als Beute + consumed + vanished`.
+/// `created == in Gepaeck + in Lagern + als Beute + consumed + vanished + spent_on_cards`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Ledger {
     /// Aus Vorkommen gesammelte Einheiten (Koenig, Fabrik, beim Fabrikbau verbrauchtes Kat 1).
@@ -111,6 +143,8 @@ pub struct Ledger {
     pub consumed_by_spawns: u64,
     /// Mit einem ausgeschiedenen Spieler verschwunden (Gepaeck und Fabrikenlager).
     pub vanished: u64,
+    /// Fuer Karten bezahlt.
+    pub spent_on_cards: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,6 +166,16 @@ pub struct State {
     pub depleted: BTreeSet<(CellId, ResourceId)>,
     /// Bereits geerntete Menge je Vorkommen (nur bei begrenztem Vorrat gefuehrt).
     pub harvested: BTreeMap<(CellId, ResourceId), u32>,
+    /// Die Karten, die in dieser Partie ausliegen (fest ab dem Start).
+    pub market: Vec<Card>,
+    /// Kartenwirkungen und Set-Zaehler je Spieler.
+    pub player_perks: Vec<PlayerPerks>,
+    /// Hat der Spieler am Zug in diesem Zug schon eine Karte gekauft?
+    pub bought_this_turn: bool,
+    /// Weitere Aktionen in diesem Zug (Doppelzug).
+    pub extra_actions: u8,
+    /// Vorkommen, die waehrend der Partie entstanden sind (Sternsplitter).
+    pub extra_deposits: BTreeMap<CellId, Vec<ResourceId>>,
     pub(crate) occupant: Vec<Option<PieceId>>,
     pub(crate) factory_at: Vec<Option<FactoryId>>,
     next_piece: u32,
@@ -153,6 +197,11 @@ impl State {
             ledger: Ledger::default(),
             depleted: BTreeSet::new(),
             harvested: BTreeMap::new(),
+            market: Vec::new(),
+            player_perks: vec![PlayerPerks::default(); players],
+            bought_this_turn: false,
+            extra_actions: 0,
+            extra_deposits: BTreeMap::new(),
             occupant: vec![None; cells],
             factory_at: vec![None; cells],
             next_piece: 0,
@@ -188,6 +237,7 @@ impl State {
                 owner,
                 cell,
                 kind,
+                perks: Perks::default(),
             },
         );
         id

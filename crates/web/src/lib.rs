@@ -4,8 +4,10 @@
 //! `{"error": "..."}`) im Ausgabepuffer, den JavaScript ueber `sv_out_ptr` und `sv_out_len`
 //! aus dem Speicher liest. Rueckgabewert 0 = in Ordnung, 1 = Fehler.
 //!
-//! Spieler A (Index 0) ist immer ein Mensch. `opponent`: 0 = gierig, 1 = zufall,
-//! 2 = Menschen (alle Spieler an einem Geraet), 3 = stark (rechnet voraus).
+//! Platzarten: 0 = gierig, 1 = zufall, 2 = Mensch, 3 = stark (rechnet voraus).
+//! `sv_new_game`: Spieler A ist ein Mensch, alle anderen haben die Art `opponent`
+//! (2 = alle Spieler an einem Geraet). `sv_new_game_seats`: auch Spieler A frei waehlbar,
+//! z. B. lauter Bots zum Zuschauen.
 
 use game_core::config::Config;
 use game_core::session::{SeatKind, Session};
@@ -50,7 +52,23 @@ fn with_session(f: impl FnOnce(&mut Session) -> Result<String, String>) -> i32 {
     finish(result)
 }
 
-fn new_game(players: u32, seed: u64, side: u32, opponent: u32) -> Result<String, String> {
+fn seat_kind(code: u32) -> Result<SeatKind, String> {
+    match code {
+        0 => Ok(SeatKind::Greedy),
+        1 => Ok(SeatKind::Random),
+        2 => Ok(SeatKind::Human),
+        3 => Ok(SeatKind::Strong),
+        other => Err(format!("Unbekannte Gegnerart {other}")),
+    }
+}
+
+fn new_game(
+    players: u32,
+    seed: u64,
+    side: u32,
+    seat_a: u32,
+    opponent: u32,
+) -> Result<String, String> {
     let players = u8::try_from(players).map_err(|_| format!("{players} Spieler sind zu viele"))?;
     if players == 0 {
         return Err("Mindestens ein Spieler".into());
@@ -59,15 +77,9 @@ fn new_game(players: u32, seed: u64, side: u32, opponent: u32) -> Result<String,
     if side != 0 {
         config.side = side;
     }
-    let others = match opponent {
-        0 => SeatKind::Greedy,
-        1 => SeatKind::Random,
-        2 => SeatKind::Human,
-        3 => SeatKind::Strong,
-        other => return Err(format!("Unbekannte Gegnerart {other}")),
-    };
+    let others = seat_kind(opponent)?;
     let mut seats = vec![others; players as usize];
-    seats[0] = SeatKind::Human;
+    seats[0] = seat_kind(seat_a)?;
     let session = Session::new(config, &seats)?;
     let json = session.start_json();
     SESSION.with(|cell| *cell.borrow_mut() = Some(session));
@@ -89,7 +101,21 @@ pub extern "C" fn sv_new_game(
     opponent: u32,
 ) -> i32 {
     let seed = ((seed_hi as u64) << 32) | seed_lo as u64;
-    finish(new_game(players, seed, side, opponent))
+    finish(new_game(players, seed, side, 2, opponent))
+}
+
+/// Wie `sv_new_game`, aber auch Spieler A frei waehlbar (`seat_a`), z. B. Bot gegen Bot.
+#[no_mangle]
+pub extern "C" fn sv_new_game_seats(
+    players: u32,
+    seed_lo: u32,
+    seed_hi: u32,
+    side: u32,
+    seat_a: u32,
+    others: u32,
+) -> i32 {
+    let seed = ((seed_hi as u64) << 32) | seed_lo as u64;
+    finish(new_game(players, seed, side, seat_a, others))
 }
 
 /// Der Mensch am Zug fuehrt die Aktion mit diesem Index aus der Liste `legal` aus.
@@ -194,6 +220,23 @@ mod tests {
         }
         assert_eq!(sv_apply(0), 1);
         assert!(out().contains("vorbei"));
+    }
+
+    #[test]
+    fn bots_can_play_against_each_other_to_the_end() {
+        assert_eq!(sv_new_game_seats(2, 9, 0, 0, 0, 0), 0, "{}", out());
+        assert!(out().contains("\"seats\":[\"gierig\",\"gierig\"]"));
+        assert!(out().contains("\"human_to_move\":false"));
+        assert_eq!(sv_apply(0), 1, "kein Mensch am Zug");
+        let mut steps = 0;
+        while !out().contains("\"outcome\":{") {
+            assert_eq!(sv_bot_step(), 0, "{}", out());
+            steps += 1;
+            assert!(steps < 5000, "Partie endet nicht");
+        }
+        assert_eq!(sv_bot_step(), 1, "nach dem Ende zieht niemand mehr");
+        assert_eq!(sv_new_game_seats(2, 9, 0, 0, 7, 0), 1);
+        assert!(out().contains("Unbekannte Gegnerart 7"));
     }
 
     #[test]

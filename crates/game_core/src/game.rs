@@ -3,7 +3,9 @@
 //! Quelle der Wahrheit fuer Zulaessigkeit ist `legal_actions`; `apply` akzeptiert genau diese
 //! Aktionen. Die Regeln stammen aus dem Regelwerk (Abschnitte 4 bis 8).
 
-use crate::action::{Action, Event, IllegalReason, RuleError};
+use crate::action::{Action, Event, IllegalReason, PaySource, RuleError};
+use crate::board::GridKind;
+use crate::cards::{self, Card, CardTarget, MAX_EXTRA_RANGE, SET_SIZE};
 use crate::config::Config;
 use crate::ids::{CellId, FactoryId, PieceId, PlayerId, ResourceId};
 use crate::map::{Map, MapError};
@@ -38,6 +40,8 @@ impl Game {
             let player = PlayerId(p);
             state.insert_piece(player, map.start_cell(player), PieceKind::King);
         }
+        state.market =
+            cards::draw_market(config.seed, config.market_size as usize, map.board.kind());
         Game {
             config,
             map: Arc::new(map),
@@ -93,9 +97,38 @@ impl Game {
         if colors.is_empty() {
             return None;
         }
+        // Stufe = Farben + Ausbaustufe, hoechstens so viele wie Ecken.
         // Reichweite = Stufe: ein Bauer (Stufe 1) zieht ein Feld weit.
-        let level = colors.len() as u8;
+        let cap = self.config.corner_count() as u8;
+        let level = (colors.len() as u8 + self.upgrade_level(&factory.storage)).min(cap);
         Some((level, level, colors))
+    }
+
+    /// Ausbaustufe eines Lagers: Stufe k braucht `k * upgrade_step` Einheiten ab Kat 2 aus
+    /// mindestens `k + 1` verschiedenen Typen (Vielfalt zaehlt). Die Fabrik ernten dafuer
+    /// selbst; der Koenig kann zusaetzlich abladen und beschleunigt so.
+    pub fn upgrade_level(&self, storage: &Inventory) -> u8 {
+        let (units, kinds) = self.upgrade_stock(storage);
+        let step = self.config.upgrade_step;
+        if step == 0 {
+            return 0;
+        }
+        let mut k = 0u8;
+        while k < self.config.max_upgrades
+            && units >= (k as u64 + 1) * step as u64
+            && kinds >= k as usize + 2
+        {
+            k += 1;
+        }
+        k
+    }
+
+    /// Einheiten und Typen ab Kat 2 in einem Lager (das, was fuer den Ausbau zaehlt).
+    pub fn upgrade_stock(&self, storage: &Inventory) -> (u64, usize) {
+        storage
+            .iter()
+            .filter(|&(r, _)| self.map.category(r) >= 2)
+            .fold((0, 0), |(u, k), (_, n)| (u + n as u64, k + 1))
     }
 
     /// Felder, auf die die Figur ziehen darf (inklusive Schlagen), sortiert.
@@ -112,6 +145,18 @@ impl Game {
                 for n in board.neighbors(piece.cell) {
                     if !self.own_piece_at(n, owner) {
                         out.push(n);
+                    }
+                }
+                // Koenigsschritt: auch zwei Felder geradeaus, wenn das erste frei ist.
+                if piece.perks.king_step {
+                    for dir in 0..board.dir_count() {
+                        let line = board.line(piece.cell, dir, 2);
+                        if line.len() == 2
+                            && self.state.piece_at(line[0]).is_none()
+                            && !self.own_piece_at(line[1], owner)
+                        {
+                            out.push(line[1]);
+                        }
                     }
                 }
             }
@@ -160,6 +205,17 @@ impl Game {
                 }
             }
         }
+        // Laeuferschlag: eine Figur schlaegt zusaetzlich diagonal (nur im Quadratgitter).
+        if piece.perks.diagonal && !piece.is_king() && board.kind() == GridKind::Square {
+            let (x, y) = board.coord(piece.cell);
+            for (dx, dy) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
+                if let Some(cell) = board.cell_at(x + dx, y + dy) {
+                    if self.state.piece_at(cell).is_some_and(|o| o.owner != owner) {
+                        out.push(cell);
+                    }
+                }
+            }
+        }
         out.sort();
         out.dedup();
         out
@@ -176,12 +232,23 @@ impl Game {
 
     /// Vorkommen auf dem Feld, die es noch gibt (nicht verbaut, nicht erschoepft).
     pub fn available_deposits(&self, cell: CellId) -> Vec<ResourceId> {
+        let extra = self.state.extra_deposits.get(&cell).map(|v| v.as_slice());
         self.map
             .deposits_at(cell)
             .iter()
+            .chain(extra.unwrap_or(&[]))
             .copied()
             .filter(|&r| !self.state.depleted.contains(&(cell, r)))
             .collect()
+    }
+
+    /// Alle Vorkommen eines Feldes, auch verbrauchte (Karte plus Sternsplitter).
+    pub fn all_deposits(&self, cell: CellId) -> Vec<ResourceId> {
+        let mut out = self.map.deposits_at(cell).to_vec();
+        if let Some(extra) = self.state.extra_deposits.get(&cell) {
+            out.extend(extra.iter().copied());
+        }
+        out
     }
 
     /// Wie viel ein Vorkommen noch hergibt (`None` = unerschoepflich, 0 = weg).
@@ -285,7 +352,157 @@ impl Game {
         if actions.is_empty() {
             actions.push(Action::Pass);
         }
+        actions.extend(self.buy_actions(me));
         actions
+    }
+
+    /// Alle erlaubten Kartenkaeufe von `me` (leer, wenn in diesem Zug schon gekauft wurde).
+    pub fn buy_actions(&self, me: PlayerId) -> Vec<Action> {
+        let mut out = Vec::new();
+        if self.state.bought_this_turn || self.state.market.is_empty() {
+            return out;
+        }
+        let Some(king) = self.king(me) else {
+            return out;
+        };
+        let mut sources: Vec<(PaySource, CellId)> = vec![(PaySource::King, king.cell)];
+        sources.extend(
+            self.factories_of(me)
+                .map(|f| (PaySource::Factory(f.id), f.cell)),
+        );
+        for &card in &self.state.market {
+            for &(from, at) in &sources {
+                if card.needs_factory() && from == PaySource::King {
+                    continue;
+                }
+                if self.payment(me, from, card).is_none() {
+                    continue;
+                }
+                for target in self.card_targets(me, card, from, at) {
+                    out.push(Action::BuyCard { card, from, target });
+                }
+            }
+        }
+        out
+    }
+
+    /// Was `me` fuer `card` aus `from` bezahlen wuerde, oder `None`.
+    pub fn payment(&self, me: PlayerId, from: PaySource, card: Card) -> Option<Inventory> {
+        let stock = match from {
+            PaySource::King => &self.state.carried[me.idx()],
+            PaySource::Factory(fid) => {
+                let f = self.state.factories.get(&fid)?;
+                if f.owner != me {
+                    return None;
+                }
+                &f.storage
+            }
+        };
+        cards::plan_payment(&self.map, self.map.own_color(me), stock, &card.cost())
+    }
+
+    /// Moegliche Ziele einer Karte, bezahlt an Feld `at`. `None` im Ergebnis = kein Ziel noetig.
+    /// Leer = die Karte waere hier wirkungslos.
+    fn card_targets(
+        &self,
+        me: PlayerId,
+        card: Card,
+        from: PaySource,
+        at: CellId,
+    ) -> Vec<Option<PieceId>> {
+        let board = &self.map.board;
+        let near = |cell: CellId| cell == at || board.neighbors(at).any(|n| n == cell);
+        let cap = self.config.corner_count() as u8;
+        let perks = self.state.player_perks[me.idx()];
+        let units = || {
+            self.pieces_of(me)
+                .filter(|p| !p.is_king() && near(p.cell))
+                .map(|p| (p.id, self.unit_level(p), p.perks))
+        };
+        match card.target() {
+            CardTarget::Unit => {
+                let fits = |level: u8, pk: crate::state::Perks| match card {
+                    Card::Training => level < cap,
+                    Card::LongLegs => pk.extra_range < MAX_EXTRA_RANGE,
+                    Card::DiagonalStrike => !pk.diagonal,
+                    Card::Shield => !pk.shield,
+                    Card::Runestone => level < cap,
+                    _ => false,
+                };
+                // Die ersten Runensteine sind nur Zaehler; erst der letzte braucht eine Figur.
+                if card == Card::Runestone && perks.runes + 1 < SET_SIZE {
+                    return vec![None];
+                }
+                units()
+                    .filter(|&(_, level, pk)| fits(level, pk))
+                    .map(|(id, _, _)| Some(id))
+                    .collect()
+            }
+            CardTarget::King => match self.king(me) {
+                Some(k)
+                    if near(k.cell)
+                        && match card {
+                            Card::KingArmor => !k.perks.shield,
+                            Card::KingStep => !k.perks.king_step,
+                            _ => false,
+                        } =>
+                {
+                    vec![Some(k.id)]
+                }
+                _ => Vec::new(),
+            },
+            CardTarget::Player => {
+                let ok = match card {
+                    Card::Mining => !perks.mining,
+                    Card::Farming => !perks.farming,
+                    Card::DoubleShift => self.factories_of(me).next().is_some(),
+                    Card::DoubleMove => true,
+                    Card::Recruit => match from {
+                        PaySource::Factory(fid) => self.recruit_cell(fid).is_some(),
+                        PaySource::King => false,
+                    },
+                    Card::Starshard => {
+                        perks.shards + 1 < SET_SIZE
+                            || self.king(me).is_some_and(|k| self.shard_cell_ok(k.cell))
+                    }
+                    _ => false,
+                };
+                if ok {
+                    vec![None]
+                } else {
+                    Vec::new()
+                }
+            }
+        }
+    }
+
+    fn unit_level(&self, piece: &Piece) -> u8 {
+        match &piece.kind {
+            PieceKind::Unit { level, .. } => *level,
+            PieceKind::King => 0,
+        }
+    }
+
+    /// Wo der Rekrut einer Fabrik erscheint: das freie Nachbarfeld mit der kleinsten Nummer.
+    pub fn recruit_cell(&self, factory: FactoryId) -> Option<CellId> {
+        let f = self.state.factories.get(&factory)?;
+        let mut free: Vec<CellId> = self
+            .map
+            .board
+            .neighbors(f.cell)
+            .filter(|&n| self.state.piece_at(n).is_none())
+            .collect();
+        free.sort();
+        free.first().copied()
+    }
+
+    /// Darf ein Sternsplitter-Set hier ein Vorkommen anlegen? Nur ohne Kat 1 und ohne Fabrik.
+    fn shard_cell_ok(&self, cell: CellId) -> bool {
+        self.state.factory_at(cell).is_none()
+            && !self
+                .all_deposits(cell)
+                .iter()
+                .any(|&r| self.map.category(r) == 1)
     }
 
     /// Erklaert, warum eine Aktion nicht erlaubt ist (best effort, nur fuer Fehlermeldungen).
@@ -343,6 +560,18 @@ impl Game {
                 }
             }
             Action::Pass => return IllegalReason::PassNotAllowed,
+            Action::BuyCard { card, from, .. } => {
+                if !self.state.market.contains(&card) {
+                    return IllegalReason::CardNotInMarket;
+                }
+                if self.state.bought_this_turn {
+                    return IllegalReason::AlreadyBoughtThisTurn;
+                }
+                if self.payment(me, from, card).is_none() {
+                    return IllegalReason::CannotPayCard;
+                }
+                return IllegalReason::InvalidCardTarget;
+            }
         }
         IllegalReason::Unspecified
     }
@@ -371,6 +600,22 @@ impl Game {
             Action::BuildFactory { pay } => self.do_build(actor, pay, &mut events),
             Action::SpawnPiece { factory } => self.do_spawn(actor, factory, &mut events),
             Action::Pass => events.push(Event::Passed { player: actor }),
+            Action::BuyCard { card, from, target } => {
+                // Ein Kauf ist keine Aktion: der Spieler bleibt am Zug.
+                self.do_buy(actor, card, from, target, &mut events);
+                self.state.turns_played += 1;
+                return events;
+            }
+        }
+
+        // Doppelzug: noch eine Aktion, das Zugende kommt erst danach.
+        if self.state.outcome.is_none()
+            && self.state.extra_actions > 0
+            && self.state.alive[actor.idx()]
+        {
+            self.state.extra_actions -= 1;
+            self.state.turns_played += 1;
+            return events;
         }
 
         if self.state.outcome.is_none() {
@@ -385,6 +630,25 @@ impl Game {
 
     fn do_move(&mut self, actor: PlayerId, id: PieceId, to: CellId, events: &mut Vec<Event>) {
         let from = self.state.pieces[&id].cell;
+
+        // Schild oder Koenigsruestung: der Schlag prallt ab, der Angreifer bleibt stehen.
+        if let Some(victim_id) = self.state.occupant[to.idx()] {
+            let victim = self
+                .state
+                .pieces
+                .get_mut(&victim_id)
+                .expect("Opfer existiert");
+            if victim.perks.shield {
+                victim.perks.shield = false;
+                events.push(Event::ShieldBlocked {
+                    piece: victim_id,
+                    owner: victim.owner,
+                    at: to,
+                    by: actor,
+                });
+                return;
+            }
+        }
 
         if let Some(victim_id) = self.state.occupant[to.idx()] {
             let victim = self.state.remove_piece(victim_id).expect("Opfer existiert");
@@ -440,17 +704,143 @@ impl Game {
         self.state.depleted.insert((cell, pay));
         self.state.ledger.created += 1;
         let factory = self.state.insert_factory(actor, cell);
-        self.state
+        // Auf fremder Farbe gebaut: die eigene Farbe kommt dazu, die Fabrik hat gleich Stufe 2.
+        let own = self.map.own_color(actor);
+        let bonus = self.config.foreign_build_bonus && pay != own;
+        let storage = &mut self
+            .state
             .factories
             .get_mut(&factory)
             .expect("Fabrik existiert")
-            .storage
-            .add(pay, 1);
+            .storage;
+        storage.add(pay, 1);
+        if bonus {
+            storage.add(own, 1);
+            self.state.ledger.created += 1;
+        }
         events.push(Event::FactoryBuilt {
             factory,
             owner: actor,
             cell,
         });
+    }
+
+    fn do_buy(
+        &mut self,
+        actor: PlayerId,
+        card: Card,
+        from: PaySource,
+        target: Option<PieceId>,
+        events: &mut Vec<Event>,
+    ) {
+        let paid = self.payment(actor, from, card).expect("bezahlbar");
+        let stock = match from {
+            PaySource::King => &mut self.state.carried[actor.idx()],
+            PaySource::Factory(fid) => {
+                &mut self
+                    .state
+                    .factories
+                    .get_mut(&fid)
+                    .expect("Fabrik existiert")
+                    .storage
+            }
+        };
+        for (res, n) in paid.iter() {
+            assert!(
+                stock.take(res, n),
+                "Bezahlung geplant, aber nicht vorhanden"
+            );
+        }
+        self.state.ledger.spent_on_cards += paid.total();
+        self.state.bought_this_turn = true;
+        self.state.player_perks[actor.idx()].cards_bought += 1;
+        events.push(Event::CardBought {
+            player: actor,
+            card,
+            from,
+            target,
+            paid: paid.clone(),
+        });
+
+        let cap = self.config.corner_count() as u8;
+        let raise = |piece: &mut Piece, by: u8| {
+            if let PieceKind::Unit { level, range, .. } = &mut piece.kind {
+                let add = by.min(cap - *level);
+                *level += add;
+                *range += add;
+                piece.perks.card_levels += add;
+            }
+        };
+        match card {
+            Card::Training => raise(self.target_mut(target), 1),
+            Card::LongLegs => {
+                let piece = self.target_mut(target);
+                if let PieceKind::Unit { range, .. } = &mut piece.kind {
+                    *range += 1;
+                }
+                piece.perks.extra_range += 1;
+            }
+            Card::DiagonalStrike => self.target_mut(target).perks.diagonal = true,
+            Card::Shield | Card::KingArmor => self.target_mut(target).perks.shield = true,
+            Card::KingStep => self.target_mut(target).perks.king_step = true,
+            Card::Mining => self.state.player_perks[actor.idx()].mining = true,
+            Card::Farming => self.state.player_perks[actor.idx()].farming = true,
+            Card::DoubleMove => self.state.extra_actions += 1,
+            Card::DoubleShift => self.harvest_factories(actor, events),
+            Card::Recruit => {
+                let PaySource::Factory(fid) = from else {
+                    unreachable!("Rekrut wird aus einer Fabrik bezahlt")
+                };
+                let cell = self.recruit_cell(fid).expect("freies Nachbarfeld");
+                let color = paid
+                    .kinds()
+                    .find(|&r| self.map.category(r) == 1)
+                    .expect("Rekrut kostet eine Farbe");
+                let piece = self.state.insert_piece(
+                    actor,
+                    cell,
+                    PieceKind::Unit {
+                        level: 1,
+                        range: 1,
+                        colors: vec![color],
+                    },
+                );
+                events.push(Event::Recruited {
+                    piece,
+                    owner: actor,
+                    factory: fid,
+                    cell,
+                });
+            }
+            Card::Runestone => {
+                let perks = &mut self.state.player_perks[actor.idx()];
+                perks.runes += 1;
+                if perks.runes >= SET_SIZE {
+                    perks.runes = 0;
+                    raise(self.target_mut(target), 2);
+                }
+            }
+            Card::Starshard => {
+                let perks = &mut self.state.player_perks[actor.idx()];
+                perks.shards += 1;
+                if perks.shards >= SET_SIZE {
+                    perks.shards = 0;
+                    let cell = self.king(actor).expect("Koenig lebt").cell;
+                    let resource = self.map.own_color(actor);
+                    self.state
+                        .extra_deposits
+                        .entry(cell)
+                        .or_default()
+                        .push(resource);
+                    events.push(Event::DepositCreated { cell, resource });
+                }
+            }
+        }
+    }
+
+    fn target_mut(&mut self, target: Option<PieceId>) -> &mut Piece {
+        let id = target.expect("Karte braucht ein Ziel");
+        self.state.pieces.get_mut(&id).expect("Ziel existiert")
     }
 
     fn do_spawn(&mut self, actor: PlayerId, id: FactoryId, events: &mut Vec<Event>) {
@@ -548,6 +938,14 @@ impl Game {
             }
         }
 
+        self.harvest_factories(actor, events);
+    }
+
+    /// Alle Fabriken von `actor` ernten ihr Feld und die Nachbarfelder (ab Kat 2).
+    /// Bergbau und Ackerbau verdoppeln Kat 2 bzw. Kat 3.
+    fn harvest_factories(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
+        let yield_n = self.config.yield_per_round;
+        let perks = self.state.player_perks[actor.idx()];
         let own: Vec<(FactoryId, CellId)> =
             self.factories_of(actor).map(|f| (f.id, f.cell)).collect();
         for (fid, cell) in own {
@@ -556,8 +954,11 @@ impl Game {
             let cells: Vec<CellId> = cells.collect();
             for c in cells {
                 for res in self.available_deposits(c) {
-                    if self.map.category(res) >= 2 {
-                        let amount = self.harvest(c, res, yield_n);
+                    let cat = self.map.category(res);
+                    if cat >= 2 {
+                        let double = (cat == 2 && perks.mining) || (cat == 3 && perks.farming);
+                        let want = if double { yield_n * 2 } else { yield_n };
+                        let amount = self.harvest(c, res, want);
                         gained.add(res, amount);
                     }
                 }
@@ -580,6 +981,8 @@ impl Game {
 
     /// Naechster lebender Spieler; nach dem letzten beginnt eine neue Runde.
     fn advance_turn(&mut self, events: &mut Vec<Event>) {
+        self.state.bought_this_turn = false;
+        self.state.extra_actions = 0;
         let n = self.config.players as usize;
         let mut i = self.state.current.idx();
         loop {
@@ -603,9 +1006,11 @@ impl Game {
     // ----- Aufbau von Szenarien (Tests, spaeter Raetsel/Tutorial) ----------------------------
 
     /// Stellt eine Figur direkt aufs Brett. Fuer Tests und Szenarien, nicht fuer normale Zuege.
+    /// Reichweite ueber der Stufe wird als "Lange Beine" verbucht (Reichweite = Stufe + Extra).
     pub fn setup_unit(&mut self, owner: PlayerId, cell: CellId, level: u8, range: u8) -> PieceId {
+        assert!(range >= level, "Reichweite ist mindestens die Stufe");
         let colors = (0..level).map(|i| ResourceId(i as u16)).collect();
-        self.state.insert_piece(
+        let id = self.state.insert_piece(
             owner,
             cell,
             PieceKind::Unit {
@@ -613,7 +1018,14 @@ impl Game {
                 range,
                 colors,
             },
-        )
+        );
+        self.state
+            .pieces
+            .get_mut(&id)
+            .expect("eben gesetzt")
+            .perks
+            .extra_range = range - level;
+        id
     }
 
     /// Stellt eine Fabrik direkt aufs Brett (ohne Kosten). Fuer Tests und Szenarien.
@@ -692,12 +1104,46 @@ impl Game {
                 if *level == 0 || *level as usize > self.config.corner_count() {
                     return Err(format!("{:?} hat ungueltige Stufe {level}", piece.id));
                 }
-                if *range == 0 || *range as usize > self.config.corner_count() {
+                // Reichweite = Stufe + "Lange Beine".
+                if *range != *level + piece.perks.extra_range
+                    || piece.perks.extra_range > MAX_EXTRA_RANGE
+                {
                     return Err(format!("{:?} hat ungueltige Reichweite {range}", piece.id));
                 }
-                if colors.len() != *level as usize {
+                // Stufe = Farben + Ausbau + Karten (gedeckelt): nie weniger als die Farben
+                // (ausser am Deckel), nie mehr als Farben plus hoechster Ausbau plus Karten.
+                let colors_n = colors.len();
+                let cap = self.config.corner_count();
+                if colors_n == 0
+                    || (*level as usize) < colors_n.min(cap)
+                    || (*level as usize)
+                        > colors_n
+                            + self.config.max_upgrades as usize
+                            + piece.perks.card_levels as usize
+                {
                     return Err(format!("{:?}: Farben passen nicht zur Stufe", piece.id));
                 }
+            } else if piece.perks.diagonal || piece.perks.extra_range > 0 {
+                return Err(format!("{:?}: Koenig mit Figurenkarte", piece.id));
+            }
+        }
+
+        if st.player_perks.len() != self.config.players as usize {
+            return Err("Kartenwirkungen fehlen fuer manche Spieler".into());
+        }
+        for (i, pp) in st.player_perks.iter().enumerate() {
+            if pp.runes >= SET_SIZE || pp.shards >= SET_SIZE {
+                return Err(format!("Spieler {i}: Set-Zaehler ueber dem Set"));
+            }
+        }
+        for c in &st.market {
+            if !c.available_on(self.map.board.kind()) {
+                return Err(format!("{c:?} liegt aus, passt aber nicht zur Karte"));
+            }
+        }
+        for (cell, list) in &st.extra_deposits {
+            if list.iter().any(|&r| self.map.category(r) != 1) {
+                return Err(format!("neues Vorkommen auf {cell:?} ist kein Kat 1"));
             }
         }
 
@@ -753,7 +1199,7 @@ impl Game {
         }
 
         for &(cell, res) in &st.depleted {
-            if cell.idx() >= board_len || !self.map.deposits_at(cell).contains(&res) {
+            if cell.idx() >= board_len || !self.all_deposits(cell).contains(&res) {
                 return Err(format!(
                     "verbrauchtes Vorkommen {res:?} auf {cell:?} gibt es nicht"
                 ));
@@ -786,7 +1232,7 @@ impl Game {
                 .sum::<u64>()
             + st.loot.values().map(Inventory::total).sum::<u64>();
         let l = st.ledger;
-        let booked = in_play + l.consumed_by_spawns + l.vanished;
+        let booked = in_play + l.consumed_by_spawns + l.vanished + l.spent_on_cards;
         if booked != l.created {
             return Err(format!(
                 "Rohstoffe stimmen nicht: erzeugt {} aber verbucht {booked} ({l:?}, im Spiel {in_play})",

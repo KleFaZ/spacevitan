@@ -7,6 +7,7 @@ pub mod action;
 pub mod ai;
 pub mod board;
 pub mod bot;
+pub mod cards;
 pub mod config;
 pub mod game;
 pub mod ids;
@@ -18,6 +19,8 @@ pub mod state;
 
 #[cfg(test)]
 mod ai_tests;
+#[cfg(test)]
+mod cards_tests;
 #[cfg(test)]
 mod game_tests;
 #[cfg(test)]
