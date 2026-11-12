@@ -41,14 +41,22 @@ pub struct Config {
     pub center_colors: u32,
     /// Zentrumsfarben liegen hoechstens so viele Schritte von der Kartenmitte entfernt.
     pub center_radius: u32,
-    /// Baut ein Koenig auf einem fremden Kat-1-Vorkommen (Zentrum, freie Ecke, Gegner), bekommt
-    /// die Fabrik zusaetzlich eine Einheit seiner eigenen Farbe: sie hat dann gleich zwei
-    /// Farben, die Figur also Stufe 2.
-    pub foreign_build_bonus: bool,
     /// Ausbau: Je `upgrade_step` Einheiten ab Kat 2 im Lager steigt die Stufe der kommenden
-    /// Figur um 1, wenn genug verschiedene Typen dabei sind (siehe `Game::upgrade_level`).
+    /// Figur um 1. Ausbaustufe k braucht Rohstoffe aus k Regionen (siehe `Game::upgrade_level`).
     /// 0 = kein Ausbau, nur Farben zaehlen.
     pub upgrade_step: u32,
+    /// Eine Region zaehlt fuer den Ausbau erst, wenn so viele Einheiten ihrer Farbe im Lager
+    /// liegen (ein einzelner Fund reicht nicht).
+    pub upgrade_region_min: u32,
+    /// Nach dem Abbau ist ein Vorkommen weg und kommt nach so vielen Runden wieder, je Kategorie
+    /// (Kat 1 bis 4). 0 = fuer immer weg, 1 = jede Runde wieder da.
+    pub regrow_rounds: [u32; MAX_CATEGORIES],
+    /// Adern je Rohstofftyp fuer Kat 1 bis 4. Jede Region hat je Kategorie genau einen Typ in
+    /// ihrer Farbe; er liegt in so vielen Adern zu je `cells_per_type` Feldern.
+    pub veins_per_type: [u32; MAX_CATEGORIES],
+    /// So viele Felder jeder Region-Farbe (je Kat 2 und hoeher) liegen zusaetzlich rund um die
+    /// Kartenmitte: dort gibt es alle Farben.
+    pub center_mix: u32,
     /// Hoechstens so viele Ausbaustufen.
     pub max_upgrades: u8,
     /// Karten, die im Markt ausliegen (verschiedene, je beliebig oft kaufbar); 0 = ohne Karten.
@@ -104,8 +112,11 @@ impl Config {
             cat1_distance: 2,
             center_colors: Config::default_center_colors(players),
             center_radius: 2,
-            foreign_build_bonus: true,
             upgrade_step: 10,
+            upgrade_region_min: 3,
+            regrow_rounds: [0, 5, 3, 2],
+            veins_per_type: [1, 2, 3, 3],
+            center_mix: 1,
             max_upgrades: 2,
             market_size: Config::default_market_size(players),
             card_target_near: false,
@@ -131,7 +142,13 @@ impl Config {
             "cat1_distance" => self.cat1_distance = as_u32(value)?,
             "center_colors" => self.center_colors = as_u32(value)?,
             "center_radius" => self.center_radius = as_u32(value)?,
-            "foreign_build_bonus" => self.foreign_build_bonus = value != 0,
+            "upgrade_region_min" => self.upgrade_region_min = as_u32(value)?,
+            "regrow_cat1" => self.regrow_rounds[0] = as_u32(value)?,
+            "regrow_cat2" => self.regrow_rounds[1] = as_u32(value)?,
+            "regrow_cat3" => self.regrow_rounds[2] = as_u32(value)?,
+            "regrow_cat4" => self.regrow_rounds[3] = as_u32(value)?,
+            "center_mix" => self.center_mix = as_u32(value)?,
+            "yield_per_round" => self.yield_per_round = as_u32(value)?,
             "upgrade_step" => self.upgrade_step = as_u32(value)?,
             "max_upgrades" => {
                 self.max_upgrades =
@@ -406,10 +423,10 @@ mod tests {
     #[test]
     fn rules_can_be_set_by_name() {
         let mut c = Config::new(4, 1);
-        c.set_all("upgrade_step=6, foreign_build_bonus=0,center_colors=3")
+        c.set_all("upgrade_step=6, regrow_cat2=7,center_colors=3")
             .unwrap();
         assert_eq!(c.upgrade_step, 6);
-        assert!(!c.foreign_build_bonus);
+        assert_eq!(c.regrow_rounds, [0, 7, 3, 2]);
         assert_eq!(c.center_colors, 3);
         assert!(c.set("upgrade_step", -1).is_err());
         assert!(c.set("schach", 1).is_err());

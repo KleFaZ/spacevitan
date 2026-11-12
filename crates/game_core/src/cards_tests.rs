@@ -17,13 +17,13 @@ const P0: PlayerId = PlayerId(0);
 const P1: PlayerId = PlayerId(1);
 
 fn cat1(corner: u16) -> ResourceId {
-    ResourceId(corner * 6)
+    ResourceId(corner * 3)
 }
 fn cat2(corner: u16, k: u16) -> ResourceId {
-    ResourceId(corner * 6 + 1 + k)
+    ResourceId((corner + k) % 4 * 3 + 1)
 }
 fn cat3(corner: u16, k: u16) -> ResourceId {
-    ResourceId(corner * 6 + 3 + k)
+    ResourceId((corner + k) % 4 * 3 + 2)
 }
 
 fn blank_with(config: Config, market: &[Card]) -> Game {
@@ -35,7 +35,9 @@ fn blank_with(config: Config, market: &[Card]) -> Game {
 }
 
 fn blank(market: &[Card]) -> Game {
-    blank_with(Config::new(2, 1), market)
+    let mut config = Config::new(2, 1);
+    config.regrow_rounds = [1, 1, 1, 1];
+    blank_with(config, market)
 }
 
 fn c(g: &Game, x: i32, y: i32) -> CellId {
@@ -79,10 +81,8 @@ fn buy(card: Card, from: PaySource, target: Option<PieceId>) -> Action {
 fn rich_factory(g: &mut Game, x: i32, y: i32) -> FactoryId {
     let f = g.setup_factory(P0, c(g, x, y));
     g.setup_storage(f, cat1(0), 2);
-    for k in 0..2 {
-        g.setup_storage(f, cat2(0, k), 6);
-    }
     for k in 0..3 {
+        g.setup_storage(f, cat2(0, k), 6);
         g.setup_storage(f, cat3(0, k), 6);
     }
     f
@@ -265,9 +265,10 @@ fn training_raises_level_and_range_up_to_the_corner_count() {
 fn training_and_long_legs_cost_more_the_further_the_figure_reaches() {
     let mut g = blank(&[Card::Training, Card::LongLegs]);
     let f = g.setup_factory(P0, c(&g, 2, 2));
-    for k in 0..2 {
-        g.setup_storage(f, cat2(0, k), 3);
-        g.setup_storage(f, cat3(0, k), 3);
+    // Drei Farben: die Reichweite-3-Figur braucht jeden Rohstoff in drei Farben.
+    for k in 0..3 {
+        g.setup_storage(f, cat2(0, k), 2);
+        g.setup_storage(f, cat3(0, k), 2);
     }
     let bauer = g.setup_unit(P0, c(&g, 2, 3), 1, 1);
     let ritter = g.setup_unit(P0, c(&g, 6, 6), 3, 3);
@@ -579,7 +580,8 @@ fn three_runestones_give_a_figure_two_levels() {
 #[test]
 fn three_star_shards_create_a_new_building_site_under_the_king() {
     let mut g = blank(&[Card::Starshard]);
-    g.setup_carry(P0, cat2(0, 0), 6);
+    g.setup_carry(P0, cat2(0, 0), 3);
+    g.setup_carry(P0, cat2(0, 1), 3);
     g.setup_carry(P0, cat3(0, 0), 6);
     let king = king_id(&g, P0);
     g.setup_teleport(king, c(&g, 4, 4));
@@ -645,6 +647,30 @@ fn granted_resources_land_in_the_kings_bag_and_are_booked() {
     let bag = &g.state.carried[P0.idx()];
     assert_eq!(bag.total(), 7);
     assert!(bag.kinds().all(|r| g.map.category(r) >= 2));
-    assert!(bag.kinds().count() >= 4, "verschiedene Typen");
+    assert_eq!(bag.kinds().count(), 2, "Quader und Ball der eigenen Farbe");
     g.check_invariants().unwrap();
+}
+
+#[test]
+fn double_shift_lets_the_fields_around_the_factories_regrow_at_once() {
+    let mut g = blank_with(Config::new(2, 1), &[Card::DoubleShift]);
+    let f = g.setup_factory(P0, c(&g, 5, 5));
+    g.setup_storage(f, cat2(0, 0), 2);
+    g.setup_storage(f, cat3(0, 0), 2);
+    put(&mut g, 5, 5, cat2(0, 0));
+    put(&mut g, 6, 5, cat3(0, 0));
+    put(&mut g, 1, 0, cat2(0, 0)); // weit weg von der Fabrik
+    act!(g, mv(king_id(&g, P0), c(&g, 1, 0)));
+    act!(g, mv(king_id(&g, P1), c(&g, 8, 9)));
+    assert_eq!(g.state.factories[&f].storage.total(), 6, "einmal geerntet");
+    assert_eq!(g.state.regrow.len(), 3);
+    let events = act!(g, buy(Card::DoubleShift, PaySource::Factory(f), None));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, Event::FactoryYield { gained, .. } if gained.total() == 2)));
+    assert_eq!(g.state.factories[&f].storage.total(), 6 - 4 + 2);
+    assert!(
+        g.regrows_in_round(c(&g, 1, 0), cat2(0, 0)).is_some(),
+        "das Feld des Koenigs waechst nicht schneller nach"
+    );
 }

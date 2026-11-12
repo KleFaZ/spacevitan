@@ -1,8 +1,9 @@
 //! Szenario-Tests fuer die Regel-Engine. Jeder Test pruft eine Regel aus dem Regelwerk
 //! und danach die Invarianten des Zustands.
 //!
-//! Rohstoff-IDs auf der 4-Ecken-Karte: Ecke `c` hat die Typen `6c` (Kat 1), `6c+1`/`6c+2`
-//! (Kat 2) und `6c+3..=6c+5` (Kat 3). Die Karten dieser Tests sind leer; Vorkommen werden
+//! Rohstoff-IDs auf der 4-Ecken-Karte: Ecke `c` hat die Typen `3c` (Kat 1), `3c+1` (Kat 2) und
+//! `3c+2` (Kat 3). `cat2(c, k)` und `cat3(c, k)` liefern mit `k > 0` die Typen der Ecke `c + k`,
+//! also eine andere Farbe. Die Karten dieser Tests sind leer; Vorkommen werden
 //! gezielt gesetzt.
 
 use crate::action::{Action, Event, IllegalReason, RuleError};
@@ -18,13 +19,13 @@ const P2: PlayerId = PlayerId(2);
 const P3: PlayerId = PlayerId(3);
 
 fn cat1(corner: u16) -> ResourceId {
-    ResourceId(corner * 6)
+    ResourceId(corner * 3)
 }
 fn cat2(corner: u16, k: u16) -> ResourceId {
-    ResourceId(corner * 6 + 1 + k)
+    ResourceId((corner + k) % 4 * 3 + 1)
 }
 fn cat3(corner: u16, k: u16) -> ResourceId {
-    ResourceId(corner * 6 + 3 + k)
+    ResourceId((corner + k) % 4 * 3 + 2)
 }
 
 fn blank_with(config: Config) -> Game {
@@ -33,8 +34,15 @@ fn blank_with(config: Config) -> Game {
     Game::with_map(config, map)
 }
 
+/// Leere Karte; Vorkommen sind hier wie frueher jede Runde wieder da, damit die aelteren Tests
+/// ihre Regel fuer sich pruefen. Abbau und Nachwachsen haben eigene Tests mit `Config::new`.
 fn blank(players: u8) -> Game {
-    blank_with(Config::new(players, 1))
+    blank_with(steady(Config::new(players, 1)))
+}
+
+fn steady(mut config: Config) -> Config {
+    config.regrow_rounds = [1, 1, 1, 1];
+    config
 }
 
 fn c(g: &Game, x: i32, y: i32) -> CellId {
@@ -262,7 +270,11 @@ fn the_king_collects_everything_on_his_cell_at_the_end_of_his_turn() {
     put(&mut g, 1, 0, cat3(1, 2));
     put(&mut g, 0, 1, cat3(0, 0));
     let events = act!(g, king_to(&g, P0, 1, 0));
-    assert_eq!(carry(&g, P0, cat1(0)), 1);
+    assert_eq!(
+        carry(&g, P0, cat1(0)),
+        0,
+        "Kat 1 erst, wenn er stehen bleibt"
+    );
     assert_eq!(carry(&g, P0, cat2(0, 0)), 1);
     assert_eq!(carry(&g, P0, cat3(1, 2)), 1);
     assert_eq!(
@@ -273,29 +285,29 @@ fn the_king_collects_everything_on_his_cell_at_the_end_of_his_turn() {
     assert!(events.contains(&Event::Collected {
         player: P0,
         cell: c(&g, 1, 0),
-        gained: inv(&[(cat1(0), 1), (cat2(0, 0), 1), (cat3(1, 2), 1)]),
+        gained: inv(&[(cat2(0, 0), 1), (cat3(1, 2), 1)]),
     }));
-    assert_eq!(g.state.ledger.created, 3);
+    assert_eq!(g.state.ledger.created, 2);
 }
 
 #[test]
 fn the_yield_per_round_scales_the_amount() {
-    let mut config = Config::new(2, 1);
+    let mut config = steady(Config::new(2, 1));
     config.yield_per_round = 3;
     let mut g = blank_with(config);
-    put(&mut g, 1, 0, cat1(0));
+    put(&mut g, 1, 0, cat2(0, 0));
     act!(g, king_to(&g, P0, 1, 0));
-    assert_eq!(carry(&g, P0, cat1(0)), 3);
+    assert_eq!(carry(&g, P0, cat2(0, 0)), 3);
 }
 
 #[test]
 fn the_king_keeps_collecting_every_turn_he_stays_on_a_deposit() {
     let mut g = blank(2);
-    put(&mut g, 1, 0, cat1(0));
+    put(&mut g, 1, 0, cat2(0, 0));
     g.setup_unit(P0, c(&g, 5, 5), 1, 1);
     let unit = g.pieces_of(P0).find(|p| !p.is_king()).unwrap().id;
     act!(g, king_to(&g, P0, 1, 0));
-    assert_eq!(carry(&g, P0, cat1(0)), 1);
+    assert_eq!(carry(&g, P0, cat2(0, 0)), 1);
     act!(g, king_to(&g, P1, 8, 9));
     act!(
         g,
@@ -305,7 +317,7 @@ fn the_king_keeps_collecting_every_turn_he_stays_on_a_deposit() {
         }
     );
     assert_eq!(
-        carry(&g, P0, cat1(0)),
+        carry(&g, P0, cat2(0, 0)),
         2,
         "Koenig steht noch dort und sammelt wieder"
     );
@@ -456,12 +468,14 @@ fn spawning_right_after_building_gives_only_a_pawn() {
 fn the_king_unloads_everything_into_the_factory_he_stands_on_at_turn_end() {
     let mut g = blank(2);
     put(&mut g, 1, 0, cat1(0));
-    act!(g, king_to(&g, P0, 1, 0)); // sammelt 1 x Kat 1
+    g.setup_carry(P0, cat2(0, 0), 2);
+    act!(g, king_to(&g, P0, 1, 0)); // Kat 1 bleibt liegen: er ist gerade erst angekommen
     act!(g, king_to(&g, P1, 8, 9));
     let events = act!(g, Action::BuildFactory { pay: cat1(0) });
-    // 1 Einheit aus dem verbauten Vorkommen + 1 Einheit, die der Koenig trug und ablaedt.
+    // 1 Einheit aus dem verbauten Vorkommen, dazu das Gepaeck des Koenigs.
     let factory = g.factories_of(P0).next().unwrap();
-    assert_eq!(factory.storage.get(cat1(0)), 2);
+    assert_eq!(factory.storage.get(cat1(0)), 1);
+    assert_eq!(factory.storage.get(cat2(0, 0)), 2);
     assert!(g.state.carried[P0.idx()].is_empty());
     assert!(events
         .iter()
@@ -505,7 +519,7 @@ fn factories_keep_a_minimum_distance_to_each_other() {
 
 #[test]
 fn the_minimum_distance_is_configurable() {
-    let mut config = Config::new(2, 1);
+    let mut config = steady(Config::new(2, 1));
     config.min_factory_distance = 2;
     let mut g = blank_with(config);
     g.setup_factory(P1, c(&g, 2, 0));
@@ -575,7 +589,7 @@ fn factories_produce_only_on_their_owners_turn() {
 
 #[test]
 fn multiple_deposits_on_a_cell_each_yield_and_the_yield_is_scaled() {
-    let mut config = Config::new(2, 1);
+    let mut config = steady(Config::new(2, 1));
     config.yield_per_round = 2;
     let mut g = blank_with(config);
     let f = g.setup_factory(P0, c(&g, 5, 5));
@@ -1064,7 +1078,7 @@ fn the_last_survivor_of_a_four_player_game_wins() {
 
 #[test]
 fn the_game_is_a_draw_after_the_maximum_number_of_rounds() {
-    let mut config = Config::new(2, 1);
+    let mut config = steady(Config::new(2, 1));
     config.max_rounds = 2;
     let mut g = blank_with(config);
     act!(g, king_to(&g, P0, 1, 0));
@@ -1138,7 +1152,7 @@ fn identical_action_sequences_give_identical_states() {
 // ----- Begrenzter Vorrat je Vorkommen -------------------------------------------------------
 
 fn with_stock(stock: u32, yield_n: u32) -> Game {
-    let mut config = Config::new(2, 1);
+    let mut config = steady(Config::new(2, 1));
     config.deposit_stock = stock;
     config.yield_per_round = yield_n;
     blank_with(config)
@@ -1234,68 +1248,48 @@ fn level_of(g: &Game, f: crate::ids::FactoryId) -> u8 {
 }
 
 #[test]
-fn building_on_a_foreign_colour_adds_the_own_colour() {
-    let mut g = blank(2);
-    put(&mut g, 0, 0, cat1(1)); // Farbe der freien Ecke 1
-    act!(g, Action::BuildFactory { pay: cat1(1) });
-    let f = g.factories_of(P0).next().expect("Fabrik").clone();
-    assert_eq!(f.storage.get(cat1(1)), 1);
-    assert_eq!(f.storage.get(cat1(0)), 1, "die eigene Farbe kommt dazu");
-    assert_eq!(level_of(&g, f.id), 2);
-}
-
-#[test]
-fn building_on_the_own_colour_gives_no_bonus() {
-    let mut g = blank(2);
-    put(&mut g, 0, 0, cat1(0));
-    act!(g, Action::BuildFactory { pay: cat1(0) });
-    let f = g.factories_of(P0).next().expect("Fabrik").clone();
-    assert_eq!(f.storage.get(cat1(0)), 1);
-    assert_eq!(level_of(&g, f.id), 1);
-}
-
-#[test]
-fn a_centre_colour_counts_as_foreign_for_everyone() {
+fn building_on_any_colour_gives_a_level_one_factory() {
+    for res in [cat1(0), cat1(1)] {
+        let mut g = blank(2);
+        put(&mut g, 0, 0, res);
+        act!(g, Action::BuildFactory { pay: res });
+        let f = g.factories_of(P0).next().expect("Fabrik").clone();
+        assert_eq!(f.storage.total(), 1, "kein Bonus fuer fremde Farben");
+        assert_eq!(level_of(&g, f.id), 1);
+    }
     let mut g = blank(2);
     let centre = g.map.center_types().next().expect("Zentrumsfarbe").id;
     put(&mut g, 0, 0, centre);
     act!(g, Action::BuildFactory { pay: centre });
     let f = g.factories_of(P0).next().expect("Fabrik").clone();
-    assert_eq!(f.storage.get(centre), 1);
-    assert_eq!(f.storage.get(cat1(0)), 1);
-    assert_eq!(level_of(&g, f.id), 2);
-}
-
-#[test]
-fn the_foreign_bonus_can_be_switched_off() {
-    let mut config = Config::new(2, 1);
-    config.foreign_build_bonus = false;
-    let mut g = blank_with(config);
-    put(&mut g, 0, 0, cat1(1));
-    act!(g, Action::BuildFactory { pay: cat1(1) });
-    let f = g.factories_of(P0).next().expect("Fabrik").clone();
-    assert_eq!(f.storage.get(cat1(0)), 0);
     assert_eq!(level_of(&g, f.id), 1);
 }
 
 #[test]
-fn the_level_rises_with_varied_stock_in_the_storage() {
+fn the_second_upgrade_needs_a_second_region() {
     let mut g = blank(2);
     assert_eq!((g.config.upgrade_step, g.config.max_upgrades), (10, 2));
+    assert_eq!(g.config.upgrade_region_min, 3);
     let f = g.setup_factory(P0, c(&g, 3, 3));
     g.setup_storage(f, cat1(0), 1);
     assert_eq!(level_of(&g, f), 1);
     g.setup_storage(f, cat2(0, 0), 9);
     assert_eq!(level_of(&g, f), 1, "9 Einheiten reichen nicht");
-    g.setup_storage(f, cat2(0, 0), 1);
-    assert_eq!(level_of(&g, f), 1, "10 Einheiten, aber nur ein Typ");
     g.setup_storage(f, cat3(0, 0), 1);
-    assert_eq!(level_of(&g, f), 2, "11 Einheiten aus 2 Typen");
-    g.setup_storage(f, cat3(0, 1), 9);
-    assert_eq!(level_of(&g, f), 3, "20 Einheiten aus 3 Typen");
-    g.setup_storage(f, cat2(0, 1), 30);
+    assert_eq!(level_of(&g, f), 2, "10 Einheiten der eigenen Region");
+    g.setup_storage(f, cat3(0, 0), 20);
+    assert_eq!(level_of(&g, f), 2, "30 Einheiten, aber nur eine Region");
+    g.setup_storage(f, cat2(1, 0), 2);
+    assert_eq!(
+        level_of(&g, f),
+        2,
+        "2 Einheiten einer zweiten Region zaehlen noch nicht"
+    );
+    g.setup_storage(f, cat3(1, 0), 1);
+    assert_eq!(level_of(&g, f), 3, "3 Einheiten der zweiten Region");
+    g.setup_storage(f, cat2(2, 0), 30);
     assert_eq!(level_of(&g, f), 3, "hoechstens 2 Ausbaustufen");
-    assert_eq!(g.upgrade_stock(&g.state.factories[&f].storage), (50, 4));
+    assert_eq!(g.upgrade_stock(&g.state.factories[&f].storage), (63, 3));
     g.check_invariants().unwrap();
 }
 
@@ -1328,10 +1322,9 @@ fn the_level_never_exceeds_the_number_of_corners() {
     assert_eq!(g.config.corner_count(), 3);
     let f = g.setup_factory(P0, g.map.start_cell(P1));
     g.setup_storage(f, ResourceId(0), 1);
-    g.setup_storage(f, ResourceId(6), 1);
-    g.setup_storage(f, ResourceId(1), 20);
-    g.setup_storage(f, ResourceId(2), 1);
     g.setup_storage(f, ResourceId(3), 1);
+    g.setup_storage(f, ResourceId(1), 20);
+    g.setup_storage(f, ResourceId(4), 3);
     assert_eq!(
         level_of(&g, f),
         3,
@@ -1341,7 +1334,7 @@ fn the_level_never_exceeds_the_number_of_corners() {
 
 #[test]
 fn without_an_upgrade_step_only_colours_count() {
-    let mut config = Config::new(2, 1);
+    let mut config = steady(Config::new(2, 1));
     config.upgrade_step = 0;
     let mut g = blank_with(config);
     let f = g.setup_factory(P0, c(&g, 3, 3));
@@ -1362,4 +1355,113 @@ fn the_king_speeds_up_the_upgrade_by_unloading() {
     act!(g, king_to(&g, P0, 0, 1));
     assert!(g.state.carried[P0.idx()].is_empty(), "alles abgeladen");
     assert_eq!(level_of(&g, f), 2);
+}
+
+// ----- Abbau und Nachwachsen ------------------------------------------------------------------
+
+/// P0 und P1 ziehen je einmal; der Koenig von P0 geht auf (x, y).
+fn round_to(g: &mut Game, x: i32, y: i32, p1: (i32, i32)) {
+    apply_checked(g, king_to(g, P0, x, y));
+    apply_checked(g, king_to(g, P1, p1.0, p1.1));
+}
+
+#[test]
+fn category_two_is_gone_after_mining_and_back_after_five_rounds() {
+    let mut g = blank_with(Config::new(2, 1));
+    assert_eq!(g.config.regrow_rounds, [0, 5, 3, 2]);
+    put(&mut g, 1, 0, cat2(0, 0));
+    put(&mut g, 1, 0, cat3(0, 0));
+    let field = c(&g, 1, 0);
+    round_to(&mut g, 1, 0, (8, 9)); // Runde 1: beides abgebaut
+    assert_eq!(g.state.carried[0].total(), 2);
+    assert!(g.available_deposits(field).is_empty());
+    assert_eq!(g.regrows_in_round(field, cat2(0, 0)), Some(6));
+    assert_eq!(g.regrows_in_round(field, cat3(0, 0)), Some(4));
+    // Hin und her bringt nichts: Runde 2 weg, Runde 3 wieder da, aber das Feld ist leer.
+    round_to(&mut g, 0, 0, (9, 9));
+    round_to(&mut g, 1, 0, (8, 9));
+    assert_eq!(
+        g.state.carried[0].total(),
+        2,
+        "Runde 3: noch nichts nachgewachsen"
+    );
+    round_to(&mut g, 0, 0, (9, 9)); // Runde 4
+    assert_eq!(g.available_deposits(field), vec![cat3(0, 0)]);
+    round_to(&mut g, 1, 0, (8, 9)); // Runde 5: Kat 3 ist wieder da
+    assert_eq!(g.state.carried[0].get(cat3(0, 0)), 2);
+    assert_eq!(g.state.carried[0].get(cat2(0, 0)), 1);
+    round_to(&mut g, 0, 0, (9, 9)); // Runde 6
+    assert_eq!(g.available_deposits(field), vec![cat2(0, 0)]);
+    round_to(&mut g, 1, 0, (8, 9)); // Runde 7
+    assert_eq!(g.state.carried[0].get(cat2(0, 0)), 2);
+}
+
+#[test]
+fn category_one_is_mined_only_by_a_king_who_stays_and_then_gone_for_good() {
+    let mut g = blank_with(Config::new(2, 1));
+    put(&mut g, 1, 0, cat1(1));
+    let field = c(&g, 1, 0);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    round_to(&mut g, 1, 0, (8, 9));
+    assert!(
+        g.state.carried[0].is_empty(),
+        "angekommen: noch ein Bauplatz"
+    );
+    assert!(g
+        .legal_actions()
+        .contains(&Action::BuildFactory { pay: cat1(1) }));
+    // Der Koenig bleibt stehen (eine Figur zieht): jetzt baut er die Farbe ab.
+    act!(
+        g,
+        Action::Move {
+            piece: unit,
+            to: c(&g, 6, 5)
+        }
+    );
+    assert_eq!(g.state.carried[0].get(cat1(1)), 1);
+    assert!(g.state.depleted.contains(&(field, cat1(1))));
+    act!(g, king_to(&g, P1, 9, 9));
+    assert!(
+        !g.legal_actions()
+            .contains(&Action::BuildFactory { pay: cat1(1) }),
+        "abgebaut ist kein Bauplatz mehr"
+    );
+    for _ in 0..12 {
+        act!(
+            g,
+            Action::Move {
+                piece: unit,
+                to: if g.state.pieces[&unit].cell == c(&g, 6, 5) {
+                    c(&g, 5, 5)
+                } else {
+                    c(&g, 6, 5)
+                }
+            }
+        );
+        let to = if g.king(P1).unwrap().cell == c(&g, 9, 9) {
+            (8, 9)
+        } else {
+            (9, 9)
+        };
+        act!(g, king_to(&g, P1, to.0, to.1));
+    }
+    assert_eq!(g.state.carried[0].get(cat1(1)), 1, "Kat 1 kommt nie wieder");
+}
+
+#[test]
+fn a_factory_gets_each_neighbouring_deposit_only_when_it_has_regrown() {
+    let mut g = blank_with(Config::new(2, 1));
+    let f = g.setup_factory(P0, c(&g, 5, 5));
+    put(&mut g, 5, 5, cat2(0, 0));
+    put(&mut g, 6, 5, cat3(0, 0));
+    let mut at = [(1, 0), (0, 0)].into_iter().cycle();
+    let mut p1 = [(8, 9), (9, 9)].into_iter().cycle();
+    let mut totals = Vec::new();
+    for _ in 0..7 {
+        let (x, y) = at.next().unwrap();
+        round_to(&mut g, x, y, p1.next().unwrap());
+        totals.push(g.state.factories[&f].storage.total());
+    }
+    // Runde 1: beides. Kat 3 wieder in Runde 4 und 7, Kat 2 wieder in Runde 6.
+    assert_eq!(totals, vec![2, 2, 2, 3, 3, 4, 5]);
 }

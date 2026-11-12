@@ -66,7 +66,8 @@ pub enum CardTarget {
     Unit,
 }
 
-/// Kosten einer Karte. `k2_kinds`: davon mindestens so viele verschiedene Kat-2-Typen.
+/// Kosten einer Karte. `k2_kinds`: davon mindestens so viele verschiedene Kat-2-Typen, also
+/// Farben (jede Region hat genau einen Kat-2- und einen Kat-3-Typ in ihrer Farbe).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cost {
     /// Beliebige Kat-1-Einheiten ("Farbe").
@@ -179,9 +180,9 @@ impl Card {
                 "Ein Bauer erscheint neben der zahlenden Fabrik, die Fabrik bleibt stehen."
             }
             Card::DoubleMove => "In diesem Zug eine zweite Aktion.",
-            Card::DoubleShift => "Alle deine Fabriken ernten sofort noch einmal.",
-            Card::Mining => "Deine Fabriken ernten Kat 2 doppelt.",
-            Card::Farming => "Deine Fabriken ernten Kat 3 doppelt.",
+            Card::DoubleShift => "Rund um deine Fabriken wächst alles sofort nach und wird geerntet.",
+            Card::Mining => "Deine Fabriken ernten Quader (Kat 2) doppelt.",
+            Card::Farming => "Deine Fabriken ernten Bälle (Kat 3) doppelt.",
             Card::Runestone => "Set: der dritte Runenstein gibt einer Figur Stufe +2.",
             Card::Starshard => {
                 "Set: der dritte Sternsplitter legt ein Kat-1-Vorkommen deiner Farbe unter den König."
@@ -200,17 +201,19 @@ impl Card {
             Card::Lance => cost(0, 2, 1, 2, 1),
             Card::Spring => cost(0, 1, 1, 2, 1),
             Card::Horse => cost(0, 2, 1, 2, 1),
+            // "Kinds" sind Farben, also Regionen: wertvolle Karten brauchen denselben Rohstoff
+            // in mehreren Farben, einfache nur irgendeine.
             Card::Charge => cost(0, 0, 0, 3, 2),
             Card::Recruit => cost(1, 2, 1, 3, 1),
             Card::DoubleMove => cost(0, 2, 2, 3, 2),
             // Beliebig oft kaufbar: billiger als eine Ernte waere ein Geldautomat.
-            Card::DoubleShift => cost(0, 2, 1, 2, 2),
-            Card::Mining => cost(0, 3, 2, 2, 1),
-            Card::Farming => cost(0, 2, 1, 3, 2),
-            // Set: drei Teile, zusammen 18. Zwei Stufen auf einer Stufe-2-Figur kosten mit
-            // Ausbildung 8 + 12 = 20.
-            Card::Runestone => cost(0, 3, 1, 3, 1),
-            Card::Starshard => cost(0, 2, 1, 2, 1),
+            Card::DoubleShift => cost(0, 2, 1, 2, 1),
+            Card::Mining => cost(0, 3, 1, 2, 1),
+            Card::Farming => cost(0, 2, 1, 3, 1),
+            // Set: drei Teile, zusammen 18, jedes aus drei Farben. Zwei Stufen auf einer
+            // Stufe-2-Figur kosten mit Ausbildung 8 + 12 = 20.
+            Card::Runestone => cost(0, 3, 3, 3, 1),
+            Card::Starshard => cost(0, 2, 2, 2, 1),
         }
     }
 
@@ -222,15 +225,17 @@ impl Card {
     }
 
     /// Preis fuer eine Zielfigur mit Reichweite `range`. Bei `priced_by_range` wird der
-    /// Grundpreis mit der Reichweite malgenommen, ab Reichweite 2 aus mindestens 2 Typen je
-    /// Kategorie. Alle anderen Karten kosten immer `cost()`.
+    /// Grundpreis mit der Reichweite malgenommen, und es braucht so viele Farben (Regionen) je
+    /// Kategorie wie die Figur Reichweite hat, hoechstens 3. Eine Stufe-2-Figur auf Stufe 3 zu
+    /// heben braucht also zwei Regionen, genau wie der Ausbau der Fabrik. Alle anderen Karten
+    /// kosten immer `cost()`.
     pub fn cost_for(self, range: u8) -> Cost {
         let base = self.cost();
         if !self.priced_by_range() {
             return base;
         }
         let r = range.max(1);
-        let kinds = |n: u8, k: u8| if n == 0 { 0 } else { k.max(r.min(2)).min(n) };
+        let kinds = |n: u8, k: u8| if n == 0 { 0 } else { k.max(r.min(3)).min(n) };
         let (k2, k3) = (base.k2 * r, base.k3 * r);
         Cost {
             k2,
@@ -399,15 +404,15 @@ mod tests {
     #[test]
     fn payment_takes_the_most_common_types_first() {
         let m = map();
-        // Kat 2: Typen 1, 2, 7; Kat 3: Typen 3, 4, 5.
-        let stock = inv(&[(1, 5), (2, 1), (3, 4), (4, 1)]);
+        // Kat 2: Typen 1, 4, 7, 10 (je Region einer); Kat 3: Typen 2, 5, 8, 11.
+        let stock = inv(&[(1, 5), (4, 1), (2, 4), (5, 1)]);
         let cost = Cost {
             k2: 2,
             k3: 2,
             ..Cost::default()
         };
         let pay = plan_payment(&m, r(0), &stock, &cost).expect("reicht");
-        assert_eq!(pay, inv(&[(1, 2), (3, 2)]));
+        assert_eq!(pay, inv(&[(1, 2), (2, 2)]));
         let mixed = Cost {
             k2: 3,
             k2_kinds: 2,
@@ -416,8 +421,8 @@ mod tests {
         let pay = plan_payment(&m, r(0), &stock, &mixed).expect("reicht");
         assert_eq!(
             pay,
-            inv(&[(1, 2), (2, 1)]),
-            "zwei Typen, der Rest vom haeufigsten"
+            inv(&[(1, 2), (4, 1)]),
+            "zwei Farben, der Rest von der haeufigsten"
         );
     }
 
@@ -429,16 +434,18 @@ mod tests {
             (cost.k2, cost.k2_kinds, cost.k3, cost.k3_kinds),
             (4, 2, 4, 2)
         );
-        let one_type = inv(&[(1, 10), (3, 10), (4, 10)]);
+        let one_type = inv(&[(1, 10), (2, 10), (5, 10)]);
         assert!(
             plan_payment(&m, r(0), &one_type, &cost).is_none(),
-            "nur ein Kat-2-Typ"
+            "Kat 2 nur in einer Farbe"
         );
-        let varied = inv(&[(1, 10), (2, 1), (3, 10), (4, 1)]);
+        let varied = inv(&[(1, 10), (4, 1), (2, 10), (5, 1)]);
         assert_eq!(
             plan_payment(&m, r(0), &varied, &cost),
-            Some(inv(&[(1, 3), (2, 1), (3, 3), (4, 1)]))
+            Some(inv(&[(1, 3), (4, 1), (2, 3), (5, 1)]))
         );
+        let ritter = Card::Training.cost_for(3);
+        assert_eq!((ritter.k2, ritter.k2_kinds, ritter.k3_kinds), (6, 3, 3));
     }
 
     #[test]

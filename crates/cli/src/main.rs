@@ -334,6 +334,22 @@ struct Stats {
     captures: u64,
     cards: u64,
     cards_by_kind: BTreeMap<&'static str, u64>,
+    /// Je Stufe 2 und 3: Summe der Runden, in denen die erste solche Figur stand, und in wie
+    /// vielen Partien es ueberhaupt eine gab.
+    first_level: [(u64, u32); 2],
+}
+
+/// Hoechste Stufe einer Figur auf dem Brett.
+fn top_level(game: &Game) -> u8 {
+    game.state
+        .pieces
+        .values()
+        .filter_map(|p| match &p.kind {
+            game_core::state::PieceKind::Unit { level, .. } => Some(*level),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 fn run() -> Result<(), String> {
@@ -409,6 +425,7 @@ fn run() -> Result<(), String> {
             .as_ref()
             .map(|_| ReplayWriter::new(&game, &bot_names));
         let mut gift = o.gift;
+        let mut seen_level = [false; 2];
         let before = |g: &mut Game| {
             if let Some(gv) = gift {
                 if give_gift(g, gv) {
@@ -423,6 +440,14 @@ fn run() -> Result<(), String> {
             |game, player, action, events| {
                 if let Some(w) = writer.as_mut() {
                     w.record(game, player, action, events);
+                }
+                let top = top_level(game);
+                for (i, seen) in seen_level.iter_mut().enumerate() {
+                    if !*seen && top >= i as u8 + 2 {
+                        *seen = true;
+                        stats.first_level[i].0 += game.state.round as u64;
+                        stats.first_level[i].1 += 1;
+                    }
                 }
                 for e in events {
                     match e {
@@ -531,6 +556,19 @@ fn run() -> Result<(), String> {
             stats.spawned as f64 / n,
             stats.captures as f64 / n,
             stats.cards as f64 / n
+        );
+        let first = |(sum, games): (u64, u32)| match games {
+            0 => "nie".to_string(),
+            g => format!(
+                "Runde {:.1} (in {g} von {} Partien)",
+                sum as f64 / g as f64,
+                o.games
+            ),
+        };
+        println!(
+            "  Erste Figur Stufe 2: {}; Stufe 3: {}",
+            first(stats.first_level[0]),
+            first(stats.first_level[1])
         );
         if !stats.cards_by_kind.is_empty() {
             let mut kinds: Vec<(&str, u64)> =

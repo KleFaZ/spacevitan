@@ -102,6 +102,9 @@ pub struct Weights {
     pub return_cost: i32,
     /// Je Feld Weg zu einer fremden Farbe, die die Fabrik noch nicht hat.
     pub source_step: i32,
+    /// Braucht die beste Fabrik fuer den naechsten Ausbau eine weitere Region, zieht es den
+    /// Koenig zum naechsten Quader oder Ball in fremder Farbe (abzueglich `source_step` je Feld).
+    pub foreign_pull: i32,
     /// Freier Bauplatz (Kat-1-Vorkommen) in Reichweite des Koenigs, in Prozent des Werts der
     /// Fabrik, die dort entstuende.
     pub site_share: i32,
@@ -155,6 +158,7 @@ impl Weights {
                 "carry_share" => &mut self.carry_share,
                 "return_cost" => &mut self.return_cost,
                 "source_step" => &mut self.source_step,
+                "foreign_pull" => &mut self.foreign_pull,
                 "site_share" => &mut self.site_share,
                 "site_step" => &mut self.site_step,
                 "loose_color" => &mut self.loose_color,
@@ -194,6 +198,7 @@ impl Weights {
         carry_share: 60,
         return_cost: 2,
         source_step: 2,
+        foreign_pull: 40,
         site_share: 63,
         site_step: 3,
         loose_color: 20,
@@ -278,6 +283,8 @@ pub struct SearchBot {
     dist: DistCache,
     /// Alle Kat-1-Vorkommen der Karte (Feld, Typ); pro Zug neu bestimmt.
     cat1: Vec<(CellId, ResourceId)>,
+    /// Alle Vorkommen ab Kat 2 (Feld, Typ, Region).
+    goods: Vec<(CellId, ResourceId, usize)>,
     /// Groesste Nachbarzahl der Karte (0 = noch nicht bestimmt).
     max_degree: u32,
     name: &'static str,
@@ -301,6 +308,7 @@ impl SearchBot {
             killers: Vec::new(),
             dist: DistCache::new(),
             cat1: Vec::new(),
+            goods: Vec::new(),
             max_degree: 0,
             name: "stark",
             stats: SearchStats::default(),
@@ -339,10 +347,14 @@ impl SearchBot {
     fn prepare(&mut self, game: &Game) {
         self.max_degree = 0;
         self.cat1.clear();
+        self.goods.clear();
         for cell in game.map.board.cells() {
             for &res in game.map.deposits_at(cell) {
-                if game.map.category(res) == 1 {
-                    self.cat1.push((cell, res));
+                let ty = game.map.resource_type(res);
+                match (ty.category, ty.home_corner) {
+                    (1, _) => self.cat1.push((cell, res)),
+                    (_, Some(region)) => self.goods.push((cell, res, region)),
+                    _ => {}
                 }
             }
         }
@@ -1097,6 +1109,39 @@ impl SearchBot {
                 if gain > 0 {
                     v += gain * w.carry_share / 100 - w.return_cost * d_home as i32;
                 }
+                // Fehlt fuer den naechsten Ausbau eine Region (auch mit dem Gepaeck), lohnt der
+                // Weg zum naechsten Vorkommen in einer Farbe, die die Fabrik noch nicht hat.
+                let upgrade = g.upgrade_level(&with) as usize;
+                if w.foreign_pull != 0
+                    && g.config.upgrade_step > 0
+                    && upgrade < g.config.max_upgrades as usize
+                    && g.upgrade_stock(&with).1 <= upgrade
+                {
+                    let mut best = 0;
+                    for i in 0..self.goods.len() {
+                        let (cell, res, region) = self.goods[i];
+                        if st.regrow.contains_key(&(cell, res))
+                            || st.depleted.contains(&(cell, res))
+                        {
+                            continue;
+                        }
+                        let have: u32 = with
+                            .iter()
+                            .filter(|&(r, _)| {
+                                g.map.category(r) >= 2
+                                    && g.map.resource_type(r).home_corner == Some(region)
+                            })
+                            .map(|(_, n)| n)
+                            .sum();
+                        if have >= g.config.upgrade_region_min {
+                            continue;
+                        }
+                        let val =
+                            w.foreign_pull - w.source_step * self.dist.get(board, cell, kc) as i32;
+                        best = best.max(val);
+                    }
+                    v += best;
+                }
                 let new_color = carried.kinds().any(|r| is_cat1(r) && f.storage.get(r) == 0);
                 if !new_color {
                     // Naechste fremde Farbe: Vorkommen oder Beute mit einem Typ, den die
@@ -1134,9 +1179,7 @@ impl SearchBot {
             }
         }
 
-        // Freie Bauplaetze in Reichweite des Koenigs. Fremde Farben sind mehr wert, wenn der
-        // Bau dort gleich die eigene Farbe dazugibt.
-        let own = g.map.own_color(p);
+        // Freie Bauplaetze in Reichweite des Koenigs.
         let mut best_site = 0;
         for i in 0..self.cat1.len() {
             let (cell, res) = self.cat1[i];
@@ -1152,12 +1195,7 @@ impl SearchBot {
                 }
             }
             if free {
-                let level = if g.config.foreign_build_bonus && res != own {
-                    2
-                } else {
-                    1
-                };
-                let fv = unit_value(level) * w.factory_share / 100 + w.factory_base;
+                let fv = unit_value(1) * w.factory_share / 100 + w.factory_base;
                 let val =
                     fv * w.site_share / 100 - w.site_step * self.dist.get(board, cell, kc) as i32;
                 best_site = best_site.max(val);
@@ -1189,7 +1227,7 @@ impl SearchBot {
         if step > 0 && upgrade < g.config.max_upgrades as usize && level < cap {
             let (units, kinds) = g.upgrade_stock(storage);
             let need_units = (upgrade as u64 + 1) * step;
-            let need_kinds = upgrade + 2;
+            let need_kinds = upgrade + 1;
             let pu = (units.min(need_units) * 1000 / need_units) as i32;
             let pk = (kinds.min(need_kinds) * 1000 / need_kinds) as i32;
             let progress = pu.min(pk);

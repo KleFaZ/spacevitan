@@ -287,7 +287,7 @@ pub fn state_json(game: &Game) -> String {
         format!(r#"{{"cell":{},"items":{}}}"#, cell.0, inv_json(inv))
     });
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"charge":{},"extra_deposits":{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"king_moved":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"charge":{},"extra_deposits":{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
@@ -296,6 +296,11 @@ pub fn state_json(game: &Game) -> String {
         loot,
         list(st.carried.iter(), inv_json),
         list(st.depleted.iter(), |(c, r)| format!("[{},{}]", c.0, r.0)),
+        list(st.regrow.iter(), |((c, r), back)| format!(
+            "[{},{},{}]",
+            c.0, r.0, back
+        )),
+        st.king_moved,
         list(st.harvested.iter(), |((c, r), n)| format!(
             "[{},{},{}]",
             c.0, r.0, n
@@ -337,14 +342,15 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"foreign_build_bonus":{},"upgrade_step":{},"max_upgrades":{},"market_size":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{}}}"#,
         c.side,
         c.max_rounds,
         c.min_factory_distance,
         c.deposit_stock,
         c.yield_per_round,
         c.cat1_distance,
-        c.foreign_build_bonus,
+        list(c.regrow_rounds.iter(), |n| n.to_string()),
+        c.upgrade_region_min,
         c.upgrade_step,
         c.max_upgrades,
         c.market_size

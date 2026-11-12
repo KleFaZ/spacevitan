@@ -172,6 +172,11 @@ pub struct State {
     pub ledger: Ledger,
     /// Vorkommen, die es nicht mehr gibt (Fabrik darauf gebaut oder Vorrat erschoepft).
     pub depleted: BTreeSet<(CellId, ResourceId)>,
+    /// Abgebaute Vorkommen, die nachwachsen: ab dieser Runde sind sie wieder da.
+    pub regrow: BTreeMap<(CellId, ResourceId), u32>,
+    /// Hat der Koenig des Spielers am Zug in diesem Zug gezogen? Kat 1 baut er nur ab, wenn er
+    /// stehen geblieben ist; so bleibt ein frisch betretenes Feld ein Bauplatz.
+    pub king_moved: bool,
     /// Bereits geerntete Menge je Vorkommen (nur bei begrenztem Vorrat gefuehrt).
     pub harvested: BTreeMap<(CellId, ResourceId), u32>,
     /// Die Karten, die in dieser Partie ausliegen (fest ab dem Start).
@@ -206,6 +211,8 @@ impl State {
             outcome: None,
             ledger: Ledger::default(),
             depleted: BTreeSet::new(),
+            regrow: BTreeMap::new(),
+            king_moved: false,
             harvested: BTreeMap::new(),
             market: Vec::new(),
             player_perks: vec![PlayerPerks::default(); players],

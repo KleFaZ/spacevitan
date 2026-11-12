@@ -18,11 +18,12 @@ const P0: PlayerId = PlayerId(0);
 const P1: PlayerId = PlayerId(1);
 
 fn cat1(corner: u16) -> ResourceId {
-    ResourceId(corner * 6)
+    ResourceId(corner * 3)
 }
 
 fn blank(players: u8) -> Game {
-    let config = Config::new(players, 1);
+    let mut config = Config::new(players, 1);
+    config.regrow_rounds = [1, 1, 1, 1];
     let mut map = Map::generate(&config).expect("Karte");
     map.deposits = vec![Vec::new(); map.board.len()];
     Game::with_map(config, map)

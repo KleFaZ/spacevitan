@@ -328,19 +328,18 @@ impl Map {
     }
 }
 
-/// Typen je Ecke: Kat k kommt k-mal vor (1x Kat 1, 2x Kat 2, ...). IDs laufen ecken-weise durch,
-/// danach folgen die Zentrumsfarben.
+/// Typen je Ecke: jede Kategorie genau einmal, in der Farbe der Region (Kat 1 die Farbe selbst,
+/// Kat 2 der Quader, Kat 3 der Ball dieser Farbe). IDs laufen ecken-weise durch, danach folgen
+/// die Zentrumsfarben.
 fn make_types(corners: usize, categories: u8, center_colors: u32) -> Vec<ResourceType> {
     let mut types = Vec::new();
     for corner in 0..corners {
         for category in 1..=categories {
-            for _ in 0..category {
-                types.push(ResourceType {
-                    id: ResourceId(types.len() as u16),
-                    category,
-                    home_corner: Some(corner),
-                });
-            }
+            types.push(ResourceType {
+                id: ResourceId(types.len() as u16),
+                category,
+                home_corner: Some(corner),
+            });
         }
     }
     for _ in 0..center_colors {
@@ -502,8 +501,18 @@ fn place_all(
         .min()
         .unwrap_or(2)
         .max(2);
-    let pattern: Vec<&ResourceType> = types.iter().filter(|t| t.home_corner == Some(0)).collect();
-    let targets: Vec<u32> = pattern
+    // Eine Ader je Platz: jeder Typ der Ecke so oft, wie `veins_per_type` sagt.
+    let slots_of = |corner: usize| -> Vec<&ResourceType> {
+        types
+            .iter()
+            .filter(|t| t.home_corner == Some(corner))
+            .flat_map(|t| {
+                let n = config.veins_per_type[t.category as usize - 1].max(1) as usize;
+                std::iter::repeat_n(t, n)
+            })
+            .collect()
+    };
+    let targets: Vec<u32> = slots_of(0)
         .iter()
         .map(|t| {
             if t.category == 1 {
@@ -522,11 +531,7 @@ fn place_all(
                 && deposits[cell.idx()].len() < cap
         };
 
-        for (slot, ty) in types
-            .iter()
-            .filter(|t| t.home_corner == Some(corner))
-            .enumerate()
-        {
+        for (slot, ty) in slots_of(corner).into_iter().enumerate() {
             let size = config.cells_per_type[ty.category as usize - 1] as usize;
             let target = targets[slot];
             let cat1 = ty.category == 1;
@@ -534,6 +539,7 @@ fn place_all(
             // die Ader waechst nur nach aussen (nie naeher an den Start).
             let fits = |c: CellId, deposits: &[Vec<ResourceId>]| {
                 in_home(c, deposits)
+                    && !deposits[c.idx()].contains(&ty.id)
                     && (!cat1 || (dist[c.idx()] >= target && cat1_free(c, deposits)))
             };
 
@@ -575,6 +581,7 @@ fn place_all(
                     .filter(|c| !vein.contains(c))
                     .filter(|c| !start_cells.contains(c))
                     .filter(|c| deposits[c.idx()].len() < cap)
+                    .filter(|c| !deposits[c.idx()].contains(&ty.id))
                     .collect();
                 if let Some(&spot) = rng.pick(&far) {
                     *vein.last_mut().expect("Ader hat mindestens ein Feld") = spot;
@@ -583,6 +590,25 @@ fn place_all(
 
             for cell in vein {
                 deposits[cell.idx()].push(ty.id);
+            }
+        }
+    }
+    // Rund um die Mitte liegt jede Region-Farbe noch einmal (ab Kat 2): wer die Mitte haelt,
+    // kommt an alle Farben. Reicht der Platz nicht, bleibt die Mitte duenner.
+    let radius = config.effective_center_radius() + 1;
+    for ty in types
+        .iter()
+        .filter(|t| t.home_corner.is_some() && t.category >= 2)
+    {
+        for _ in 0..config.center_mix {
+            let spots: Vec<CellId> = board
+                .cells()
+                .filter(|c| center[c.idx()] <= radius && !start_cells.contains(c))
+                .filter(|c| deposits[c.idx()].len() < cap)
+                .filter(|c| !deposits[c.idx()].contains(&ty.id))
+                .collect();
+            if let Some(&spot) = rng.pick(&spots) {
+                deposits[spot.idx()].push(ty.id);
             }
         }
     }
@@ -615,13 +641,13 @@ mod tests {
     }
 
     #[test]
-    fn type_counts_follow_the_one_two_three_pattern() {
+    fn every_region_has_one_type_per_category_in_its_colour() {
         let (c, m) = generate(4, 1);
         assert_eq!(c.center_colors, 2);
         assert_eq!(
             m.resource_types.len(),
-            24 + 2,
-            "4 Ecken mal 6 Typen plus 2 Zentrumsfarben"
+            12 + 2,
+            "4 Ecken mal 3 Typen plus 2 Zentrumsfarben"
         );
         for cat in 1..=3u8 {
             let per_corner = m
@@ -629,20 +655,20 @@ mod tests {
                 .iter()
                 .filter(|t| t.category == cat && t.home_corner == Some(0))
                 .count();
-            assert_eq!(per_corner, cat as usize, "Kategorie {cat}");
+            assert_eq!(per_corner, 1, "Kategorie {cat}");
             let total = m
                 .resource_types
                 .iter()
                 .filter(|t| t.category == cat && t.home_corner.is_some())
                 .count();
-            assert_eq!(total, 4 * cat as usize);
+            assert_eq!(total, 4);
         }
         let center: Vec<_> = m.center_types().collect();
         assert_eq!(center.len(), 2);
         assert!(center.iter().all(|t| t.category == 1));
         assert_eq!(
             center[0].id,
-            ResourceId(24),
+            ResourceId(12),
             "Zentrumsfarben folgen nach den Ecken"
         );
         for (i, t) in m.resource_types.iter().enumerate() {
@@ -656,7 +682,11 @@ mod tests {
         for t in &m.resource_types {
             let n = deposit_cells(m, t.id).len() as u32;
             if t.home_corner.is_some() {
-                assert_eq!(n, c.cells_per_type[t.category as usize - 1], "{t:?}");
+                // Adern mal Felder, ab Kat 2 dazu hoechstens `center_mix` in der Mitte.
+                let i = t.category as usize - 1;
+                let base = c.cells_per_type[i] * c.veins_per_type[i];
+                let extra = if t.category >= 2 { c.center_mix } else { 0 };
+                assert!(n >= base && n <= base + extra, "{t:?}: {n}");
             } else {
                 let ring_max = c.mid_cat1 * (c.players as u32).div_ceil(n_center);
                 assert!(
@@ -907,12 +937,29 @@ mod tests {
     }
 
     #[test]
+    fn every_regions_colour_also_lies_near_the_centre() {
+        for seed in 0..10 {
+            let (c, m) = generate(2, seed);
+            let center = center_distances(&m.board);
+            let radius = c.effective_center_radius() + 1;
+            for t in m.resource_types.iter().filter(|t| t.category >= 2) {
+                assert!(
+                    deposit_cells(&m, t.id)
+                        .iter()
+                        .any(|cell| center[cell.idx()] <= radius),
+                    "{t:?} seed {seed}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn without_centre_colours_there_are_none() {
         let mut c = cfg(4, 3);
         c.center_colors = 0;
         let m = Map::generate(&c).unwrap();
         assert_eq!(m.center_types().count(), 0);
-        assert_eq!(m.resource_types.len(), 24);
+        assert_eq!(m.resource_types.len(), 12);
     }
 
     #[test]
@@ -965,6 +1012,7 @@ mod tests {
         for seed in 0..20 {
             let mut c = cfg(4, seed);
             c.stray_chance = 0.0;
+            c.center_mix = 0;
             let m = Map::generate(&c).unwrap();
             for t in m.resource_types.iter().filter(|t| t.home_corner.is_some()) {
                 for cell in deposit_cells(&m, t.id) {
@@ -1017,6 +1065,8 @@ mod tests {
             let mut c = cfg(4, seed);
             c.stray_chance = 0.0;
             c.cells_per_type = [3, 3, 4, 4];
+            c.veins_per_type = [1, 1, 1, 1];
+            c.center_mix = 0;
             let m = Map::generate(&c).unwrap();
             // Zentrumsfarben liegen bewusst verteilt (Mitte und Zwischenring).
             for t in m.resource_types.iter().filter(|t| t.home_corner.is_some()) {
@@ -1055,7 +1105,7 @@ mod tests {
         }
         assert_eq!(
             m.resource_types.len(),
-            24 + 1,
+            12 + 1,
             "2 Spieler: Karte wie bei 4, dazu eine Zentrumsfarbe"
         );
     }
@@ -1165,7 +1215,7 @@ mod tests {
         for (players, cats) in [(5u8, 3u8), (6, 4), (8, 4)] {
             let (c, m) = generate(players, 1);
             assert_eq!(m.category_count(), cats);
-            let per_corner: usize = (1..=cats as usize).sum();
+            let per_corner = cats as usize;
             assert_eq!(
                 m.resource_types.len(),
                 c.corner_count() * per_corner + c.center_colors as usize

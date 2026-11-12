@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::ids::{CellId, FactoryId, PieceId, PlayerId, ResourceId};
 use crate::map::{Map, MapError};
 use crate::state::{Factory, Inventory, Outcome, Piece, PieceKind, State};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 /// Ein laufendes Spiel. Die Karte aendert sich waehrend der Partie nicht und wird beim Kopieren
@@ -105,10 +105,11 @@ impl Game {
     }
 
     /// Ausbaustufe eines Lagers: Stufe k braucht `k * upgrade_step` Einheiten ab Kat 2 aus
-    /// mindestens `k + 1` verschiedenen Typen (Vielfalt zaehlt). Die Fabrik ernten dafuer
-    /// selbst; der Koenig kann zusaetzlich abladen und beschleunigt so.
+    /// mindestens k Regionen. Die erste Stufe geht also mit der eigenen Farbe, die zweite erst
+    /// mit einer zweiten Region. Die Fabrik erntet dafuer selbst; der Koenig kann zusaetzlich
+    /// abladen und beschleunigt so.
     pub fn upgrade_level(&self, storage: &Inventory) -> u8 {
-        let (units, kinds) = self.upgrade_stock(storage);
+        let (units, regions) = self.upgrade_stock(storage);
         let step = self.config.upgrade_step;
         if step == 0 {
             return 0;
@@ -116,7 +117,7 @@ impl Game {
         let mut k = 0u8;
         while k < self.config.max_upgrades
             && units >= (k as u64 + 1) * step as u64
-            && kinds >= k as usize + 2
+            && regions > k as usize
         {
             k += 1;
         }
@@ -125,10 +126,20 @@ impl Game {
 
     /// Einheiten und Typen ab Kat 2 in einem Lager (das, was fuer den Ausbau zaehlt).
     pub fn upgrade_stock(&self, storage: &Inventory) -> (u64, usize) {
-        storage
-            .iter()
-            .filter(|&(r, _)| self.map.category(r) >= 2)
-            .fold((0, 0), |(u, k), (_, n)| (u + n as u64, k + 1))
+        let mut units = 0u64;
+        let mut per_region: BTreeMap<usize, u64> = BTreeMap::new();
+        for (r, n) in storage.iter() {
+            let ty = self.map.resource_type(r);
+            if ty.category >= 2 {
+                units += n as u64;
+                if let Some(c) = ty.home_corner {
+                    *per_region.entry(c).or_insert(0) += n as u64;
+                }
+            }
+        }
+        let min = self.config.upgrade_region_min.max(1) as u64;
+        let regions = per_region.values().filter(|&&n| n >= min).count();
+        (units, regions)
     }
 
     /// Felder, auf die die Figur ziehen darf (inklusive Schlagen), sortiert.
@@ -257,7 +268,8 @@ impl Game {
         set
     }
 
-    /// Vorkommen auf dem Feld, die es noch gibt (nicht verbaut, nicht erschoepft).
+    /// Vorkommen auf dem Feld, die es gerade gibt (nicht verbaut, nicht erschoepft, nicht
+    /// abgebaut und noch am Nachwachsen).
     pub fn available_deposits(&self, cell: CellId) -> Vec<ResourceId> {
         let extra = self.state.extra_deposits.get(&cell).map(|v| v.as_slice());
         self.map
@@ -266,7 +278,14 @@ impl Game {
             .chain(extra.unwrap_or(&[]))
             .copied()
             .filter(|&r| !self.state.depleted.contains(&(cell, r)))
+            .filter(|&r| !self.state.regrow.contains_key(&(cell, r)))
             .collect()
+    }
+
+    /// In welcher Runde ein abgebautes Vorkommen wieder da ist (`None` = ist da oder fuer
+    /// immer weg).
+    pub fn regrows_in_round(&self, cell: CellId, res: ResourceId) -> Option<u32> {
+        self.state.regrow.get(&(cell, res)).copied()
     }
 
     /// Alle Vorkommen eines Feldes, auch verbrauchte (Karte plus Sternsplitter).
@@ -289,8 +308,29 @@ impl Game {
         }
     }
 
-    /// Erntet bis zu `want` Einheiten; erschoepft das Vorkommen, wenn der Vorrat aufgebraucht ist.
+    /// Erntet bis zu `want` Einheiten. Danach ist das Vorkommen abgebaut: Kat 1 fuer immer,
+    /// die anderen wachsen nach `regrow_rounds` Runden nach. Erschoepft ist es ausserdem, wenn
+    /// ein begrenzter Vorrat aufgebraucht ist.
     fn harvest(&mut self, cell: CellId, res: ResourceId, want: u32) -> u32 {
+        if self.state.regrow.contains_key(&(cell, res)) {
+            return 0;
+        }
+        let amount = self.harvest_stock(cell, res, want);
+        if amount > 0 {
+            match self.config.regrow_rounds[self.map.category(res) as usize - 1] {
+                0 => {
+                    self.state.depleted.insert((cell, res));
+                }
+                1 => {}
+                n => {
+                    self.state.regrow.insert((cell, res), self.state.round + n);
+                }
+            }
+        }
+        amount
+    }
+
+    fn harvest_stock(&mut self, cell: CellId, res: ResourceId, want: u32) -> u32 {
         let amount = match self.deposit_remaining(cell, res) {
             None => want,
             Some(left) => {
@@ -670,6 +710,9 @@ impl Game {
 
     fn do_move(&mut self, actor: PlayerId, id: PieceId, to: CellId, events: &mut Vec<Event>) {
         let from = self.state.pieces[&id].cell;
+        if self.state.pieces[&id].is_king() {
+            self.state.king_moved = true;
+        }
 
         if let Some(victim_id) = self.state.occupant[to.idx()] {
             let victim = self.state.remove_piece(victim_id).expect("Opfer existiert");
@@ -725,20 +768,12 @@ impl Game {
         self.state.depleted.insert((cell, pay));
         self.state.ledger.created += 1;
         let factory = self.state.insert_factory(actor, cell);
-        // Auf fremder Farbe gebaut: die eigene Farbe kommt dazu, die Fabrik hat gleich Stufe 2.
-        let own = self.map.own_color(actor);
-        let bonus = self.config.foreign_build_bonus && pay != own;
-        let storage = &mut self
-            .state
+        self.state
             .factories
             .get_mut(&factory)
             .expect("Fabrik existiert")
-            .storage;
-        storage.add(pay, 1);
-        if bonus {
-            storage.add(own, 1);
-            self.state.ledger.created += 1;
-        }
+            .storage
+            .add(pay, 1);
         events.push(Event::FactoryBuilt {
             factory,
             owner: actor,
@@ -880,7 +915,17 @@ impl Game {
             Card::Mining => self.state.player_perks[actor.idx()].mining = true,
             Card::Farming => self.state.player_perks[actor.idx()].farming = true,
             Card::DoubleMove => self.state.extra_actions += 1,
-            Card::DoubleShift => self.harvest_factories(actor, events),
+            Card::DoubleShift => {
+                // Alles rund um die eigenen Fabriken waechst sofort nach und wird geerntet.
+                let cells: BTreeSet<CellId> = self
+                    .factories_of(actor)
+                    .flat_map(|f| std::iter::once(f.cell).chain(self.map.board.neighbors(f.cell)))
+                    .collect();
+                self.state
+                    .regrow
+                    .retain(|(cell, _), _| !cells.contains(cell));
+                self.harvest_factories(actor, events);
+            }
             Card::Recruit => {
                 let PaySource::Factory(fid) = from else {
                     unreachable!("Rekrut wird aus einer Fabrik bezahlt")
@@ -991,7 +1036,12 @@ impl Game {
 
         if let Some(king_cell) = self.king(actor).map(|k| k.cell) {
             let mut gained = Inventory::new();
+            // Kat 1 baut der Koenig nur ab, wenn er in diesem Zug stehen geblieben ist.
+            let stayed = !self.state.king_moved;
             for res in self.available_deposits(king_cell) {
+                if self.map.category(res) == 1 && !stayed {
+                    continue;
+                }
                 let amount = self.harvest(king_cell, res, yield_n);
                 gained.add(res, amount);
             }
@@ -1073,6 +1123,7 @@ impl Game {
     /// Naechster lebender Spieler; nach dem letzten beginnt eine neue Runde.
     fn advance_turn(&mut self, events: &mut Vec<Event>) {
         self.state.bought_this_turn = false;
+        self.state.king_moved = false;
         self.state.extra_actions = 0;
         self.state.charge = false;
         let n = self.config.players as usize;
@@ -1081,6 +1132,8 @@ impl Game {
             i = (i + 1) % n;
             if i <= self.state.current.idx() && self.state.alive[i] {
                 self.state.round += 1;
+                let round = self.state.round;
+                self.state.regrow.retain(|_, back| *back > round);
             }
             if self.state.alive[i] {
                 break;
@@ -1304,6 +1357,17 @@ impl Game {
                 .any(|&n| n > self.config.deposit_stock)
         {
             return Err("mehr geerntet als ein Vorkommen hergibt".into());
+        }
+
+        for (&(cell, res), &back) in &st.regrow {
+            if cell.idx() >= board_len || !self.all_deposits(cell).contains(&res) {
+                return Err(format!("nachwachsendes Vorkommen ohne Vorkommen: {cell:?}"));
+            }
+            if back <= st.round || st.depleted.contains(&(cell, res)) {
+                return Err(format!(
+                    "Nachwachsen von {cell:?} ist ueberfaellig oder sinnlos"
+                ));
+            }
         }
 
         if st.loot.values().any(|pile| pile.is_empty()) {
