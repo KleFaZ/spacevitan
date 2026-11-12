@@ -262,6 +262,55 @@ fn training_raises_level_and_range_up_to_the_corner_count() {
 }
 
 #[test]
+fn training_and_long_legs_cost_more_the_further_the_figure_reaches() {
+    let mut g = blank(&[Card::Training, Card::LongLegs]);
+    let f = g.setup_factory(P0, c(&g, 2, 2));
+    for k in 0..2 {
+        g.setup_storage(f, cat2(0, k), 3);
+        g.setup_storage(f, cat3(0, k), 3);
+    }
+    let bauer = g.setup_unit(P0, c(&g, 2, 3), 1, 1);
+    let ritter = g.setup_unit(P0, c(&g, 6, 6), 3, 3);
+    let paid = |g: &Game, card, t| {
+        g.payment(P0, PaySource::Factory(f), card, Some(t))
+            .map(|p| p.total())
+    };
+    assert_eq!(paid(&g, Card::Training, bauer), Some(4));
+    assert_eq!(paid(&g, Card::Training, ritter), Some(12));
+    assert_eq!(paid(&g, Card::LongLegs, bauer), Some(3));
+    assert_eq!(paid(&g, Card::LongLegs, ritter), Some(9));
+    // Mit einem Kat-2 weniger reicht es fuer den Ritter nicht mehr, fuer den Bauern schon.
+    g.state
+        .factories
+        .get_mut(&f)
+        .unwrap()
+        .storage
+        .take(cat2(0, 0), 1);
+    g.state.ledger.vanished += 1;
+    let training: Vec<Option<PieceId>> = g
+        .buy_actions(P0)
+        .into_iter()
+        .filter_map(|a| match a {
+            Action::BuyCard {
+                card: Card::Training,
+                target,
+                ..
+            } => Some(target),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(training, vec![Some(bauer)]);
+    assert_eq!(
+        g.apply(buy(Card::Training, PaySource::Factory(f), Some(ritter))),
+        Err(RuleError::Illegal(IllegalReason::CannotPayCard))
+    );
+    let events = act!(g, buy(Card::Training, PaySource::Factory(f), Some(bauer)));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, Event::CardBought { paid, .. } if paid.total() == 4)));
+}
+
+#[test]
 fn long_legs_add_range_at_most_twice() {
     let mut g = blank(&[Card::LongLegs]);
     let f = rich_factory(&mut g, 2, 2);
@@ -451,13 +500,17 @@ fn double_shift_harvests_right_away_and_mining_doubles_category_2() {
     let f = rich_factory(&mut g, 2, 2);
     put(&mut g, 2, 3, cat2(0, 0));
     put(&mut g, 3, 2, cat3(0, 0));
-    let before = g.state.factories[&f].storage.clone();
-    act!(g, buy(Card::DoubleShift, PaySource::Factory(f), None));
-    let after = &g.state.factories[&f].storage;
+    let before = g.state.factories[&f].storage.total();
+    let events = act!(g, buy(Card::DoubleShift, PaySource::Factory(f), None));
+    assert!(
+        events.iter().any(
+            |e| matches!(e, Event::FactoryYield { factory, gained } if *factory == f && gained.total() == 2)
+        ),
+        "sofort geerntet: {events:?}"
+    );
     assert_eq!(
-        after.get(cat2(0, 0)),
-        before.get(cat2(0, 0)) + 1,
-        "sofort geerntet"
+        g.state.factories[&f].storage.total(),
+        before - u64::from(Card::DoubleShift.cost().units()) + 2
     );
     act!(g, mv(king_id(&g, P0), c(&g, 1, 0)));
     act!(g, mv(king_id(&g, P1), c(&g, 8, 9)));

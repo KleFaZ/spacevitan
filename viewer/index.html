@@ -403,14 +403,27 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return R.cornerPlayer[home] >= 0 ? `Farbe ${playerName(R.cornerPlayer[home])}` : "Farbe einer freien Ecke";
   };
   const CARD = (key) => (R.market || []).find((c) => c.key === key) || { key, name: key, text: "" };
-  function costText(c) {
+  function costParts(k) {
     const parts = [];
-    const k = c.cost;
     if (k.color) parts.push(`${k.color}× Farbe`);
     if (k.foreign_color) parts.push(`${k.foreign_color}× fremde Farbe`);
     if (k.k2) parts.push(`${k.k2}× Kat 2${k.k2_kinds > 1 ? ` (mind. ${k.k2_kinds} Typen)` : ""}`);
     if (k.k3) parts.push(`${k.k3}× Kat 3${k.k3_kinds > 1 ? ` (mind. ${k.k3_kinds} Typen)` : ""}`);
     return parts.join(" + ");
+  }
+  /** Preis fuer eine Zielfigur mit Reichweite `range`, wie Card::cost_for im Spielkern. */
+  function costFor(c, range) {
+    if (!c.per_range) return c.cost;
+    const r = Math.max(1, range || 1), k = c.cost;
+    const kinds = (n, base) => (n === 0 ? 0 : Math.min(n, Math.max(base, Math.min(r, 2))));
+    const k2 = k.k2 * r, k3 = k.k3 * r;
+    return { ...k, k2, k3, k2_kinds: kinds(k2, k.k2_kinds), k3_kinds: kinds(k3, k.k3_kinds) };
+  }
+  function costText(c) {
+    if (!c.per_range) return costParts(c.cost);
+    const r3 = costFor(c, 3);
+    return `${costParts(c.cost)} je Reichweite der Figur, ab Reichweite 2 aus je 2 Typen ` +
+      `(Reichweite 3: ${r3.k2 + r3.k3} Einheiten)`;
   }
   /** Figurentyp nach Stufe: so sieht die Figur auch aus. */
   function unitTitle(level) {
@@ -1089,7 +1102,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const src = a.from === "king" ? "aus dem Gepäck" : `aus der Fabrik auf ${cellName(f.fById.get(a.from).cell)}`;
     if (a.target === null || a.target === undefined) return `, bezahlt ${src}`;
     const t = f.byId.get(a.target);
-    return ` für ${pieceLabel(t)} auf ${t ? cellName(t.cell) : "?"}, bezahlt ${src}`;
+    const c = CARD(a.card);
+    const price = c.per_range && t ? ` (${costParts(costFor(c, t.range))})` : "";
+    return ` für ${pieceLabel(t)} auf ${t ? cellName(t.cell) : "?"}${price}, bezahlt ${src}`;
   }
   function eventText(e) {
     switch (e.type) {
@@ -1239,7 +1254,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
             .concat(f.factories.filter((x) => x.owner === p).map((x) => [`Fabrik ${cellName(x.cell)}`, x.storage]));
           let best = null;
           for (const [name, inv] of places) {
-            const miss = shortfall(c.cost, inv, own);
+            // Preis nach Reichweite: die billigste eigene Figur zaehlt.
+            const ranges = f.pieces.filter((x) => x.owner === p && !x.king).map((x) => x.range);
+            const cost = costFor(c, ranges.length ? Math.min(...ranges) : 1);
+            const miss = shortfall(cost, inv, own);
             if (!best || miss.length < best[1].length) best = [name, miss];
           }
           const text = best && best[1].length

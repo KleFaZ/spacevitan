@@ -164,8 +164,12 @@ impl Card {
 
     pub fn text(self) -> &'static str {
         match self {
-            Card::Training => "Eine Figur: Stufe +1, die Reichweite wächst mit.",
-            Card::LongLegs => "Eine Figur: Reichweite +1 (höchstens zweimal).",
+            Card::Training => {
+                "Eine Figur: Stufe +1, die Reichweite wächst mit. Preis je Reichweite der Figur."
+            }
+            Card::LongLegs => {
+                "Eine Figur: Reichweite +1 (höchstens zweimal). Preis je Reichweite der Figur."
+            }
             Card::DiagonalStrike => "Eine Figur schlägt zusätzlich diagonal auf ein Nachbarfeld.",
             Card::Lance => "Eine Figur schlägt bis zu zwei Felder weit geradeaus.",
             Card::Spring => "Eine Figur springt über eine Nachbarfigur auf das Feld dahinter.",
@@ -185,23 +189,53 @@ impl Card {
         }
     }
 
-    /// Preise, geeicht am Ausbau (10 Einheiten = 1 Stufe), siehe Kartenwert-Messung im README.
+    /// Grundpreise, geeicht am Ausbau (10 Einheiten = 1 Stufe) und an der Kartenwert-Messung
+    /// im README. Ausbildung und Lange Beine: je Reichweitenpunkt, siehe `cost_for`.
     pub fn cost(self) -> Cost {
         match self {
-            Card::Training => cost(0, 4, 2, 4, 2),
-            Card::LongLegs => cost(0, 2, 2, 2, 1),
+            // Je Reichweitenpunkt der Figur (`cost_for`): Bauer 4, Reichweite 3 also 12.
+            Card::Training => cost(0, 2, 1, 2, 1),
+            Card::LongLegs => cost(0, 1, 1, 2, 1),
             Card::DiagonalStrike => cost(0, 1, 1, 2, 1),
             Card::Lance => cost(0, 2, 1, 2, 1),
             Card::Spring => cost(0, 1, 1, 2, 1),
-            Card::Horse => cost(0, 3, 2, 3, 2),
+            Card::Horse => cost(0, 2, 1, 2, 1),
             Card::Charge => cost(0, 0, 0, 3, 2),
             Card::Recruit => cost(1, 2, 1, 3, 1),
             Card::DoubleMove => cost(0, 2, 2, 3, 2),
-            Card::DoubleShift => cost(0, 0, 0, 2, 2),
+            // Beliebig oft kaufbar: billiger als eine Ernte waere ein Geldautomat.
+            Card::DoubleShift => cost(0, 2, 1, 2, 2),
             Card::Mining => cost(0, 3, 2, 2, 1),
             Card::Farming => cost(0, 2, 1, 3, 2),
             Card::Runestone => cost(0, 2, 1, 3, 1),
             Card::Starshard => cost(0, 2, 1, 2, 1),
+        }
+    }
+
+    /// Ausbildung und Lange Beine: `cost()` gilt je Reichweitenpunkt der Zielfigur, siehe
+    /// `cost_for`. Die Messung zeigt warum: Stufe +1 auf der ersten Stufe-3-Figur entscheidet die
+    /// Partie, auf einem Bauern ist sie wenig wert.
+    pub fn priced_by_range(self) -> bool {
+        matches!(self, Card::Training | Card::LongLegs)
+    }
+
+    /// Preis fuer eine Zielfigur mit Reichweite `range`. Bei `priced_by_range` wird der
+    /// Grundpreis mit der Reichweite malgenommen, ab Reichweite 2 aus mindestens 2 Typen je
+    /// Kategorie. Alle anderen Karten kosten immer `cost()`.
+    pub fn cost_for(self, range: u8) -> Cost {
+        let base = self.cost();
+        if !self.priced_by_range() {
+            return base;
+        }
+        let r = range.max(1);
+        let kinds = |n: u8, k: u8| if n == 0 { 0 } else { k.max(r.min(2)).min(n) };
+        let (k2, k3) = (base.k2 * r, base.k3 * r);
+        Cost {
+            k2,
+            k2_kinds: kinds(k2, base.k2_kinds),
+            k3,
+            k3_kinds: kinds(k3, base.k3_kinds),
+            ..base
         }
     }
 
@@ -388,7 +422,7 @@ mod tests {
     #[test]
     fn costs_with_kinds_need_different_types() {
         let m = map();
-        let cost = Card::Training.cost();
+        let cost = Card::Training.cost_for(2);
         assert_eq!(
             (cost.k2, cost.k2_kinds, cost.k3, cost.k3_kinds),
             (4, 2, 4, 2)
@@ -416,7 +450,7 @@ mod tests {
     fn a_whole_level_costs_about_as_much_as_the_factory_upgrade() {
         // Ausbau: 10 Einheiten je Stufe. Ausbildung (1 Stufe) und Runensteine (2 Stufen)
         // duerfen hoechstens wenig billiger sein, sonst kauft man Stufen statt auszubauen.
-        assert!(Card::Training.cost().units() >= 8);
+        assert!(Card::Training.cost_for(2).units() >= 8);
         assert!(3 * Card::Runestone.cost().units() >= 15);
     }
 

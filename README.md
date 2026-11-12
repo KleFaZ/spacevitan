@@ -38,6 +38,8 @@ cargo run --release -- --games 50 --bots stark,gierig   # starker Bot gegen einf
 cargo run --release -- --players 4 --games 50 --bots gierig,zufall
 cargo run --release -- --games 200 --stock 5 --kat1 3   # Vorrat je Vorkommen, Kat-1-Felder je Ecke
 cargo run --release -- --games 50 --bots stark,stark --rule upgrade_step=0,market_size=0
+cargo run --release -- --games 40 --bots stark,stark --cards lance,horse,recruit   # fester Markt
+cargo run --release -- --games 40 --bots stark-pur,stark-pur --cards "" --gift horse   # Kartenwert messen
 cargo run --release -- --help
 ```
 
@@ -51,6 +53,7 @@ neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
 | Bot | Spielweise |
 |---|---|
 | `stark` | rechnet voraus: eigene Zuege und die gefaehrlichste Antwort der Gegner, mehrere Zuege tief (bei 2 Spielern Alpha-Beta wie bei Schachprogrammen, ab 3 Spielern Best-Reply-Search). Wirtschaft, Koenigssicherheit und das Einkesseln gegnerischer Koenige stecken in der Bewertung. Rechnet mit festem Budget (`--nodes`, Standard 20000 Stellungen pro Zug), also auf jedem Rechner gleich. |
+| `stark-pur` | wie `stark`, kauft aber nie Karten (Vergleichsgegner fuer Kartenmessungen) |
 | `gierig` | feste Faustregeln ohne Vorausschau |
 | `zufall` | zufaellige erlaubte Zuege (zum Testen der Regeln) |
 
@@ -112,13 +115,20 @@ cargo test --workspace
 
 | Name | Standard | Bedeutung |
 |---|---|---|
-| `cat1_distance` | 2 | eigene Kat-1-Vorkommen so viele Schritte vom Start, in Richtung Mitte |
+| `cat1_distance` | 2 | das eine eigene Kat-1-Feld liegt so viele Schritte vom Start, in Richtung Mitte |
+| `cat1_cells` | 1 | eigene Kat-1-Felder je Ecke (wie `--kat1`) |
+| `mid_cat1` | 1 | Kat-1-Felder je Spieler im Zwischenring, etwa auf halbem Weg zur Mitte (Zentrumsfarbe) |
 | `center_colors` | Spieler/2 | neutrale Kat-1-Typen (Zentrumsfarben) rund um die Mitte |
+| `center_cells` | 3 | Felder je Zentrumsfarbe in der Mitte |
 | `center_radius` | 2 | so weit von der Mitte liegen sie (auf kleinen Karten weniger) |
 | `foreign_build_bonus` | 1 | Fabrik auf fremder Farbe bekommt die eigene dazu: gleich Stufe 2 |
 | `upgrade_step` | 10 | je 10 Einheiten ab Kat 2 im Lager (aus mindestens Stufe+1 Typen) Stufe +1; 0 = aus |
 | `max_upgrades` | 2 | hoechstens so viele Stufen durch Ausbau |
-| `market_size` | 2 je Spieler (ab 5 Spielern 1) | Karten im Markt; 0 = ohne Karten |
+| `market_size` | 2 je Spieler (ab 5 Spielern 1) | Karten im Markt, jede Partie zufaellig gezogen; 0 = ohne Karten |
+| `card_target_near` | 0 | 1 = Figurenkarten nur fuer eine Figur auf oder neben dem Zahlfeld |
+
+Kat 1 wird also zur Mitte hin dichter: in jeder Ecke ein Feld der eigenen Farbe, im
+Zwischenring eins je Spieler, in der Mitte drei je Zentrumsfarbe.
 
 ## Karten (Version 1)
 

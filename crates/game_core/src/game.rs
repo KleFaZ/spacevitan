@@ -402,10 +402,13 @@ impl Game {
                 if card.needs_factory() && from == PaySource::King {
                     continue;
                 }
-                if self.payment(me, from, card).is_none() {
+                if !card.priced_by_range() && self.payment(me, from, card, None).is_none() {
                     continue;
                 }
                 for target in self.card_targets(me, card, from, at) {
+                    if card.priced_by_range() && self.payment(me, from, card, target).is_none() {
+                        continue;
+                    }
                     out.push(Action::BuyCard { card, from, target });
                 }
             }
@@ -413,8 +416,15 @@ impl Game {
         out
     }
 
-    /// Was `me` fuer `card` aus `from` bezahlen wuerde, oder `None`.
-    pub fn payment(&self, me: PlayerId, from: PaySource, card: Card) -> Option<Inventory> {
+    /// Was `me` fuer `card` aus `from` bezahlen wuerde, oder `None`. `target` zaehlt nur bei
+    /// Karten, deren Preis mit der Reichweite der Figur waechst (`Card::priced_by_range`).
+    pub fn payment(
+        &self,
+        me: PlayerId,
+        from: PaySource,
+        card: Card,
+        target: Option<PieceId>,
+    ) -> Option<Inventory> {
         let stock = match from {
             PaySource::King => &self.state.carried[me.idx()],
             PaySource::Factory(fid) => {
@@ -425,7 +435,18 @@ impl Game {
                 &f.storage
             }
         };
-        cards::plan_payment(&self.map, self.map.own_color(me), stock, &card.cost())
+        let range = target
+            .and_then(|t| self.state.pieces.get(&t))
+            .map_or(1, |p| match &p.kind {
+                PieceKind::Unit { range, .. } => *range,
+                PieceKind::King => 1,
+            });
+        cards::plan_payment(
+            &self.map,
+            self.map.own_color(me),
+            stock,
+            &card.cost_for(range),
+        )
     }
 
     /// Moegliche Ziele einer Karte, bezahlt an Feld `at`. `None` im Ergebnis = kein Ziel noetig.
@@ -579,14 +600,14 @@ impl Game {
                 }
             }
             Action::Pass => return IllegalReason::PassNotAllowed,
-            Action::BuyCard { card, from, .. } => {
+            Action::BuyCard { card, from, target } => {
                 if !self.state.market.contains(&card) {
                     return IllegalReason::CardNotInMarket;
                 }
                 if self.state.bought_this_turn {
                     return IllegalReason::AlreadyBoughtThisTurn;
                 }
-                if self.payment(me, from, card).is_none() {
+                if self.payment(me, from, card, target).is_none() {
                     return IllegalReason::CannotPayCard;
                 }
                 return IllegalReason::InvalidCardTarget;
@@ -733,7 +754,7 @@ impl Game {
         target: Option<PieceId>,
         events: &mut Vec<Event>,
     ) {
-        let paid = self.payment(actor, from, card).expect("bezahlbar");
+        let paid = self.payment(actor, from, card, target).expect("bezahlbar");
         let stock = match from {
             PaySource::King => &mut self.state.carried[actor.idx()],
             PaySource::Factory(fid) => {

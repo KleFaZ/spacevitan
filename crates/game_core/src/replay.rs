@@ -70,12 +70,13 @@ fn card_json(card: &Card) -> String {
         crate::cards::CardTarget::Unit => "unit",
     };
     format!(
-        r#"{{"key":{},"name":{},"text":{},"target":{},"set":{},"cost":{{"color":{},"foreign_color":{},"k2":{},"k2_kinds":{},"k3":{},"k3_kinds":{}}}}}"#,
+        r#"{{"key":{},"name":{},"text":{},"target":{},"set":{},"per_range":{},"cost":{{"color":{},"foreign_color":{},"k2":{},"k2_kinds":{},"k3":{},"k3_kinds":{}}}}}"#,
         esc(card.key()),
         esc(card.name()),
         esc(card.text()),
         esc(target),
         card.is_set_piece(),
+        card.priced_by_range(),
         c.color,
         c.foreign_color,
         c.k2,
