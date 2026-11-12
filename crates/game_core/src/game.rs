@@ -147,25 +147,14 @@ impl Game {
                         out.push(n);
                     }
                 }
-                // Koenigsschritt: auch zwei Felder geradeaus, wenn das erste frei ist.
-                if piece.perks.king_step {
-                    for dir in 0..board.dir_count() {
-                        let line = board.line(piece.cell, dir, 2);
-                        if line.len() == 2
-                            && self.state.piece_at(line[0]).is_none()
-                            && !self.own_piece_at(line[1], owner)
-                        {
-                            out.push(line[1]);
-                        }
-                    }
-                }
             }
             PieceKind::Unit {
                 level: 1, range, ..
             } => {
                 // Stufe 1: nur geradeaus, nicht ueber Figuren hinweg.
+                let range = *range + self.charge_bonus(owner);
                 for dir in 0..board.dir_count() {
-                    for cell in board.line(piece.cell, dir, *range as usize) {
+                    for cell in board.line(piece.cell, dir, range as usize) {
                         match self.state.piece_at(cell) {
                             None => out.push(cell),
                             Some(other) if other.owner != owner => {
@@ -179,6 +168,7 @@ impl Game {
             }
             PieceKind::Unit { range, .. } => {
                 // Ab Stufe 2: beliebige Wege bis `range` Schritte, nicht durch Figuren hindurch.
+                let range = &(*range + self.charge_bonus(owner));
                 let mut dist = vec![u32::MAX; board.len()];
                 let mut queue = VecDeque::new();
                 dist[piece.cell.idx()] = 0;
@@ -205,12 +195,44 @@ impl Game {
                 }
             }
         }
+        let enemy_at = |cell: CellId| self.state.piece_at(cell).is_some_and(|o| o.owner != owner);
+        if !piece.is_king() {
+            let pk = piece.perks;
+            for dir in 0..board.dir_count() {
+                let line = board.line(piece.cell, dir, 2);
+                if line.len() < 2 {
+                    continue;
+                }
+                // Lanze: schlaegt zwei Felder weit geradeaus, wenn das erste frei ist.
+                if pk.lance && self.state.piece_at(line[0]).is_none() && enemy_at(line[1]) {
+                    out.push(line[1]);
+                }
+                // Sprungfeder: ueber eine Nachbarfigur auf das Feld dahinter.
+                if pk.spring
+                    && self.state.piece_at(line[0]).is_some()
+                    && !self.own_piece_at(line[1], owner)
+                {
+                    out.push(line[1]);
+                }
+            }
+            // Pferd: jedes Feld im Abstand 2, ueber alles hinweg.
+            if pk.horse {
+                let near: Vec<CellId> = board.neighbors(piece.cell).collect();
+                for &n in &near {
+                    for m in board.neighbors(n) {
+                        if m != piece.cell && !near.contains(&m) && !self.own_piece_at(m, owner) {
+                            out.push(m);
+                        }
+                    }
+                }
+            }
+        }
         // Laeuferschlag: eine Figur schlaegt zusaetzlich diagonal (nur im Quadratgitter).
         if piece.perks.diagonal && !piece.is_king() && board.kind() == GridKind::Square {
             let (x, y) = board.coord(piece.cell);
             for (dx, dy) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
                 if let Some(cell) = board.cell_at(x + dx, y + dy) {
-                    if self.state.piece_at(cell).is_some_and(|o| o.owner != owner) {
+                    if enemy_at(cell) {
                         out.push(cell);
                     }
                 }
@@ -219,6 +241,11 @@ impl Game {
         out.sort();
         out.dedup();
         out
+    }
+
+    /// Sturmangriff: Reichweite +1 fuer die Figuren des Spielers am Zug, nur in diesem Zug.
+    fn charge_bonus(&self, owner: PlayerId) -> u8 {
+        (self.state.charge && owner == self.state.current) as u8
     }
 
     /// Alle Felder, auf die Figuren anderer Spieler im naechsten Zug ziehen oder schlagen koennten.
@@ -411,7 +438,9 @@ impl Game {
         at: CellId,
     ) -> Vec<Option<PieceId>> {
         let board = &self.map.board;
-        let near = |cell: CellId| cell == at || board.neighbors(at).any(|n| n == cell);
+        let only_near = self.config.card_target_near;
+        let near =
+            |cell: CellId| !only_near || cell == at || board.neighbors(at).any(|n| n == cell);
         let cap = self.config.corner_count() as u8;
         let perks = self.state.player_perks[me.idx()];
         let units = || {
@@ -425,7 +454,9 @@ impl Game {
                     Card::Training => level < cap,
                     Card::LongLegs => pk.extra_range < MAX_EXTRA_RANGE,
                     Card::DiagonalStrike => !pk.diagonal,
-                    Card::Shield => !pk.shield,
+                    Card::Lance => !pk.lance,
+                    Card::Spring => !pk.spring,
+                    Card::Horse => !pk.horse,
                     Card::Runestone => level < cap,
                     _ => false,
                 };
@@ -438,25 +469,13 @@ impl Game {
                     .map(|(id, _, _)| Some(id))
                     .collect()
             }
-            CardTarget::King => match self.king(me) {
-                Some(k)
-                    if near(k.cell)
-                        && match card {
-                            Card::KingArmor => !k.perks.shield,
-                            Card::KingStep => !k.perks.king_step,
-                            _ => false,
-                        } =>
-                {
-                    vec![Some(k.id)]
-                }
-                _ => Vec::new(),
-            },
             CardTarget::Player => {
                 let ok = match card {
                     Card::Mining => !perks.mining,
                     Card::Farming => !perks.farming,
                     Card::DoubleShift => self.factories_of(me).next().is_some(),
                     Card::DoubleMove => true,
+                    Card::Charge => !self.state.charge && self.pieces_of(me).any(|p| !p.is_king()),
                     Card::Recruit => match from {
                         PaySource::Factory(fid) => self.recruit_cell(fid).is_some(),
                         PaySource::King => false,
@@ -631,25 +650,6 @@ impl Game {
     fn do_move(&mut self, actor: PlayerId, id: PieceId, to: CellId, events: &mut Vec<Event>) {
         let from = self.state.pieces[&id].cell;
 
-        // Schild oder Koenigsruestung: der Schlag prallt ab, der Angreifer bleibt stehen.
-        if let Some(victim_id) = self.state.occupant[to.idx()] {
-            let victim = self
-                .state
-                .pieces
-                .get_mut(&victim_id)
-                .expect("Opfer existiert");
-            if victim.perks.shield {
-                victim.perks.shield = false;
-                events.push(Event::ShieldBlocked {
-                    piece: victim_id,
-                    owner: victim.owner,
-                    at: to,
-                    by: actor,
-                });
-                return;
-            }
-        }
-
         if let Some(victim_id) = self.state.occupant[to.idx()] {
             let victim = self.state.remove_piece(victim_id).expect("Opfer existiert");
             events.push(Event::Captured {
@@ -781,8 +781,10 @@ impl Game {
                 piece.perks.extra_range += 1;
             }
             Card::DiagonalStrike => self.target_mut(target).perks.diagonal = true,
-            Card::Shield | Card::KingArmor => self.target_mut(target).perks.shield = true,
-            Card::KingStep => self.target_mut(target).perks.king_step = true,
+            Card::Lance => self.target_mut(target).perks.lance = true,
+            Card::Spring => self.target_mut(target).perks.spring = true,
+            Card::Horse => self.target_mut(target).perks.horse = true,
+            Card::Charge => self.state.charge = true,
             Card::Mining => self.state.player_perks[actor.idx()].mining = true,
             Card::Farming => self.state.player_perks[actor.idx()].farming = true,
             Card::DoubleMove => self.state.extra_actions += 1,
@@ -983,6 +985,7 @@ impl Game {
     fn advance_turn(&mut self, events: &mut Vec<Event>) {
         self.state.bought_this_turn = false;
         self.state.extra_actions = 0;
+        self.state.charge = false;
         let n = self.config.players as usize;
         let mut i = self.state.current.idx();
         loop {
@@ -1123,7 +1126,7 @@ impl Game {
                 {
                     return Err(format!("{:?}: Farben passen nicht zur Stufe", piece.id));
                 }
-            } else if piece.perks.diagonal || piece.perks.extra_range > 0 {
+            } else if piece.perks.any() {
                 return Err(format!("{:?}: Koenig mit Figurenkarte", piece.id));
             }
         }

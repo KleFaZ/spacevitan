@@ -19,6 +19,7 @@
 use crate::action::Action;
 use crate::board::Board;
 use crate::bot::Bot;
+use crate::cards::Card;
 use crate::game::Game;
 use crate::ids::{CellId, PlayerId, ResourceId};
 use crate::rng::Rng;
@@ -114,13 +115,13 @@ pub struct Weights {
     pub trap: i32,
     /// Eigener Koenig naeher an einem gegnerischen Koenig, der keine Figuren mehr hat.
     pub king_hunt: i32,
-    /// Karten: Schild in Prozent des Figurenwerts (plus fester Anteil).
-    pub shield_share: i32,
+    /// Kartenfaehigkeiten einer Figur.
     pub diagonal: i32,
     /// Je Feld zusaetzlicher Reichweite durch Karten.
     pub extra_range: i32,
-    pub king_armor: i32,
-    pub king_step: i32,
+    pub lance: i32,
+    pub spring: i32,
+    pub horse: i32,
     /// Bergbau oder Ackerbau.
     pub harvest_perk: i32,
     /// Je gesammeltem Teil eines Sets.
@@ -161,11 +162,11 @@ impl Weights {
                 "trap" => &mut self.trap,
                 "king_hunt" => &mut self.king_hunt,
                 "focus" => &mut self.focus,
-                "shield_share" => &mut self.shield_share,
                 "diagonal" => &mut self.diagonal,
                 "extra_range" => &mut self.extra_range,
-                "king_armor" => &mut self.king_armor,
-                "king_step" => &mut self.king_step,
+                "lance" => &mut self.lance,
+                "spring" => &mut self.spring,
+                "horse" => &mut self.horse,
                 "harvest_perk" => &mut self.harvest_perk,
                 "set_piece" => &mut self.set_piece,
                 "extra_action" => &mut self.extra_action,
@@ -200,11 +201,11 @@ impl Weights {
         trap: 25,
         king_hunt: 6,
         focus: 0,
-        shield_share: 30,
         diagonal: 20,
         extra_range: 35,
-        king_armor: 150,
-        king_step: 40,
+        lance: 30,
+        spring: 25,
+        horse: 60,
         harvest_perk: 50,
         set_piece: 50,
         extra_action: 60,
@@ -270,6 +271,8 @@ pub struct SearchBot {
     rng: Rng,
     root: PlayerId,
     nodes: u64,
+    /// Knotenlimit der laufenden Suche (Budget oder Teilbudget beim Pruefen von Kaeufen).
+    limit: u64,
     aborted: bool,
     killers: Vec<[Option<Action>; 2]>,
     dist: DistCache,
@@ -277,6 +280,7 @@ pub struct SearchBot {
     cat1: Vec<(CellId, ResourceId)>,
     /// Groesste Nachbarzahl der Karte (0 = noch nicht bestimmt).
     max_degree: u32,
+    name: &'static str,
     stats: SearchStats,
 }
 
@@ -292,11 +296,13 @@ impl SearchBot {
             rng: Rng::new(seed),
             root: PlayerId(0),
             nodes: 0,
+            limit: 0,
             aborted: false,
             killers: Vec::new(),
             dist: DistCache::new(),
             cat1: Vec::new(),
             max_degree: 0,
+            name: "stark",
             stats: SearchStats::default(),
         }
     }
@@ -304,6 +310,19 @@ impl SearchBot {
     pub fn with_weights(mut self, weights: Weights) -> SearchBot {
         self.weights = weights;
         self
+    }
+
+    /// Anderer Name, z. B. fuer Vergleiche in der Statistik.
+    pub fn with_name(mut self, name: &'static str) -> SearchBot {
+        self.name = name;
+        self
+    }
+
+    /// Variante, die nie Karten kauft (Vergleichsgegner fuer die Kartenwert-Messung).
+    pub fn without_cards(self) -> SearchBot {
+        let mut w = self.weights;
+        w.buy_margin = WIN;
+        self.with_weights(w).with_name("stark-pur")
     }
 
     pub fn last_stats(&self) -> SearchStats {
@@ -335,6 +354,7 @@ impl SearchBot {
         self.root = game.current_player();
         self.prepare(game);
         self.nodes = 0;
+        self.limit = self.params.node_budget;
         self.aborted = false;
         self.killers.clear();
 
@@ -342,26 +362,45 @@ impl SearchBot {
             .legal_actions()
             .into_iter()
             .partition(|a| matches!(a, Action::BuyCard { .. }));
-        // Kartenkauf zuerst: lohnt er sich nach der Bewertung, wird gekauft; den eigentlichen
-        // Zug sucht der Bot danach (er bleibt am Zug).
-        if let Some(b) = self.pick_buy(game, &buys) {
-            return b;
-        }
         if moves.is_empty() {
             moves.push(Action::Pass);
         }
         // Gleich gute Zuege in zufaelliger, aber durch den Seed festgelegter Reihenfolge.
         self.rng.shuffle(&mut moves);
+        // Kartenkauf zuerst: lohnt er sich (kurze Vorausrechnung mit und ohne Kauf), wird
+        // gekauft; den eigentlichen Zug sucht der Bot danach (er bleibt am Zug).
+        if let Some(b) = self.pick_buy(game, &buys) {
+            return b;
+        }
+        self.limit = self.params.node_budget;
+        self.aborted = false;
+        let (best, best_score, depth_done) = self.root_search(game, moves, self.params.max_depth);
+        self.stats = SearchStats {
+            nodes: self.nodes,
+            depth: depth_done,
+            score: best_score,
+        };
+        best
+    }
+
+    /// Iterative Vertiefung ueber die Zuege `moves` des Bots bis `max_depth` oder bis das
+    /// Knotenlimit erreicht ist. Ergebnis: bester Zug, seine Bewertung, erreichte Tiefe.
+    fn root_search(
+        &mut self,
+        game: &Game,
+        moves: Vec<Action>,
+        max_depth: u32,
+    ) -> (Action, i32, u32) {
         let mut moves = self.ordered(game, self.root, moves, 0);
         let mut best = moves[0];
         let mut best_score = -INF;
         let mut depth_done = 0;
-
-        for depth in 1..=self.params.max_depth {
+        for depth in 1..=max_depth {
             let mut alpha = -INF;
             let mut iter_best: Option<(Action, i32)> = None;
             for &a in &moves {
                 let mut child = game.clone();
+                child.state.current = self.root;
                 child.apply_unchecked(a);
                 debug_check(&child);
                 let v = self.after_own_move(&child, depth - 1, alpha, INF, 1, MAX_EXTENSIONS);
@@ -388,13 +427,7 @@ impl SearchBot {
                 break;
             }
         }
-
-        self.stats = SearchStats {
-            nodes: self.nodes,
-            depth: depth_done,
-            score: best_score,
-        };
-        best
+        (best, best_score, depth_done)
     }
 
     /// Nach einem eigenen Zug: ist der Bot noch am Zug (Doppelzug), folgt sein naechster Zug,
@@ -415,27 +448,67 @@ impl SearchBot {
         }
     }
 
-    /// Bester Kartenkauf nach der Bewertung, wenn er sie um mindestens `buy_margin` verbessert.
+    /// Bester Kartenkauf, wenn er sich lohnt. Erst nach der Bewertung vorsortiert, dann fuer
+    /// die besten Kandidaten eine kurze Vorausrechnung (eigener Zug, beste Antwort) mit und ohne
+    /// Kauf: so zaehlen auch Karten, die sofort einen Schlag moeglich machen (Sturmangriff,
+    /// Doppelzug, Lanze). Kauft nur, wenn es mindestens `buy_margin` bringt.
     fn pick_buy(&mut self, game: &Game, buys: &[Action]) -> Option<Action> {
         if buys.is_empty() {
             return None;
         }
         let base = self.evaluate(game);
+        let mut ranked: Vec<(i32, Action)> = buys
+            .iter()
+            .map(|&b| {
+                let mut child = game.clone();
+                child.apply_unchecked(b);
+                debug_check(&child);
+                (self.evaluate(&child) - base, b)
+            })
+            .collect();
+        ranked.sort_by_key(|&(gain, _)| std::cmp::Reverse(gain));
+        // Sofortwirkungen brauchen die Vorausrechnung, sonst sieht die Bewertung nichts.
+        let tactical = |a: &Action| {
+            matches!(
+                a,
+                Action::BuyCard {
+                    card: Card::Charge | Card::DoubleMove,
+                    ..
+                }
+            )
+        };
+        let mut candidates: Vec<(i32, Action)> = ranked.iter().take(4).copied().collect();
+        for &(g, a) in &ranked {
+            if tactical(&a) && !candidates.iter().any(|&(_, c)| c == a) && candidates.len() < 6 {
+                candidates.push((g, a));
+            }
+        }
+        // Ein Drittel des Budgets fuer die Kaufentscheidung, gleich verteilt.
+        let share = (self.params.node_budget / 3 / (candidates.len() as u64 + 1)).max(50);
+        let probe_depth = 2;
+        let moves: Vec<Action> = game
+            .legal_actions()
+            .into_iter()
+            .filter(|a| !matches!(a, Action::BuyCard { .. }))
+            .collect();
+        let without = self.probe(game, moves, probe_depth, share);
         let mut best: Option<(i32, Action)> = None;
-        for &b in buys {
+        for (_, b) in candidates {
             let mut child = game.clone();
             child.apply_unchecked(b);
-            debug_check(&child);
-            let gain = self.evaluate(&child) - base;
+            let moves = child.legal_actions();
+            let with = self.probe(&child, moves, probe_depth, share);
+            let gain = with - without;
             if best.is_none_or(|(g, _)| gain > g) {
                 best = Some((gain, b));
             }
         }
+        self.aborted = false;
         let (gain, action) = best?;
         if gain >= self.weights.buy_margin {
             self.stats = SearchStats {
-                nodes: buys.len() as u64,
-                depth: 0,
+                nodes: self.nodes,
+                depth: probe_depth,
                 score: gain,
             };
             Some(action)
@@ -444,9 +517,25 @@ impl SearchBot {
         }
     }
 
+    /// Kurze Suche mit eigenem Knotenlimit; Ergebnis ist die Bewertung des besten Zugs.
+    fn probe(&mut self, game: &Game, moves: Vec<Action>, depth: u32, budget: u64) -> i32 {
+        if game.state.outcome.is_some() || moves.is_empty() {
+            return self.evaluate(game);
+        }
+        self.limit = self.nodes + budget;
+        self.aborted = false;
+        let (_, score, done) = self.root_search(game, moves, depth);
+        self.aborted = false;
+        if done == 0 {
+            self.evaluate(game)
+        } else {
+            score
+        }
+    }
+
     fn tick(&mut self) -> bool {
         self.nodes += 1;
-        if self.nodes > self.params.node_budget {
+        if self.nodes > self.limit {
             self.aborted = true;
         }
         self.aborted
@@ -910,17 +999,13 @@ impl SearchBot {
         for piece in st.pieces.values() {
             if piece.owner == p {
                 let pk = piece.perks;
-                if piece.is_king() {
-                    v += if pk.shield { w.king_armor } else { 0 };
-                    v += if pk.king_step { w.king_step } else { 0 };
-                }
                 if let PieceKind::Unit { level, .. } = piece.kind {
                     let level = level as i32;
                     v += unit_value(level as usize);
-                    if pk.shield {
-                        v += unit_value(level as usize) * w.shield_share / 100 + 15;
-                    }
                     v += if pk.diagonal { w.diagonal } else { 0 };
+                    v += if pk.lance { w.lance } else { 0 };
+                    v += if pk.spring { w.spring } else { 0 };
+                    v += if pk.horse { w.horse } else { 0 };
                     v += w.extra_range * pk.extra_range as i32;
                     let mut d = radius;
                     if w.focus != 0 {
@@ -1116,7 +1201,7 @@ impl SearchBot {
 
 impl Bot for SearchBot {
     fn name(&self) -> &'static str {
-        "stark"
+        self.name
     }
 
     fn choose(&mut self, game: &Game) -> Action {

@@ -80,10 +80,10 @@ fn rich_factory(g: &mut Game, x: i32, y: i32) -> FactoryId {
     let f = g.setup_factory(P0, c(g, x, y));
     g.setup_storage(f, cat1(0), 2);
     for k in 0..2 {
-        g.setup_storage(f, cat2(0, k), 3);
+        g.setup_storage(f, cat2(0, k), 6);
     }
     for k in 0..3 {
-        g.setup_storage(f, cat3(0, k), 3);
+        g.setup_storage(f, cat3(0, k), 6);
     }
     f
 }
@@ -126,14 +126,14 @@ fn without_a_market_there_is_nothing_to_buy() {
 
 #[test]
 fn buying_is_extra_to_the_action_and_only_once_per_turn() {
-    let mut g = blank(&[Card::Shield, Card::DoubleShift]);
+    let mut g = blank(&[Card::Lance, Card::DoubleShift]);
     let f = rich_factory(&mut g, 2, 2);
     let u = g.setup_unit(P0, c(&g, 2, 3), 1, 1);
-    let events = act!(g, buy(Card::Shield, PaySource::Factory(f), Some(u)));
+    let events = act!(g, buy(Card::Lance, PaySource::Factory(f), Some(u)));
     assert!(matches!(
         events[0],
         Event::CardBought {
-            card: Card::Shield,
+            card: Card::Lance,
             ..
         }
     ));
@@ -151,40 +151,39 @@ fn buying_is_extra_to_the_action_and_only_once_per_turn() {
 
 #[test]
 fn payment_comes_from_one_place_only() {
-    let mut g = blank(&[Card::Shield]);
+    let mut g = blank(&[Card::Charge]);
     let f = g.setup_factory(P0, c(&g, 2, 2));
-    g.setup_storage(f, cat3(0, 0), 1);
+    g.setup_storage(f, cat3(0, 0), 2);
     g.setup_carry(P0, cat3(0, 1), 1);
-    let king = king_id(&g, P0);
-    g.setup_teleport(king, c(&g, 2, 3));
-    let u = g.setup_unit(P0, c(&g, 2, 4), 1, 1);
+    g.setup_unit(P0, c(&g, 5, 5), 1, 1);
     assert!(
         g.buy_actions(P0).is_empty(),
-        "je eine Einheit an zwei Orten reicht nicht"
+        "Sturmangriff kostet 3x Kat 3 aus 2 Typen; getrennt reicht es nirgends"
     );
     assert_eq!(
-        g.apply(buy(Card::Shield, PaySource::Factory(f), Some(u))),
+        g.apply(buy(Card::Charge, PaySource::Factory(f), None)),
         Err(RuleError::Illegal(IllegalReason::CannotPayCard))
     );
-    g.setup_carry(P0, cat3(0, 1), 1);
-    let events = act!(g, buy(Card::Shield, PaySource::King, Some(u)));
-    assert!(
-        g.state.carried[P0.idx()].is_empty(),
+    g.setup_carry(P0, cat3(0, 2), 2);
+    let events = act!(g, buy(Card::Charge, PaySource::King, None));
+    assert_eq!(
+        g.state.carried[P0.idx()].total(),
+        0,
         "bezahlt aus dem Gepaeck"
     );
-    assert_eq!(g.state.ledger.spent_on_cards, 2);
+    assert_eq!(
+        g.state.factories[&f].storage.get(cat3(0, 0)),
+        2,
+        "die Fabrik bleibt voll"
+    );
+    assert_eq!(g.state.ledger.spent_on_cards, 3);
     assert!(events
         .iter()
-        .any(|e| matches!(e, Event::CardBought { paid, .. } if paid.total() == 2)));
+        .any(|e| matches!(e, Event::CardBought { paid, .. } if paid.total() == 3)));
 }
 
-#[test]
-fn a_figure_card_needs_the_figure_at_the_paying_field() {
-    let mut g = blank(&[Card::Training]);
-    let f = rich_factory(&mut g, 2, 2);
-    let near = g.setup_unit(P0, c(&g, 3, 2), 1, 1);
-    let far = g.setup_unit(P0, c(&g, 6, 6), 1, 1);
-    let targets: Vec<Option<PieceId>> = g
+fn targets_from(g: &Game, f: FactoryId) -> Vec<Option<PieceId>> {
+    let mut t: Vec<Option<PieceId>> = g
         .buy_actions(P0)
         .into_iter()
         .filter_map(|a| match a {
@@ -192,7 +191,30 @@ fn a_figure_card_needs_the_figure_at_the_paying_field() {
             _ => None,
         })
         .collect();
-    assert_eq!(targets, vec![Some(near)]);
+    t.sort();
+    t
+}
+
+#[test]
+fn any_own_figure_can_be_upgraded_by_default() {
+    let mut g = blank(&[Card::Training]);
+    let f = rich_factory(&mut g, 2, 2);
+    let near = g.setup_unit(P0, c(&g, 3, 2), 1, 1);
+    let far = g.setup_unit(P0, c(&g, 6, 6), 1, 1);
+    assert_eq!(targets_from(&g, f), vec![Some(near), Some(far)]);
+    act!(g, buy(Card::Training, PaySource::Factory(f), Some(far)));
+    assert_eq!(level_range(&g, far), (2, 2));
+}
+
+#[test]
+fn optionally_a_figure_card_needs_the_figure_at_the_paying_field() {
+    let mut config = Config::new(2, 1);
+    config.card_target_near = true;
+    let mut g = blank_with(config, &[Card::Training]);
+    let f = rich_factory(&mut g, 2, 2);
+    let near = g.setup_unit(P0, c(&g, 3, 2), 1, 1);
+    let far = g.setup_unit(P0, c(&g, 6, 6), 1, 1);
+    assert_eq!(targets_from(&g, f), vec![Some(near)]);
     assert_eq!(
         g.apply(buy(Card::Training, PaySource::Factory(f), Some(far))),
         Err(RuleError::Illegal(IllegalReason::InvalidCardTarget))
@@ -286,74 +308,103 @@ fn the_diagonal_strike_captures_diagonally_but_does_not_move_there() {
 #[test]
 fn the_diagonal_strike_is_never_offered_on_hex_boards() {
     let mut config = Config::new(6, 1);
-    config.market_size = 13;
+    config.market_size = 14;
     let g = Game::new(config).unwrap();
     assert!(!g.state.market.contains(&Card::DiagonalStrike));
-    assert_eq!(g.state.market.len(), 12);
+    assert_eq!(g.state.market.len(), 13);
 }
 
+// ----- Angriffskarten -----------------------------------------------------------------------
+
 #[test]
-fn a_shield_stops_one_capture_and_is_used_up() {
-    let mut g = blank(&[Card::Shield]);
+fn the_lance_strikes_two_fields_straight_over_an_empty_field() {
+    let mut g = blank(&[Card::Lance]);
     let f = rich_factory(&mut g, 2, 2);
     let u = g.setup_unit(P0, c(&g, 2, 3), 1, 1);
-    let attacker = g.setup_unit(P1, c(&g, 2, 5), 2, 2);
-    act!(g, buy(Card::Shield, PaySource::Factory(f), Some(u)));
-    act!(g, mv(king_id(&g, P0), c(&g, 1, 0)));
-    let events = act!(g, mv(attacker, c(&g, 2, 3)));
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, Event::ShieldBlocked { piece, .. } if *piece == u)));
-    assert_eq!(g.state.pieces[&u].cell, c(&g, 2, 3), "Figur steht noch");
-    assert_eq!(
-        g.state.pieces[&attacker].cell,
-        c(&g, 2, 5),
-        "Angreifer bleibt stehen"
-    );
-    assert!(!g.state.pieces[&u].perks.shield);
-    act!(g, mv(king_id(&g, P0), c(&g, 0, 0)));
-    act!(g, mv(attacker, c(&g, 2, 3)));
-    assert!(!g.state.pieces.contains_key(&u), "der zweite Schlag trifft");
-}
-
-// ----- Koenigskarten ------------------------------------------------------------------------
-
-#[test]
-fn king_armor_saves_the_king_once() {
-    let mut g = blank(&[Card::KingArmor]);
-    g.setup_carry(P0, cat1(0), 1);
-    g.setup_carry(P0, cat2(0, 0), 2);
-    g.setup_carry(P0, cat3(0, 0), 2);
-    let king = king_id(&g, P0);
-    act!(g, buy(Card::KingArmor, PaySource::King, Some(king)));
-    let hunter = g.setup_unit(P1, c(&g, 1, 2), 2, 2);
-    act!(g, mv(king, c(&g, 1, 0)));
-    let events = act!(g, mv(hunter, c(&g, 1, 0)));
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, Event::ShieldBlocked { .. })));
-    assert!(g.state.alive[P0.idx()], "A lebt noch");
-    assert_eq!(g.outcome(), None);
-}
-
-#[test]
-fn king_step_lets_the_king_move_two_fields_straight() {
-    let mut g = blank(&[Card::KingStep]);
-    g.setup_carry(P0, cat2(0, 0), 1);
-    g.setup_carry(P0, cat2(0, 1), 1);
-    g.setup_carry(P0, cat2(1, 0), 1);
-    g.setup_carry(P0, cat3(0, 0), 1);
-    let king = king_id(&g, P0);
-    assert!(!g.piece_destinations(king).contains(&c(&g, 2, 0)));
-    act!(g, buy(Card::KingStep, PaySource::King, Some(king)));
-    let dest = g.piece_destinations(king);
-    assert!(dest.contains(&c(&g, 2, 0)) && dest.contains(&c(&g, 0, 2)));
-    assert!(!dest.contains(&c(&g, 1, 1)), "nicht diagonal");
-    g.setup_unit(P1, c(&g, 1, 0), 1, 1);
+    g.setup_unit(P1, c(&g, 2, 5), 1, 1);
+    assert!(!g.piece_destinations(u).contains(&c(&g, 2, 5)));
+    act!(g, buy(Card::Lance, PaySource::Factory(f), Some(u)));
+    let dest = g.piece_destinations(u);
+    assert!(dest.contains(&c(&g, 2, 5)), "schlaegt zwei weit");
+    assert!(!dest.contains(&c(&g, 2, 6)), "zieht aber nicht weiter");
+    g.setup_unit(P0, c(&g, 2, 4), 1, 1);
     assert!(
-        !g.piece_destinations(king).contains(&c(&g, 2, 0)),
+        !g.piece_destinations(u).contains(&c(&g, 2, 5)),
         "nicht ueber eine Figur hinweg"
     );
+}
+
+#[test]
+fn the_spring_jumps_over_a_neighbouring_figure() {
+    let mut g = blank(&[Card::Spring]);
+    let f = rich_factory(&mut g, 2, 2);
+    let u = g.setup_unit(P0, c(&g, 2, 3), 1, 1);
+    g.setup_unit(P0, c(&g, 2, 4), 1, 1);
+    g.setup_unit(P1, c(&g, 3, 3), 1, 1);
+    g.setup_unit(P1, c(&g, 4, 3), 1, 1);
+    act!(g, buy(Card::Spring, PaySource::Factory(f), Some(u)));
+    let dest = g.piece_destinations(u);
+    assert!(
+        dest.contains(&c(&g, 2, 5)),
+        "ueber die eigene Figur auf ein freies Feld"
+    );
+    assert!(
+        dest.contains(&c(&g, 4, 3)),
+        "ueber einen Gegner hinweg schlagen"
+    );
+    assert!(dest.contains(&c(&g, 3, 3)), "den Nachbarn normal schlagen");
+}
+
+#[test]
+fn the_horse_jumps_to_every_field_two_steps_away() {
+    let mut g = blank(&[Card::Horse]);
+    let f = rich_factory(&mut g, 2, 2);
+    let u = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    for (x, y) in [(5, 4), (5, 6), (4, 5), (6, 5)] {
+        g.setup_unit(P1, c(&g, x, y), 1, 1);
+    }
+    act!(g, buy(Card::Horse, PaySource::Factory(f), Some(u)));
+    let dest = g.piece_destinations(u);
+    for (x, y) in [
+        (5, 3),
+        (5, 7),
+        (3, 5),
+        (7, 5),
+        (4, 4),
+        (6, 6),
+        (4, 6),
+        (6, 4),
+    ] {
+        assert!(
+            dest.contains(&c(&g, x, y)),
+            "({x},{y}) im Abstand 2, ueber alles hinweg"
+        );
+    }
+    assert!(!dest.contains(&c(&g, 7, 7)), "Abstand 4 nicht");
+}
+
+#[test]
+fn a_charge_gives_all_own_figures_one_more_field_for_this_turn() {
+    let mut g = blank(&[Card::Charge]);
+    let f = rich_factory(&mut g, 2, 2);
+    let a = g.setup_unit(P0, c(&g, 2, 4), 1, 1);
+    let b = g.setup_unit(P0, c(&g, 6, 6), 2, 2);
+    let enemy = g.setup_unit(P1, c(&g, 7, 2), 1, 1);
+    let before_b = g.piece_destinations(b).len();
+    act!(g, buy(Card::Charge, PaySource::Factory(f), None));
+    assert!(
+        g.piece_destinations(a).contains(&c(&g, 2, 6)),
+        "Bauer zieht zwei weit"
+    );
+    assert!(
+        g.piece_destinations(b).len() > before_b,
+        "auch die Stufe-2-Figur"
+    );
+    assert_eq!(g.piece_destinations(enemy).len(), 4, "Gegner unveraendert");
+    act!(g, mv(a, c(&g, 2, 6)));
+    assert!(!g.state.charge, "nur in diesem Zug");
+    act!(g, mv(king_id(&g, P1), c(&g, 8, 9)));
+    assert!(!g.piece_destinations(a).contains(&c(&g, 2, 8)));
 }
 
 // ----- Wirtschaftskarten --------------------------------------------------------------------
@@ -475,7 +526,7 @@ fn three_runestones_give_a_figure_two_levels() {
 #[test]
 fn three_star_shards_create_a_new_building_site_under_the_king() {
     let mut g = blank(&[Card::Starshard]);
-    g.setup_carry(P0, cat2(0, 0), 3);
+    g.setup_carry(P0, cat2(0, 0), 6);
     g.setup_carry(P0, cat3(0, 0), 6);
     let king = king_id(&g, P0);
     g.setup_teleport(king, c(&g, 4, 4));

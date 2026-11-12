@@ -68,10 +68,9 @@ fn card_json(card: &Card) -> String {
     let target = match card.target() {
         crate::cards::CardTarget::Player => "player",
         crate::cards::CardTarget::Unit => "unit",
-        crate::cards::CardTarget::King => "king",
     };
     format!(
-        r#"{{"key":{},"name":{},"text":{},"target":{},"set":{},"cost":{{"color":{},"foreign_color":{},"k2":{},"k2_distinct":{},"k3":{},"k3_distinct":{}}}}}"#,
+        r#"{{"key":{},"name":{},"text":{},"target":{},"set":{},"cost":{{"color":{},"foreign_color":{},"k2":{},"k2_kinds":{},"k3":{},"k3_kinds":{}}}}}"#,
         esc(card.key()),
         esc(card.name()),
         esc(card.text()),
@@ -80,9 +79,9 @@ fn card_json(card: &Card) -> String {
         c.color,
         c.foreign_color,
         c.k2,
-        c.k2_distinct,
+        c.k2_kinds,
         c.k3,
-        c.k3_distinct
+        c.k3_kinds
     )
 }
 
@@ -212,15 +211,6 @@ pub fn event_json(event: &Event) -> String {
             opt_piece(target),
             inv_json(paid)
         ),
-        Event::ShieldBlocked {
-            piece,
-            owner,
-            at,
-            by,
-        } => format!(
-            r#"{{"type":"shield_blocked","piece":{},"owner":{},"at":{},"by":{}}}"#,
-            piece.0, owner.0, at.0, by.0
-        ),
         Event::Recruited {
             piece,
             owner,
@@ -242,8 +232,8 @@ pub fn state_json(game: &Game) -> String {
     let st = &game.state;
     let perks = |pk: &crate::state::Perks| {
         format!(
-            r#""perks":{{"shield":{},"diagonal":{},"extra_range":{},"card_levels":{},"king_step":{}}}"#,
-            pk.shield, pk.diagonal, pk.extra_range, pk.card_levels, pk.king_step
+            r#""perks":{{"diagonal":{},"extra_range":{},"card_levels":{},"lance":{},"spring":{},"horse":{}}}"#,
+            pk.diagonal, pk.extra_range, pk.card_levels, pk.lance, pk.spring, pk.horse
         )
     };
     let pieces = list(st.pieces.values(), |p| match &p.kind {
@@ -296,7 +286,7 @@ pub fn state_json(game: &Game) -> String {
         format!(r#"{{"cell":{},"items":{}}}"#, cell.0, inv_json(inv))
     });
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"extra_deposits":{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"charge":{},"extra_deposits":{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
@@ -312,6 +302,7 @@ pub fn state_json(game: &Game) -> String {
         player_perks,
         st.bought_this_turn,
         st.extra_actions,
+        st.charge,
         list(st.extra_deposits.iter(), |(c, rs)| format!(
             "[{},{}]",
             c.0,
@@ -514,7 +505,7 @@ mod tests {
         let start0 = game.map.start_cell(PlayerId(0)).0;
         let start1 = game.map.start_cell(PlayerId(1)).0;
         assert!(json.contains(&format!(
-            r#"{{"id":0,"owner":0,"cell":{start0},"king":true,"perks":{{"shield":false"#
+            r#"{{"id":0,"owner":0,"cell":{start0},"king":true,"perks":{{"diagonal":false"#
         )));
         assert!(json.contains(&format!(
             r#"{{"id":1,"owner":1,"cell":{start1},"king":true,"perks":"#

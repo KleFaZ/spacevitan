@@ -3,6 +3,7 @@
 use game_core::action::{Action, Event};
 use game_core::ai::{SearchBot, SearchParams, Weights};
 use game_core::bot::{play_out, Bot, GreedyBot, RandomBot};
+use game_core::cards::Card;
 use game_core::config::Config;
 use game_core::game::Game;
 use game_core::ids::PlayerId;
@@ -29,10 +30,12 @@ Optionen:
   --rounds N     Unentschieden nach N Runden (Standard 300)
   --stock N      Vorrat je Rohstoffvorkommen in Einheiten (Standard 0 = unerschoepflich)
   --kat1 N       Felder je Kat-1-Typ, also Bauplaetze fuer Fabriken je Ecke (Standard 2)
+  --cards LISTE  Markt fest vorgeben, z. B. training,lance (leer = ohne Karten)
   --rule LISTE   weitere Regeln, z. B. upgrade_step=6,foreign_build_bonus=0
                  (cat1_distance, center_colors, center_radius, foreign_build_bonus,
                  upgrade_step, max_upgrades, min_factory_distance)
-  --bots LISTE   pro Spieler: stark, gierig oder zufall, z. B. stark,gierig
+  --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
+                 z. B. stark,gierig
                  (Standard: gierig)
   --nodes N      Rechenbudget von \"stark\": Stellungen pro Zug (Standard 20000)
   --show         Partie Runde fuer Runde anzeigen
@@ -51,6 +54,7 @@ struct Options {
     stock: u32,
     kat1: u32,
     rules: String,
+    cards: Option<Vec<Card>>,
     bots: Vec<String>,
     nodes: u64,
     show: bool,
@@ -67,6 +71,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
         stock: 0,
         kat1: 0,
         rules: String::new(),
+        cards: None,
         bots: Vec::new(),
         nodes: SearchParams::DEFAULT.node_budget,
         show: false,
@@ -108,6 +113,17 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
             }
             "--kat1" => {
                 o.kat1 = number(value(i)?, "--kat1")? as u32;
+                i += 1;
+            }
+            "--cards" => {
+                let list = value(i)?;
+                let mut cards = Vec::new();
+                for key in list.split(',').map(str::trim).filter(|k| !k.is_empty()) {
+                    cards.push(
+                        Card::from_key(key).ok_or_else(|| format!("unbekannte Karte '{key}'"))?,
+                    );
+                }
+                o.cards = Some(cards);
                 i += 1;
             }
             "--rule" | "--rules" => {
@@ -170,6 +186,11 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                     };
                     let bot = SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes))
                         .with_weights(weights);
+                    Ok(Box::new(bot) as Box<dyn Bot>)
+                }
+                "stark-pur" => {
+                    let bot = SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes))
+                        .without_cards();
                     Ok(Box::new(bot) as Box<dyn Bot>)
                 }
                 "gierig" | "greedy" => Ok(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
@@ -259,6 +280,9 @@ fn run() -> Result<(), String> {
         }
         config.set_all(&o.rules)?;
         let mut game = Game::new(config).map_err(|e| e.to_string())?;
+        if let Some(cards) = &o.cards {
+            game.state.market = cards.clone();
+        }
         let mut bots: Vec<Box<dyn Bot>> = make_bots(&o, seed)?
             .into_iter()
             .map(|b| {

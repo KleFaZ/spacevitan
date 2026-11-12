@@ -1,16 +1,22 @@
-//! Kartenmarkt (Version 1): welche Karten es gibt, was sie kosten, wie bezahlt wird und welcher
-//! Teil des Decks in einer Partie ausliegt. Die Wirkungen fuehrt die Regel-Engine aus
-//! (`Game::do_buy`).
+//! Kartenmarkt: welche Karten es gibt, was sie kosten, wie bezahlt wird und welcher Teil des
+//! Decks in einer Partie ausliegt. Die Wirkungen fuehrt die Regel-Engine aus (`Game::do_buy`).
+//!
+//! Es gibt nur Karten, die angreifen helfen (Figuren staerker oder beweglicher, mehr Figuren,
+//! mehr Tempo) oder die Wirtschaft beschleunigen; keine Verteidigung (kein Schild, keine
+//! Ruestung), damit Partien entschieden werden.
 //!
 //! Regeln des Markts:
-//! - Vor der Partie liegen `Config::market_size` verschiedene Karten offen aus (zufaellig, durch
-//!   den Seed festgelegt). Jede Karte gibt es beliebig oft.
+//! - Vor jeder Partie liegen `Config::market_size` verschiedene Karten offen aus, zufaellig aus
+//!   dem Deck gezogen (der Seed legt sie fest). Jede Karte gibt es beliebig oft.
 //! - Pro Zug darf man hoechstens eine Karte kaufen, zusaetzlich zur Aktion des Zuges.
 //! - Bezahlt wird aus **einem** Lager: dem Gepaeck des Koenigs oder dem Lager einer eigenen
-//!   Fabrik. Welche Einheiten genau, waehlt die Engine (immer die haeufigsten Typen zuerst, so
-//!   bleibt die Vielfalt im Lager erhalten).
-//! - Eine Karte fuer eine Figur oder den Koenig wirkt nur auf eine Figur, die auf dem Zahlfeld
-//!   oder direkt daneben steht.
+//!   Fabrik. Welche Einheiten genau, waehlt die Engine (die haeufigsten Typen zuerst, so bleibt
+//!   die Vielfalt im Lager erhalten).
+//! - Figurenkarten wirken auf eine beliebige eigene Figur (mit `Config::card_target_near` nur auf
+//!   eine Figur am Zahlfeld oder daneben).
+//!
+//! Kosten und Wert: Der Ausbau einer Fabrik gibt fuer 10 Einheiten ab Kat 2 eine Stufe. Daran
+//! messen sich die Preise: eine ganze Stufe kostet auch als Karte rund 8 bis 10 Einheiten.
 
 use crate::board::GridKind;
 use crate::ids::ResourceId;
@@ -27,22 +33,24 @@ pub enum Card {
     LongLegs,
     /// Figur: schlaegt zusaetzlich diagonal auf ein Nachbarfeld (nur Quadratkarten).
     DiagonalStrike,
-    /// Figur: der erste Schlag gegen sie prallt ab.
-    Shield,
-    /// Koenig: ueberlebt einen Schlag.
-    KingArmor,
-    /// Koenig: zieht bis zu zwei Felder geradeaus.
-    KingStep,
+    /// Figur: schlaegt bis zu zwei Felder weit geradeaus, auch mit Reichweite 1.
+    Lance,
+    /// Figur: springt ueber eine angrenzende Figur auf das Feld dahinter.
+    Spring,
+    /// Figur: springt auf jedes Feld im Abstand 2, ueber alles hinweg.
+    Horse,
+    /// Alle eigenen Figuren haben in diesem Zug Reichweite +1.
+    Charge,
     /// Ein Bauer erscheint neben der zahlenden Fabrik; die Fabrik bleibt stehen.
     Recruit,
+    /// In diesem Zug eine zweite Aktion.
+    DoubleMove,
     /// Alle eigenen Fabriken ernten sofort noch einmal.
     DoubleShift,
     /// Eigene Fabriken ernten Kat 2 doppelt.
     Mining,
     /// Eigene Fabriken ernten Kat 3 doppelt.
     Farming,
-    /// In diesem Zug eine zweite Aktion.
-    DoubleMove,
     /// Set: der dritte Runenstein gibt einer Figur Stufe +2.
     Runestone,
     /// Set: der dritte Sternsplitter legt ein Kat-1-Vorkommen der eigenen Farbe unter den Koenig.
@@ -54,13 +62,11 @@ pub enum Card {
 pub enum CardTarget {
     /// Auf den Spieler oder seine Fabriken; keine Figur noetig.
     Player,
-    /// Auf eine eigene Figur (nicht den Koenig) am Zahlfeld.
+    /// Auf eine eigene Figur (nicht den Koenig).
     Unit,
-    /// Auf den eigenen Koenig am Zahlfeld.
-    King,
 }
 
-/// Kosten einer Karte. `*_distinct`: alle Einheiten dieser Kategorie von verschiedenen Typen.
+/// Kosten einer Karte. `k2_kinds`: davon mindestens so viele verschiedene Kat-2-Typen.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cost {
     /// Beliebige Kat-1-Einheiten ("Farbe").
@@ -68,9 +74,9 @@ pub struct Cost {
     /// Kat-1-Einheiten, die nicht die eigene Farbe sind.
     pub foreign_color: u8,
     pub k2: u8,
-    pub k2_distinct: bool,
+    pub k2_kinds: u8,
     pub k3: u8,
-    pub k3_distinct: bool,
+    pub k3_kinds: u8,
 }
 
 impl Cost {
@@ -79,14 +85,14 @@ impl Cost {
     }
 }
 
-const fn cost(color: u8, k2: u8, k2_distinct: bool, k3: u8, k3_distinct: bool) -> Cost {
+const fn cost(color: u8, k2: u8, k2_kinds: u8, k3: u8, k3_kinds: u8) -> Cost {
     Cost {
         color,
         foreign_color: 0,
         k2,
-        k2_distinct,
+        k2_kinds,
         k3,
-        k3_distinct,
+        k3_kinds,
     }
 }
 
@@ -96,18 +102,19 @@ pub const SET_SIZE: u8 = 3;
 pub const MAX_EXTRA_RANGE: u8 = 2;
 
 impl Card {
-    pub const ALL: [Card; 13] = [
+    pub const ALL: [Card; 14] = [
         Card::Training,
         Card::LongLegs,
         Card::DiagonalStrike,
-        Card::Shield,
-        Card::KingArmor,
-        Card::KingStep,
+        Card::Lance,
+        Card::Spring,
+        Card::Horse,
+        Card::Charge,
         Card::Recruit,
+        Card::DoubleMove,
         Card::DoubleShift,
         Card::Mining,
         Card::Farming,
-        Card::DoubleMove,
         Card::Runestone,
         Card::Starshard,
     ];
@@ -118,14 +125,15 @@ impl Card {
             Card::Training => "training",
             Card::LongLegs => "long_legs",
             Card::DiagonalStrike => "diagonal_strike",
-            Card::Shield => "shield",
-            Card::KingArmor => "king_armor",
-            Card::KingStep => "king_step",
+            Card::Lance => "lance",
+            Card::Spring => "spring",
+            Card::Horse => "horse",
+            Card::Charge => "charge",
             Card::Recruit => "recruit",
+            Card::DoubleMove => "double_move",
             Card::DoubleShift => "double_shift",
             Card::Mining => "mining",
             Card::Farming => "farming",
-            Card::DoubleMove => "double_move",
             Card::Runestone => "runestone",
             Card::Starshard => "starshard",
         }
@@ -140,14 +148,15 @@ impl Card {
             Card::Training => "Ausbildung",
             Card::LongLegs => "Lange Beine",
             Card::DiagonalStrike => "Läuferschlag",
-            Card::Shield => "Schild",
-            Card::KingArmor => "Königsrüstung",
-            Card::KingStep => "Königsschritt",
+            Card::Lance => "Lanze",
+            Card::Spring => "Sprungfeder",
+            Card::Horse => "Pferd",
+            Card::Charge => "Sturmangriff",
             Card::Recruit => "Rekrut",
+            Card::DoubleMove => "Doppelzug",
             Card::DoubleShift => "Doppelschicht",
             Card::Mining => "Bergbau",
             Card::Farming => "Ackerbau",
-            Card::DoubleMove => "Doppelzug",
             Card::Runestone => "Runenstein",
             Card::Starshard => "Sternsplitter",
         }
@@ -155,43 +164,44 @@ impl Card {
 
     pub fn text(self) -> &'static str {
         match self {
-            Card::Training => "Figur am Zahlfeld: Stufe +1, die Reichweite wächst mit.",
-            Card::LongLegs => "Figur am Zahlfeld: Reichweite +1 (höchstens zweimal).",
-            Card::DiagonalStrike => {
-                "Figur am Zahlfeld schlägt zusätzlich diagonal auf ein Nachbarfeld."
-            }
-            Card::Shield => "Figur am Zahlfeld: der erste Schlag gegen sie prallt ab.",
-            Card::KingArmor => "König am Zahlfeld überlebt einen Schlag.",
-            Card::KingStep => "König am Zahlfeld zieht bis zu zwei Felder geradeaus.",
+            Card::Training => "Eine Figur: Stufe +1, die Reichweite wächst mit.",
+            Card::LongLegs => "Eine Figur: Reichweite +1 (höchstens zweimal).",
+            Card::DiagonalStrike => "Eine Figur schlägt zusätzlich diagonal auf ein Nachbarfeld.",
+            Card::Lance => "Eine Figur schlägt bis zu zwei Felder weit geradeaus.",
+            Card::Spring => "Eine Figur springt über eine Nachbarfigur auf das Feld dahinter.",
+            Card::Horse => "Eine Figur springt auf jedes Feld im Abstand 2, über alles hinweg.",
+            Card::Charge => "In diesem Zug haben alle deine Figuren Reichweite +1.",
             Card::Recruit => {
                 "Ein Bauer erscheint neben der zahlenden Fabrik, die Fabrik bleibt stehen."
             }
-            Card::DoubleShift => "Alle eigenen Fabriken ernten sofort noch einmal.",
-            Card::Mining => "Eigene Fabriken ernten Kat 2 doppelt.",
-            Card::Farming => "Eigene Fabriken ernten Kat 3 doppelt.",
             Card::DoubleMove => "In diesem Zug eine zweite Aktion.",
-            Card::Runestone => "Set: der dritte Runenstein gibt einer Figur am Zahlfeld Stufe +2.",
+            Card::DoubleShift => "Alle deine Fabriken ernten sofort noch einmal.",
+            Card::Mining => "Deine Fabriken ernten Kat 2 doppelt.",
+            Card::Farming => "Deine Fabriken ernten Kat 3 doppelt.",
+            Card::Runestone => "Set: der dritte Runenstein gibt einer Figur Stufe +2.",
             Card::Starshard => {
                 "Set: der dritte Sternsplitter legt ein Kat-1-Vorkommen deiner Farbe unter den König."
             }
         }
     }
 
+    /// Preise, geeicht am Ausbau (10 Einheiten = 1 Stufe), siehe Kartenwert-Messung im README.
     pub fn cost(self) -> Cost {
         match self {
-            Card::Training => cost(0, 2, true, 2, true),
-            Card::LongLegs => cost(0, 2, true, 1, false),
-            Card::DiagonalStrike => cost(0, 1, false, 1, false),
-            Card::Shield => cost(0, 0, false, 2, false),
-            Card::KingArmor => cost(1, 2, false, 2, false),
-            Card::KingStep => cost(0, 3, true, 1, false),
-            Card::Recruit => cost(1, 2, false, 2, false),
-            Card::DoubleShift => cost(0, 0, false, 2, true),
-            Card::Mining => cost(0, 3, true, 1, false),
-            Card::Farming => cost(0, 1, false, 3, true),
-            Card::DoubleMove => cost(0, 2, true, 2, true),
-            Card::Runestone => cost(0, 1, false, 1, false),
-            Card::Starshard => cost(0, 1, false, 2, false),
+            Card::Training => cost(0, 4, 2, 4, 2),
+            Card::LongLegs => cost(0, 2, 2, 2, 1),
+            Card::DiagonalStrike => cost(0, 1, 1, 2, 1),
+            Card::Lance => cost(0, 2, 1, 2, 1),
+            Card::Spring => cost(0, 1, 1, 2, 1),
+            Card::Horse => cost(0, 3, 2, 3, 2),
+            Card::Charge => cost(0, 0, 0, 3, 2),
+            Card::Recruit => cost(1, 2, 1, 3, 1),
+            Card::DoubleMove => cost(0, 2, 2, 3, 2),
+            Card::DoubleShift => cost(0, 0, 0, 2, 2),
+            Card::Mining => cost(0, 3, 2, 2, 1),
+            Card::Farming => cost(0, 2, 1, 3, 2),
+            Card::Runestone => cost(0, 2, 1, 3, 1),
+            Card::Starshard => cost(0, 2, 1, 2, 1),
         }
     }
 
@@ -200,9 +210,10 @@ impl Card {
             Card::Training
             | Card::LongLegs
             | Card::DiagonalStrike
-            | Card::Shield
+            | Card::Lance
+            | Card::Spring
+            | Card::Horse
             | Card::Runestone => CardTarget::Unit,
-            Card::KingArmor | Card::KingStep => CardTarget::King,
             _ => CardTarget::Player,
         }
     }
@@ -255,37 +266,27 @@ pub fn plan_payment(
         &mut pay,
         |r| cat(r) == 1 && r != own,
         cost.foreign_color,
-        false,
+        0,
     )?;
-    take(&mut left, &mut pay, |r| cat(r) == 1, cost.color, false)?;
-    take(
-        &mut left,
-        &mut pay,
-        |r| cat(r) == 2,
-        cost.k2,
-        cost.k2_distinct,
-    )?;
-    take(
-        &mut left,
-        &mut pay,
-        |r| cat(r) == 3,
-        cost.k3,
-        cost.k3_distinct,
-    )?;
+    take(&mut left, &mut pay, |r| cat(r) == 1, cost.color, 0)?;
+    take(&mut left, &mut pay, |r| cat(r) == 2, cost.k2, cost.k2_kinds)?;
+    take(&mut left, &mut pay, |r| cat(r) == 3, cost.k3, cost.k3_kinds)?;
     Some(pay)
 }
 
-/// Nimmt `n` Einheiten, die `fits` erfuellen, jeweils vom haeufigsten Typ (bei Gleichstand die
-/// kleinste ID). `distinct`: jeder Typ hoechstens einmal.
+/// Nimmt `n` Einheiten, die `fits` erfuellen, davon mindestens `kinds` verschiedene Typen:
+/// erst je eine Einheit der haeufigsten Typen, dann der Rest vom jeweils haeufigsten Typ (bei
+/// Gleichstand die kleinste ID).
 fn take(
     left: &mut Inventory,
     pay: &mut Inventory,
     fits: impl Fn(ResourceId) -> bool,
     n: u8,
-    distinct: bool,
+    kinds: u8,
 ) -> Option<()> {
     let mut used: Vec<ResourceId> = Vec::new();
-    for _ in 0..n {
+    for i in 0..n {
+        let distinct = i < kinds;
         let best = left
             .iter()
             .filter(|&(r, _)| fits(r) && !(distinct && used.contains(&r)))
@@ -339,9 +340,9 @@ mod tests {
         assert!(!Card::DiagonalStrike.available_on(GridKind::Hex));
         assert!(!Card::DiagonalStrike.available_on(GridKind::Triangle));
         for seed in 0..50 {
-            let m = draw_market(seed, 13, GridKind::Hex);
+            let m = draw_market(seed, 14, GridKind::Hex);
             assert!(!m.contains(&Card::DiagonalStrike));
-            assert_eq!(m.len(), 12);
+            assert_eq!(m.len(), 13);
         }
     }
 
@@ -371,12 +372,27 @@ mod tests {
         };
         let pay = plan_payment(&m, r(0), &stock, &cost).expect("reicht");
         assert_eq!(pay, inv(&[(1, 2), (3, 2)]));
+        let mixed = Cost {
+            k2: 3,
+            k2_kinds: 2,
+            ..Cost::default()
+        };
+        let pay = plan_payment(&m, r(0), &stock, &mixed).expect("reicht");
+        assert_eq!(
+            pay,
+            inv(&[(1, 2), (2, 1)]),
+            "zwei Typen, der Rest vom haeufigsten"
+        );
     }
 
     #[test]
-    fn distinct_costs_need_different_types() {
+    fn costs_with_kinds_need_different_types() {
         let m = map();
         let cost = Card::Training.cost();
+        assert_eq!(
+            (cost.k2, cost.k2_kinds, cost.k3, cost.k3_kinds),
+            (4, 2, 4, 2)
+        );
         let one_type = inv(&[(1, 10), (3, 10), (4, 10)]);
         assert!(
             plan_payment(&m, r(0), &one_type, &cost).is_none(),
@@ -385,8 +401,23 @@ mod tests {
         let varied = inv(&[(1, 10), (2, 1), (3, 10), (4, 1)]);
         assert_eq!(
             plan_payment(&m, r(0), &varied, &cost),
-            Some(inv(&[(1, 1), (2, 1), (3, 1), (4, 1)]))
+            Some(inv(&[(1, 3), (2, 1), (3, 3), (4, 1)]))
         );
+    }
+
+    #[test]
+    fn there_are_no_defensive_cards() {
+        for key in ["shield", "king_armor", "king_step"] {
+            assert_eq!(Card::from_key(key), None, "{key}");
+        }
+    }
+
+    #[test]
+    fn a_whole_level_costs_about_as_much_as_the_factory_upgrade() {
+        // Ausbau: 10 Einheiten je Stufe. Ausbildung (1 Stufe) und Runensteine (2 Stufen)
+        // duerfen hoechstens wenig billiger sein, sonst kauft man Stufen statt auszubauen.
+        assert!(Card::Training.cost().units() >= 8);
+        assert!(3 * Card::Runestone.cost().units() >= 15);
     }
 
     #[test]

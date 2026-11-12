@@ -107,6 +107,17 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .summary strong { color: var(--ink); font-weight: 650; }
 .players { display: flex; flex-direction: column; gap: 6px; }
 .market { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.market .buy { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.market .buy .btn { font-size: 0.8rem; padding: 5px 8px; text-align: left; }
+.market .missing { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 3px; }
+.market li.can { border-color: var(--accent, #2d55a6); }
+.note { color: var(--muted); font-size: 0.78rem; margin: 0 0 6px; }
+.stock { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; }
+.stock .loc { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.stock .loc b { display: block; font-size: 0.84rem; margin-bottom: 2px; }
+.stock .res { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.stock .chip1 { display: inline-block; width: 10px; height: 10px; transform: rotate(45deg); border: 1px solid rgba(0,0,0,.5); margin-right: 3px; }
+.stock .sub { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 2px; }
 .market li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; }
 .market b { font-size: 0.88rem; }
 .market .cost { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 1px; }
@@ -249,8 +260,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <h2>Spieler</h2>
       <div class="players" id="players"></div>
     </div>
+    <div id="stockBox" hidden>
+      <h2 id="stockTitle">Lager</h2>
+      <div class="stock" id="stock"></div>
+    </div>
     <div id="marketBox" hidden>
       <h2>Kartenmarkt</h2>
+      <p class="note" id="marketNote"></p>
       <ul class="market" id="market"></ul>
     </div>
     <div>
@@ -387,18 +403,36 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const k = c.cost;
     if (k.color) parts.push(`${k.color}× Farbe`);
     if (k.foreign_color) parts.push(`${k.foreign_color}× fremde Farbe`);
-    if (k.k2) parts.push(`${k.k2}× Kat 2${k.k2_distinct && k.k2 > 1 ? " versch." : ""}`);
-    if (k.k3) parts.push(`${k.k3}× Kat 3${k.k3_distinct && k.k3 > 1 ? " versch." : ""}`);
+    if (k.k2) parts.push(`${k.k2}× Kat 2${k.k2_kinds > 1 ? ` (mind. ${k.k2_kinds} Typen)` : ""}`);
+    if (k.k3) parts.push(`${k.k3}× Kat 3${k.k3_kinds > 1 ? ` (mind. ${k.k3_kinds} Typen)` : ""}`);
     return parts.join(" + ");
   }
+  /** Figurentyp nach Stufe: so sieht die Figur auch aus. */
+  function unitTitle(level) {
+    return ["", "Bauer", "Krieger", "Ritter", "Held"][Math.min(level, 4)] || "Held";
+  }
+  /** Was eine Figur kann, in Worten (fuer Tooltip und Lager). */
+  function abilityText(p) {
+    if (!p || p.king) return "zieht 1 Feld (nicht diagonal), sammelt und baut";
+    const pk = p.perks || {};
+    const out = [p.level === 1
+      ? `zieht und schlägt geradeaus bis ${p.range} ${p.range === 1 ? "Feld" : "Felder"}`
+      : `zieht frei bis ${p.range} Felder (um Ecken, nicht durch Figuren)`];
+    if (pk.diagonal) out.push("schlägt diagonal");
+    if (pk.lance) out.push("schlägt 2 Felder geradeaus");
+    if (pk.spring) out.push("springt über Nachbarfiguren");
+    if (pk.horse) out.push("springt auf Felder im Abstand 2");
+    return out.join(", ");
+  }
   function perkText(pk, king) {
-    if (!pk) return "";
+    if (!pk || king) return "";
     const out = [];
-    if (pk.shield) out.push(king ? "Königsrüstung" : "Schild");
     if (pk.diagonal) out.push("Läuferschlag");
+    if (pk.lance) out.push("Lanze");
+    if (pk.spring) out.push("Sprungfeder");
+    if (pk.horse) out.push("Pferd");
     if (pk.extra_range) out.push(`Lange Beine ×${pk.extra_range}`);
     if (pk.card_levels) out.push(`+${pk.card_levels} Stufe durch Karten`);
-    if (pk.king_step) out.push("Königsschritt");
     return out.join(", ");
   }
 
@@ -643,29 +677,122 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.fillStyle = GOLD; ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 1; ctx.stroke();
   }
-  function drawUnit(cx, cy, color, level, range) {
-    const W = geo.W, rx = W * 0.16;
+  /**
+   * Figur nach Stufe und Karten: Bauer (Stufe 1), Krieger (2, Helm und Schulterstuecke),
+   * Ritter (3, Helmbusch), Held (4+, Umhang). Karten haengen sichtbar an: Lanze, Schaerpe
+   * (Laeuferschlag), Feder unter dem Sockel (Sprungfeder), Pferdekopf, Fluegel am Sockel (Lange
+   * Beine), Sterne (Stufen durch Karten). Zahl = Stufe, Punkte = Reichweite.
+   */
+  function drawUnit(cx, cy, color, p) {
+    const W = geo.W, level = p.level, range = p.range, pk = p.perks || {};
+    const t = Math.min(level, 4);
+    const rx = W * [0, 0.14, 0.165, 0.185, 0.2][t];
+    const bodyH = W * [0, 0.26, 0.33, 0.39, 0.43][t];
     shadow(cx, cy, rx);
-    cylinder(cx, cy, rx, W * 0.1, shade(color, -0.1));          // Sockel
+    if (pk.spring) {
+      // Sprungfeder: Zickzack unter dem Sockel.
+      ctx.beginPath();
+      const sy = cy + W * 0.02;
+      for (let i = 0; i <= 6; i++) {
+        const xx = cx - rx * 0.7 + (i / 6) * rx * 1.4, yy = sy + (i % 2 ? W * 0.05 : 0);
+        i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+      }
+      ctx.strokeStyle = "#555"; ctx.lineWidth = Math.max(1.5, W * 0.022); ctx.stroke();
+    }
+    if (t >= 4) {
+      // Held: Umhang hinter dem Koerper.
+      ctx.beginPath();
+      ctx.moveTo(cx - rx * 0.5, cy - bodyH * 0.95);
+      ctx.lineTo(cx - rx * 1.25, cy - W * 0.05);
+      ctx.lineTo(cx + rx * 1.25, cy - W * 0.05);
+      ctx.lineTo(cx + rx * 0.5, cy - bodyH * 0.95);
+      ctx.closePath(); ctx.fillStyle = shade(color, -0.55); ctx.fill();
+    }
+    cylinder(cx, cy, rx, W * 0.1, shade(color, -0.1)); // Sockel
+    if (pk.extra_range) {
+      // Lange Beine: kleine Fluegel links und rechts am Sockel, einer je Stufe.
+      for (let i = 0; i < pk.extra_range; i++) {
+        for (const side of [-1, 1]) {
+          const x0 = cx + side * (rx + W * 0.02 + i * W * 0.05), y0 = cy - W * 0.05;
+          ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + side * W * 0.07, y0 - W * 0.07); ctx.lineTo(x0 + side * W * 0.02, y0 + W * 0.01); ctx.closePath();
+          ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+        }
+      }
+    }
     // Rumpf (Kegelstumpf)
-    const top = cy - W * 0.34, tr = rx * 0.45;
+    const top = cy - bodyH, tr = rx * 0.5;
     const g = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0);
     g.addColorStop(0, shade(color, 0.25)); g.addColorStop(0.55, color); g.addColorStop(1, shade(color, -0.45));
     ctx.beginPath();
     ctx.moveTo(cx - rx * 0.8, cy - W * 0.1); ctx.lineTo(cx - tr, top); ctx.lineTo(cx + tr, top); ctx.lineTo(cx + rx * 0.8, cy - W * 0.1);
     ctx.closePath(); ctx.fillStyle = g; ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    if (pk.diagonal) {
+      // Laeuferschlag: weisse Schaerpe ueber Kreuz.
+      ctx.beginPath();
+      ctx.moveTo(cx - rx * 0.7, cy - W * 0.13); ctx.lineTo(cx + tr * 0.9, top + W * 0.03);
+      ctx.moveTo(cx + rx * 0.7, cy - W * 0.13); ctx.lineTo(cx - tr * 0.9, top + W * 0.03);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1.5, W * 0.03); ctx.stroke();
+    }
+    if (t >= 2) {
+      // Schulterstuecke ab dem Krieger.
+      for (const side of [-1, 1]) {
+        ctx.beginPath(); ctx.ellipse(cx + side * tr * 1.05, top + W * 0.02, rx * 0.32, rx * 0.2, 0, 0, Math.PI * 2);
+        ctx.fillStyle = shade(color, 0.15); ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+      }
+    }
+    for (let i = 0; i < (pk.card_levels || 0); i++) {
+      // Sterne: Stufen durch Karten.
+      star(cx - rx * 0.35 + i * rx * 0.4, cy - bodyH * 0.45, W * 0.035);
+    }
     // Kopf mit Stufe
-    const hr = W * 0.12, hy = top - hr * 0.7;
+    const hr = W * (t >= 3 ? 0.13 : 0.12), hy = top - hr * 0.7;
     ctx.beginPath(); ctx.arc(cx, hy, hr, 0, Math.PI * 2);
     const hg = ctx.createRadialGradient(cx - hr * 0.4, hy - hr * 0.4, hr * 0.1, cx, hy, hr);
     hg.addColorStop(0, shade(color, 0.45)); hg.addColorStop(1, shade(color, -0.25));
     ctx.fillStyle = hg; ctx.fill(); ctx.stroke();
+    if (t >= 2) {
+      // Helm: graue Haube ueber dem Kopf.
+      ctx.beginPath(); ctx.arc(cx, hy, hr * 1.06, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.lineTo(cx + hr * 0.15, hy - hr * 0.1); ctx.lineTo(cx - hr * 0.15, hy - hr * 0.1); ctx.closePath();
+      ctx.fillStyle = "#9aa3ad"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.stroke();
+    }
+    if (t >= 3) {
+      // Helmbusch beim Ritter und Held.
+      ctx.beginPath();
+      ctx.moveTo(cx - hr * 0.2, hy - hr * 0.95); ctx.quadraticCurveTo(cx + hr * 0.2, hy - hr * 2.0, cx + hr * 1.1, hy - hr * 1.3);
+      ctx.quadraticCurveTo(cx + hr * 0.4, hy - hr * 1.2, cx + hr * 0.2, hy - hr * 0.9); ctx.closePath();
+      ctx.fillStyle = t >= 4 ? GOLD : "#d33"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+    }
     ctx.fillStyle = "#fff";
     ctx.font = `700 ${Math.round(hr * 1.25)}px ${cssVar("--font-display") || "sans-serif"}`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.lineWidth = 2.5; ctx.strokeStyle = "rgba(0,0,0,0.55)";
     ctx.strokeText(String(level), cx, hy + 0.5); ctx.fillText(String(level), cx, hy + 0.5);
+    if (pk.lance) {
+      // Lanze: Schaft rechts, Spitze nach oben.
+      const lx = cx + rx * 1.05, ly0 = cy - W * 0.04, ly1 = hy - hr * 1.6;
+      ctx.beginPath(); ctx.moveTo(lx, ly0); ctx.lineTo(lx, ly1);
+      ctx.strokeStyle = "#6b4a2b"; ctx.lineWidth = Math.max(1.5, W * 0.025); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx - W * 0.035, ly1 + W * 0.02); ctx.lineTo(lx, ly1 - W * 0.09); ctx.lineTo(lx + W * 0.035, ly1 + W * 0.02); ctx.closePath();
+      ctx.fillStyle = "#c9ced6"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    if (pk.horse) {
+      // Pferd: Pferdekopf links neben der Figur.
+      const hx = cx - rx * 1.25, hb = cy - W * 0.08, s = W * 0.0042;
+      ctx.beginPath();
+      ctx.moveTo(hx + 6 * s, hb);
+      ctx.lineTo(hx + 8 * s, hb - 18 * s);
+      ctx.lineTo(hx + 5 * s, hb - 30 * s);
+      ctx.lineTo(hx + 7 * s, hb - 36 * s);
+      ctx.lineTo(hx + 2 * s, hb - 33 * s);
+      ctx.lineTo(hx - 12 * s, hb - 24 * s);
+      ctx.lineTo(hx - 13 * s, hb - 18 * s);
+      ctx.lineTo(hx - 4 * s, hb - 19 * s);
+      ctx.lineTo(hx - 6 * s, hb);
+      ctx.closePath();
+      ctx.fillStyle = "#7a5230"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
     // Reichweite: Punkte vor dem Sockel
     const pr = Math.max(1.5, W * 0.025);
     for (let i = 0; i < range; i++) {
@@ -674,7 +801,59 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
     }
   }
-  function drawFactory(cx, cy, color, stock) {
+  function star(x, y, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+      i ? ctx.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)) : ctx.moveTo(x + rr * Math.cos(a), y + rr * Math.sin(a));
+    }
+    ctx.closePath(); ctx.fillStyle = GOLD; ctx.fill(); ctx.strokeStyle = "rgba(90,60,0,0.9)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  /**
+   * Lager als kleine Leiste ueber Fabrik oder Koenig: Rauten in den Kat-1-Farben, dann die
+   * Mengen von Kat 2, 3, 4 (Farben wie die Symbole auf dem Brett). Optional am Ende die Stufe,
+   * die beim Aufloesen entstuende.
+   */
+  function drawStockPill(cx, by, inv, level) {
+    if (!inv.length && !level) return;
+    const colors = [...new Set(inv.filter(([r]) => category(r) === 1).map(([r]) => crystalColor(r)))];
+    const byCat = [0, 0, 0, 0, 0];
+    for (const [r, n] of inv) byCat[category(r)] += n;
+    const parts = [];
+    for (let c = 2; c <= 4; c++) if (byCat[c]) parts.push([c, String(byCat[c])]);
+    drawPill(cx, by, colors, parts, level);
+  }
+  /** Zeichnet die Lagerleiste aus fertigen Teilen (auch fuer die Legende). */
+  function drawPill(cx, by, colors, parts, level) {
+    const W = geo.W, h = Math.max(12, W * 0.2), fs = Math.round(h * 0.72);
+    ctx.font = `600 ${fs}px ${cssVar("--font-data") || "monospace"}`;
+    const dw = h * 0.62;
+    let width = h * 0.35 + colors.length * dw;
+    for (const [, t] of parts) width += ctx.measureText(t).width + h * 0.55;
+    const lv = level ? `→${level}` : "";
+    if (lv) width += ctx.measureText(lv).width + h * 0.5;
+    width += h * 0.2;
+    const bx = cx - width / 2;
+    ctx.fillStyle = "rgba(20,24,22,0.85)";
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, width, h, h / 2) : ctx.rect(bx, by, width, h); ctx.fill();
+    let x = bx + h * 0.35;
+    for (const col of colors) {
+      const mx = x + dw * 0.4, my = by + h / 2, d = h * 0.3;
+      ctx.beginPath(); ctx.moveTo(mx, my - d); ctx.lineTo(mx + d * 0.8, my); ctx.lineTo(mx, my + d); ctx.lineTo(mx - d * 0.8, my); ctx.closePath();
+      ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 1; ctx.stroke();
+      x += dw;
+    }
+    const catColor = ["", "", "#c9ced6", "#f2c94c", "#d08b4a"];
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    for (const [c, t] of parts) {
+      ctx.fillStyle = catColor[c];
+      ctx.beginPath(); ctx.arc(x + h * 0.15, by + h / 2, h * 0.14, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.fillText(t, x + h * 0.33, by + h / 2 + 0.5);
+      x += ctx.measureText(t).width + h * 0.55;
+    }
+    if (lv) { ctx.fillStyle = GOLD; ctx.fillText(lv, x + h * 0.1, by + h / 2 + 0.5); }
+  }
+  function drawFactory(cx, cy, color, fac) {
     const W = geo.W, w = W * 0.3, d = W * 0.15, h = W * 0.2;
     shadow(cx, cy, w * 0.8);
     const y0 = cy;
@@ -692,16 +871,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.fillStyle = "#4b4e55";
     ctx.fillRect(cx + w * 0.35, y0 - h - d * 2.2, w * 0.2, d * 1.8);
     ctx.strokeRect(cx + w * 0.35, y0 - h - d * 2.2, w * 0.2, d * 1.8);
-    if (stock > 0) {
-      const label = String(stock);
-      ctx.font = `600 ${Math.round(W * 0.16)}px ${cssVar("--font-data") || "monospace"}`;
-      const tw = ctx.measureText(label).width + W * 0.12;
-      const bx = cx - tw / 2, by = y0 - h - d * 3.4, bh = W * 0.2;
-      ctx.fillStyle = "rgba(20,24,22,0.82)";
-      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, tw, bh, bh / 2) : ctx.rect(bx, by, tw, bh); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(label, cx, by + bh / 2 + 0.5);
-    }
+    if (fac) drawStockPill(cx, y0 - h - d * 3.6, fac.storage, fac.level || 0);
   }
   function drawLoot(cx, cy) {
     const W = geo.W, r = W * 0.11;
@@ -814,13 +984,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     for (const fac of f.factories) {
       const [x, y] = R.board.cells[fac.cell];
       const fresh = prev && !prev.fById.has(fac.id);
-      objs.push({ d: depth(x, y), o: 3, x, alpha: fresh ? k : 1, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, total(fac.storage)); } });
+      objs.push({ d: depth(x, y), o: 3, x, alpha: fresh ? k : 1, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, fac); } });
     }
     if (prev) {
       for (const fac of prev.factories) {
         if (!f.fById.has(fac.id)) {
           const [x, y] = R.board.cells[fac.cell];
-          objs.push({ d: depth(x, y), o: 3, x, alpha: 1 - k, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, 0); } });
+          objs.push({ d: depth(x, y), o: 3, x, alpha: 1 - k, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, null); } });
         }
       }
     }
@@ -859,34 +1029,20 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function drawPiece(p, x, y) {
     const [cx, cy] = iso(x, y);
     const color = PLAYER[p.owner].color;
-    const pk = p.perks || {};
-    if (pk.shield) {
-      // Schild oder Koenigsruestung: heller Ring um den Sockel.
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + geo.W * 0.03, geo.W * 0.27, geo.W * 0.12, 0, 0, Math.PI * 2);
-      ctx.lineWidth = Math.max(2, geo.W * 0.035);
-      ctx.strokeStyle = "rgba(120,200,255,0.95)";
-      ctx.stroke();
-    }
-    if (p.king) drawKing(cx, cy + geo.W * 0.02, color);
-    else drawUnit(cx, cy + geo.W * 0.02, color, p.level, p.range);
-    if (pk.diagonal || pk.king_step) {
-      // Kleines Abzeichen: x = Laeuferschlag, >> = Koenigsschritt.
-      const bx = cx + geo.W * 0.2, by = cy - geo.W * 0.42, r = Math.max(5, geo.W * 0.08);
-      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2);
-      ctx.fillStyle = "#fff"; ctx.fill();
-      ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.stroke();
-      ctx.fillStyle = "#222";
-      ctx.font = `700 ${Math.round(r * 1.3)}px sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(pk.diagonal ? "×" : "»", bx, by + 0.5);
+    if (p.king) {
+      drawKing(cx, cy + geo.W * 0.02, color);
+      // Was der Koenig traegt, als Leiste ueber der Krone.
+      const carried = (R.frames[fi].carried || [])[p.owner] || [];
+      if (carried.length) drawStockPill(cx, cy - geo.W * 1.08, carried, 0);
+    } else {
+      drawUnit(cx, cy + geo.W * 0.02, color, p);
     }
   }
 
   // ----- Texte -------------------------------------------------------------------------------
   function pieceLabel(p) {
     if (!p) return "Figur";
-    return p.king ? "König" : `Figur Stufe ${p.level}`;
+    return p.king ? "König" : `${unitTitle(p.level)} (Stufe ${p.level})`;
   }
   function invText(inv) {
     if (!inv.length) return "nichts";
@@ -968,6 +1124,128 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
 
   // ----- Oberflaeche aktualisieren ------------------------------------------------------------
+  /** Wessen Lager und Kaufmoeglichkeiten gezeigt werden: du (gegen Bots), sonst wer am Zug ist. */
+  function focusPlayer(f) {
+    if (mode === "play" && live && R === liveR && !live.watch && live.opponent !== 2) return 0;
+    return f.current;
+  }
+  /** Rohstoffe als HTML: Farben als Rauten, dann Mengen je Kategorie mit Typenzahl. */
+  function resHtml(inv) {
+    if (!inv.length) return "<span>nichts</span>";
+    const out = [];
+    for (const [r, n] of inv.filter(([r]) => category(r) === 1)) {
+      out.push(`<span><i class="chip1" style="background:${crystalColor(r)}"></i>${n}× ${escapeHtml(colorOwner(r))}</span>`);
+    }
+    for (let c = 2; c <= 4; c++) {
+      const items = inv.filter(([r]) => category(r) === c);
+      if (!items.length) continue;
+      const n = items.reduce((a, [, k]) => a + k, 0);
+      out.push(`<span>Kat ${c}: <b style="display:inline">${n}</b> (${items.length} ${items.length === 1 ? "Typ" : "Typen"})</span>`);
+    }
+    return out.join("");
+  }
+  function renderStock(f) {
+    const p = focusPlayer(f);
+    const box = $("stockBox");
+    if (p === undefined || p === null || !f.alive[p]) { box.hidden = true; return; }
+    box.hidden = false;
+    const me = mode === "play" && live && R === liveR && live.seats[p] === "mensch";
+    $("stockTitle").textContent = `Lager von Spieler ${playerName(p)}${me ? " (du)" : ""}`;
+    const rows = [];
+    const carried = (f.carried || [])[p] || [];
+    rows.push(`<div class="loc"><b>König trägt</b><div class="res">${resHtml(carried)}</div>` +
+      `<span class="sub">Er lädt automatisch ab, wenn er auf einer eigenen Fabrik steht.</span></div>`);
+    const cfg = R.config || {};
+    for (const fac of f.factories.filter((x) => x.owner === p)) {
+      let sub = "";
+      if (fac.level) {
+        const preview = { king: false, level: fac.level, range: fac.level, perks: {} };
+        sub = `Auflösen ergäbe: <b style="display:inline">${unitTitle(fac.level)} (Stufe ${fac.level})</b> – ${escapeHtml(abilityText(preview))}.`;
+      } else {
+        sub = "Keine Farbe im Lager: noch keine Figur möglich.";
+      }
+      if (cfg.upgrade_step && fac.upgrade < (cfg.max_upgrades || 0)) {
+        const need = (fac.upgrade + 1) * cfg.upgrade_step, kinds = fac.upgrade + 2;
+        sub += ` Nächster Ausbau: ${Math.min(fac.upgrade_units, need)}/${need} Einheiten Kat 2+, ${Math.min(fac.upgrade_kinds, kinds)}/${kinds} Typen.`;
+      }
+      rows.push(`<div class="loc"><b>Fabrik auf ${cellName(fac.cell)}</b><div class="res">${resHtml(fac.storage)}</div>` +
+        `<span class="sub">${sub}</span></div>`);
+    }
+    $("stock").innerHTML = rows.join("");
+  }
+  /** Was an einem Ort zum Bezahlen fehlt (fuer die Anzeige; die Regeln prueft der Spielkern). */
+  function shortfall(cost, inv, own) {
+    const units = (pred) => inv.filter(([r]) => pred(r)).reduce((a, [, n]) => a + n, 0);
+    const kinds = (pred) => inv.filter(([r]) => pred(r)).length;
+    const miss = [];
+    const c1 = (r) => category(r) === 1;
+    if (cost.foreign_color > units((r) => c1(r) && r !== own)) miss.push(`${cost.foreign_color}× fremde Farbe`);
+    const needColor = cost.color + cost.foreign_color;
+    if (needColor > units(c1) && cost.color) miss.push(`${needColor - units(c1)}× Farbe`);
+    for (const c of [2, 3]) {
+      const need = cost["k" + c], needKinds = cost["k" + c + "_kinds"];
+      const have = units((r) => category(r) === c), haveKinds = kinds((r) => category(r) === c);
+      if (need > have) miss.push(`${need - have}× Kat ${c}`);
+      else if (needKinds > haveKinds) miss.push(`${needKinds - haveKinds} weiterer Kat-${c}-Typ`);
+    }
+    return miss;
+  }
+  function ownColorOf(p) {
+    const corner = R.player_corners[p];
+    const t = R.resource_types.find((x) => x.category === 1 && x.home === corner);
+    return t ? t.id : -1;
+  }
+  function renderMarket(f) {
+    const market = R.market || [];
+    $("marketBox").hidden = market.length === 0;
+    if (!market.length) return;
+    const p = focusPlayer(f);
+    const acting = canAct();
+    const own = p === null || p === undefined ? -1 : ownColorOf(p);
+    $("marketNote").textContent = acting
+      ? "Eine Karte pro Zug, zusätzlich zu deinem Zug. Bezahlt wird aus einem Ort: dem Gepäck des Königs oder einer Fabrik."
+      : "Eine Karte pro Zug, zusätzlich zum Zug. Bezahlt wird aus einem Ort: Gepäck des Königs oder eine Fabrik.";
+    const ul = $("market");
+    ul.innerHTML = "";
+    for (const c of market) {
+      const li = document.createElement("li");
+      li.innerHTML = `<b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(c.text)}` +
+        `<span class="cost">Kosten: ${escapeHtml(costText(c))}</span>`;
+      if (acting) {
+        const options = [];
+        live.legal.forEach((a, i) => { if (a.type === "buy" && a.card === c.key) options.push([a, i]); });
+        if (options.length) {
+          li.classList.add("can");
+          const box = document.createElement("div");
+          box.className = "buy";
+          for (const [a, i] of options) {
+            const b = document.createElement("button");
+            b.type = "button"; b.className = "btn";
+            b.textContent = `Kaufen${buyWhere(a, f)}`;
+            b.addEventListener("click", () => humanAct(i));
+            box.appendChild(b);
+          }
+          li.appendChild(box);
+        } else if (f.bought_this_turn) {
+          li.insertAdjacentHTML("beforeend", `<span class="missing">In diesem Zug wurde schon eine Karte gekauft.</span>`);
+        } else {
+          // Bester Ort: der, an dem am wenigsten fehlt.
+          const places = [["Gepäck des Königs", (f.carried || [])[p] || []]]
+            .concat(f.factories.filter((x) => x.owner === p).map((x) => [`Fabrik ${cellName(x.cell)}`, x.storage]));
+          let best = null;
+          for (const [name, inv] of places) {
+            const miss = shortfall(c.cost, inv, own);
+            if (!best || miss.length < best[1].length) best = [name, miss];
+          }
+          const text = best && best[1].length
+            ? `Noch nicht bezahlbar. Am nächsten dran: ${best[0]}, es fehlt ${best[1].join(", ")}.`
+            : "Gerade nicht möglich (keine passende Figur oder Fabrik).";
+          li.insertAdjacentHTML("beforeend", `<span class="missing">${escapeHtml(text)}</span>`);
+        }
+      }
+      ul.appendChild(li);
+    }
+  }
   function renderPanel() {
     const f = R.frames[fi];
     const last = R.frames.length - 1;
@@ -1016,11 +1294,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       players.appendChild(div);
     }
 
-    const market = R.market || [];
-    $("marketBox").hidden = market.length === 0;
-    $("market").innerHTML = market.map((c) =>
-      `<li><b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(c.text)}` +
-      `<span class="cost">Kosten: ${escapeHtml(costText(c))}</span></li>`).join("");
+    renderStock(f);
+    renderMarket(f);
 
     const list = $("events");
     list.innerHTML = "";
@@ -1135,10 +1410,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const rows = [];
     if (piece) {
       const extra = perkText(piece.perks, piece.king);
-      rows.push((piece.king ? `König von ${playerName(piece.owner)}` : `Figur von ${playerName(piece.owner)}: Stufe ${piece.level}, Reichweite ${piece.range}`) + (extra ? ` (${extra})` : ""));
+      rows.push(piece.king
+        ? `König von ${playerName(piece.owner)}: ${abilityText(piece)}`
+        : `${unitTitle(piece.level)} von ${playerName(piece.owner)} (Stufe ${piece.level}, Reichweite ${piece.range}${extra ? `; ${extra}` : ""}): ${abilityText(piece)}`);
     }
     if (fac) {
-      const lvl = fac.level ? `, ergäbe Stufe ${fac.level}` : "";
+      const lvl = fac.level ? `; Auflösen ergäbe ${unitTitle(fac.level)} (Stufe ${fac.level})` : "";
       rows.push(`Fabrik von ${playerName(fac.owner)}, Lager: ${invText(fac.storage)}${lvl}`);
     }
     if (loot) rows.push(`Beute: ${invText(loot.items)}`);
@@ -1181,8 +1458,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function legend() {
     const items = [
       ["king", "König: sammelt, baut Fabriken. Fällt er, ist der Spieler raus."],
-      ["unit", "Figur: Zahl = Stufe (Farben + Ausbau + Karten), Punkte = Reichweite. Blauer Ring = Schild."],
-      ["factory", "Fabrik: nur auf Kat 1 baubar (das Vorkommen ist danach weg); sammelt ab Kat 2 von Feld und Nachbarn. Je 10 Einheiten Kat 2/3 aus genug verschiedenen Typen: Stufe +1 (höchstens +2). Zahl = Lager."],
+      ["unit1", "Bauer (Stufe 1): zieht und schlägt geradeaus. Zahl = Stufe, Punkte = Reichweite."],
+      ["unit2", "Krieger (Stufe 2, Helm): zieht frei um Ecken. Ritter (3) mit Helmbusch, Held (4) mit Umhang."],
+      ["unitCards", "Karten sieht man an der Figur: Lanze, weiße Schärpe = Läuferschlag, Pferdekopf, Feder = Sprungfeder, Flügel = Lange Beine, Sterne = Stufen durch Karten."],
+      ["factory", "Fabrik: nur auf Kat 1 baubar (das Vorkommen ist danach weg); sammelt ab Kat 2 von Feld und Nachbarn. Je 10 Einheiten Kat 2/3 aus genug verschiedenen Typen: Stufe +1 (höchstens +2)."],
+      ["pill", "Lager über Fabrik und König: Rauten = Kat-1-Farben, dann Mengen von Kat 2 (grau), Kat 3 (gelb), Kat 4; →2 = Stufe der Figur beim Auflösen."],
       ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Limette, Braun, Silber, Cyan = Zentrumsfarben. Fabrik auf fremder Farbe = gleich Stufe 2."],
       ["ingot", "Kat 2"],
       ["grain", "Kat 3"],
@@ -1207,9 +1487,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       try {
         geo = { W: 46 };
         if (kind === "king") drawKing(20, 34, PLAYER[0].color);
-        if (kind === "unit") drawUnit(20, 33, PLAYER[1].color, 2, 3);
+        if (kind === "unit1") drawUnit(20, 33, PLAYER[1].color, { level: 1, range: 1, perks: {} });
+        if (kind === "unit2") drawUnit(20, 35, PLAYER[1].color, { level: 3, range: 3, perks: {} });
+        if (kind === "unitCards") drawUnit(22, 35, PLAYER[4].color, { level: 2, range: 3, perks: { lance: true, diagonal: true, horse: true, extra_range: 1, card_levels: 1 } });
         geo = { W: 38 };
-        if (kind === "factory") drawFactory(20, 34, PLAYER[2].color, 7);
+        if (kind === "factory") drawFactory(20, 34, PLAYER[2].color, null);
+        geo = { W: 30 };
+        if (kind === "pill") drawPill(20, 13, [PLAYER[0].color], [[2, "5"], [3, "7"]], 2);
         geo = { W: 46 };
         if (kind === "crystal") drawCrystal(20, 34, 22, PLAYER[3].color);
         if (kind === "ingot") drawIngot(20, 28, 24);
@@ -1398,27 +1682,23 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const actions = $("actions");
     actions.innerHTML = "";
     if (canAct()) {
-      const buys = [];
       live.legal.forEach((a, i) => {
-        if (a.type === "move") return;
+        if (a.type === "move" || a.type === "buy") return;
         const b = document.createElement("button");
         b.type = "button";
         b.className = "btn";
         b.textContent = actionLabel(a, now);
         b.addEventListener("click", () => humanAct(i));
-        if (a.type === "buy") buys.push(b);
-        else actions.appendChild(b);
+        actions.appendChild(b);
       });
-      if (buys.length) {
-        // Kaeufe gesammelt; ein Kauf zaehlt nicht als Zug.
-        const box = document.createElement("details");
-        box.className = "buys";
-        box.innerHTML = `<summary>Karte kaufen (${buys.length} Möglichkeiten, zusätzlich zum Zug)</summary>`;
-        const inner = document.createElement("div");
-        inner.className = "actions";
-        buys.forEach((b) => inner.appendChild(b));
-        box.appendChild(inner);
-        actions.appendChild(box);
+      const buys = live.legal.filter((a) => a.type === "buy").length;
+      if ((R.market || []).length) {
+        const note = document.createElement("p");
+        note.className = "note";
+        note.textContent = buys
+          ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"} rechts im Kartenmarkt (zusätzlich zum Zug).`
+          : "Karten: im Kartenmarkt rechts steht, was dir zum Kaufen noch fehlt.";
+        actions.appendChild(note);
       }
     }
   }

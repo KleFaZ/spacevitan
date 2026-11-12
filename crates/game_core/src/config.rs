@@ -36,7 +36,8 @@ pub struct Config {
     /// genau so weit und in Richtung Kartenmitte. Standard 2: nicht auf und nicht neben dem Start.
     pub cat1_distance: u32,
     /// Neutrale Kat-1-Typen ("Zentrumsfarben") rund um die Kartenmitte, je mit
-    /// `cells_per_type[0]` Feldern. Sie sind fuer jeden Spieler eine fremde Farbe.
+    /// `center_cells` Feldern, dazu im Zwischenring `mid_cat1` Felder je Spieler. Sie sind fuer
+    /// jeden Spieler eine fremde Farbe.
     pub center_colors: u32,
     /// Zentrumsfarben liegen hoechstens so viele Schritte von der Kartenmitte entfernt.
     pub center_radius: u32,
@@ -52,6 +53,12 @@ pub struct Config {
     pub max_upgrades: u8,
     /// Karten, die im Markt ausliegen (verschiedene, je beliebig oft kaufbar); 0 = ohne Karten.
     pub market_size: u32,
+    /// Figurenkarten nur fuer eine Figur auf oder neben dem Zahlfeld (Fabrik oder Koenig).
+    pub card_target_near: bool,
+    /// Felder je Zentrumsfarbe in der Mitte.
+    pub center_cells: u32,
+    /// Kat-1-Vorkommen je Spieler im Zwischenring (halber Weg zur Mitte, Zentrumsfarben).
+    pub mid_cat1: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -86,7 +93,8 @@ impl Config {
             min_factory_distance: 3,
             deposit_stock: 0,
             yield_per_round: 1,
-            cells_per_type: [2, 2, 2, 2],
+            // Kat 1: genau ein Feld je Ecke; mehr Kat 1 gibt es zur Mitte hin.
+            cells_per_type: [1, 2, 2, 2],
             stray_chance: 0.15,
             max_resources_per_cell: 2,
             max_rounds: 300,
@@ -100,6 +108,9 @@ impl Config {
             upgrade_step: 10,
             max_upgrades: 2,
             market_size: Config::default_market_size(players),
+            card_target_near: false,
+            center_cells: 3,
+            mid_cat1: 1,
         }
     }
 
@@ -132,6 +143,9 @@ impl Config {
             "side" => self.side = as_u32(value)?,
             "cat1_cells" => self.cells_per_type[0] = as_u32(value)?,
             "market_size" => self.market_size = as_u32(value)?,
+            "card_target_near" => self.card_target_near = value != 0,
+            "center_cells" => self.center_cells = as_u32(value)?,
+            "mid_cat1" => self.mid_cat1 = as_u32(value)?,
             other => return Err(format!("unbekannte Regel '{other}'")),
         }
         Ok(())

@@ -74,19 +74,27 @@ pub enum PieceKind {
     },
 }
 
-/// Dauerhafte Verbesserungen einer Figur oder des Koenigs durch Karten.
+/// Dauerhafte Verbesserungen einer Figur durch Karten (nur Angriff, keine Verteidigung).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Perks {
-    /// Der naechste Schlag gegen die Figur prallt ab (Schild, Koenigsruestung).
-    pub shield: bool,
     /// Schlaegt zusaetzlich diagonal auf ein Nachbarfeld (Laeuferschlag).
     pub diagonal: bool,
     /// Zusaetzliche Reichweite durch "Lange Beine". Es gilt: Reichweite = Stufe + diese Zahl.
     pub extra_range: u8,
     /// Stufen durch Karten (Ausbildung, Runensteine), zusaetzlich zu Farben und Ausbau.
     pub card_levels: u8,
-    /// Koenig zieht bis zu zwei Felder geradeaus (Koenigsschritt).
-    pub king_step: bool,
+    /// Schlaegt bis zu zwei Felder weit geradeaus (Lanze).
+    pub lance: bool,
+    /// Springt ueber eine Nachbarfigur auf das Feld dahinter (Sprungfeder).
+    pub spring: bool,
+    /// Springt auf jedes Feld im Abstand 2 (Pferd).
+    pub horse: bool,
+}
+
+impl Perks {
+    pub fn any(&self) -> bool {
+        *self != Perks::default()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -174,6 +182,8 @@ pub struct State {
     pub bought_this_turn: bool,
     /// Weitere Aktionen in diesem Zug (Doppelzug).
     pub extra_actions: u8,
+    /// Sturmangriff: in diesem Zug haben alle Figuren des Spielers am Zug Reichweite +1.
+    pub charge: bool,
     /// Vorkommen, die waehrend der Partie entstanden sind (Sternsplitter).
     pub extra_deposits: BTreeMap<CellId, Vec<ResourceId>>,
     pub(crate) occupant: Vec<Option<PieceId>>,
@@ -201,6 +211,7 @@ impl State {
             player_perks: vec![PlayerPerks::default(); players],
             bought_this_turn: false,
             extra_actions: 0,
+            charge: false,
             extra_deposits: BTreeMap::new(),
             occupant: vec![None; cells],
             factory_at: vec![None; cells],

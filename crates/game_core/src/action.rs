@@ -97,13 +97,6 @@ pub enum Event {
         target: Option<PieceId>,
         paid: Inventory,
     },
-    /// Ein Schild (oder die Koenigsruestung) hat einen Schlag abgehalten.
-    ShieldBlocked {
-        piece: PieceId,
-        owner: PlayerId,
-        at: CellId,
-        by: PlayerId,
-    },
     /// Rekrut: ein Bauer neben der Fabrik.
     Recruited {
         piece: PieceId,
