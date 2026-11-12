@@ -1517,9 +1517,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["unit1", "Bauer (Stufe 1): zieht und schlägt geradeaus. Zahl = Stufe, Punkte = Reichweite."],
       ["unit2", "Krieger (Stufe 2, Helm): zieht frei um Ecken. Ritter (3) mit Helmbusch, Held (4) mit Umhang."],
       ["unitCards", "Karten sieht man an der Figur: Lanze, weiße Schärpe = Läuferschlag, Pferdekopf, Feder = Sprungfeder, Flügel = Lange Beine, Sterne = Stufen durch Karten."],
-      ["factory", "Fabrik: nur auf Kat 1 baubar (das Vorkommen ist danach weg); sammelt Quader und Bälle von Feld und Nachbarn. 10 davon: Stufe +1. 20 aus zwei Regionen (zwei Farben): Stufe +2."],
+      ["factory", "Fabrik: der König baut sie mit Kat 1 aus dem Gepäck auf jedem freien Feld; sie sammelt Quader und Bälle von Feld und Nachbarn. 10 davon: Stufe +1. 20 aus zwei Regionen (zwei Farben): Stufe +2."],
       ["pill", "Lager über Fabrik und König: Rauten = Kat-1-Farben, Quadrat = Quader, Kreis = Ball, je in der Farbe der Region; →2 = Stufe der Figur beim Auflösen."],
-      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Limette, Braun, Silber, Cyan = Zentrumsfarben. Nach dem Abbau für immer weg; der König baut ab, wenn er einen Zug lang stehen bleibt."],
+      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Limette, Braun, Silber, Cyan = Zentrumsfarben. Nach dem Abbau für immer weg; der König erntet es beim Betreten und trägt es im Gepäck: damit baut er eine Fabrik oder bringt eine neue Farbe in eine Fabrik (höhere Stufe)."],
       ["ingot", "Quader (Kat 2) in der Farbe seiner Region. Nach dem Abbau weg, nach 5 Runden wieder da (blass mit Zahl = Runden bis dahin)."],
       ["grain", "Ball (Kat 3) in der Farbe seiner Region. Nach 3 Runden wieder da."],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
@@ -1688,7 +1688,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function actionLabel(a, f) {
     if (a.type === "build") {
       const king = f.pieces.find((p) => p.king && p.owner === f.current);
-      return `Fabrik bauen auf ${cellName(king.cell)} (verbraucht das Kat-1-Vorkommen, ${homeName(a.pay)})`;
+      return `Fabrik bauen auf ${cellName(king.cell)} (mit Kat 1 aus dem Gepäck, ${homeName(a.pay)})`;
     }
     if (a.type === "spawn") {
       const fac = f.fById.get(a.factory);

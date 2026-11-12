@@ -116,7 +116,7 @@ cargo test --workspace
 | Name | Standard | Bedeutung |
 |---|---|---|
 | `cat1_distance` | 2 | das eine eigene Kat-1-Feld liegt so viele Schritte vom Start, in Richtung Mitte |
-| `cat1_cells` | 1 | eigene Kat-1-Felder je Ecke (wie `--kat1`) |
+| `cat1_cells` | 1 | eigene Kat-1-Vorkommen je Ecke (wie `--kat1`) |
 | `mid_cat1` | 1 | Kat-1-Felder je Spieler im Zwischenring, etwa auf halbem Weg zur Mitte (Zentrumsfarbe) |
 | `center_colors` | Spieler/2 | neutrale Kat-1-Typen (Zentrumsfarben) rund um die Mitte |
 | `center_cells` | 3 | Felder je Zentrumsfarbe in der Mitte |
@@ -137,13 +137,21 @@ Zwischenring eins je Spieler, in der Mitte drei je Zentrumsfarbe.
 Jede Region (Ecke, auch die freien) hat genau einen Quader (Kat 2) und einen Ball (Kat 3) in
 ihrer Farbe, in mehreren Adern; rund um die Mitte liegt jede Farbe noch einmal. Ein Vorkommen
 ist nach dem Abbau weg: Kat 1 fuer immer, Quader 5 Runden, Baelle 3 Runden. Das gilt fuer den
-Koenig und fuer Fabriken, hin und her laufen bringt also nichts. Kat 1 baut der Koenig nur ab,
-wenn er einen Zug lang darauf stehen bleibt; ein frisch betretenes Feld bleibt Bauplatz.
+Koenig und fuer Fabriken, hin und her laufen bringt also nichts.
+
+Kat 1 erntet der Koenig, sobald er das Feld betritt, und traegt es im Gepaeck. Damit baut er
+auf jedem freien Feld eine Fabrik (Mindestabstand 3 zu jeder anderen), oder er laedt es in
+einer eigenen Fabrik ab: jede neue Farbe dort hebt die Stufe der Figur um eins.
 
 Jede neue Fabrik ist Stufe 1. Stufe 2 braucht 10 Quader/Baelle, Stufe 3 braucht 20 aus zwei
 Regionen (oder eine zweite Kat-1-Farbe). Gemessen mit `stark` gegen `stark`, 40 Partien, 2 Spieler:
-erste Stufe-2-Figur um Runde 17, Stufe 3 nur in 4 von 40 Partien (um Runde 48), kein Remis,
-im Schnitt 36 Runden. Mit 3 Spielern enden dagegen 4 von 8 Partien remis: offen.
+erste Stufe-2-Figur um Runde 9, Stufe 3 in 21 von 40 Partien (um Runde 15), 1 Remis, im Schnitt
+36 Runden; Anzug A gewinnt 25, B 14.
+
+**Offen: Remis bei vielen Spielern.** Kat 1 ist endlich (2 Spieler: 7 Vorkommen, 3 Spieler: 12).
+Sind alle verbraucht und alle Figuren getauscht, bleiben nur Koenige uebrig, und die fangen
+sich nicht mehr: Remis nach 300 Runden. Gemessen mit `gierig` (100 Partien): 2 Spieler 11 %,
+3 Spieler 24 %, 5 Spieler 52 %. Mit `stark` 3 Spieler: 6 von 16.
 
 ## Karten
 

@@ -30,7 +30,7 @@ Optionen:
   --side N       Kantenlaenge der Karte (Standard 10)
   --rounds N     Unentschieden nach N Runden (Standard 300)
   --stock N      Vorrat je Rohstoffvorkommen in Einheiten (Standard 0 = unerschoepflich)
-  --kat1 N       eigene Kat-1-Felder je Ecke, also Bauplaetze fuer Fabriken (Standard 1)
+  --kat1 N       eigene Kat-1-Vorkommen je Ecke, der Koenig erntet sie zum Bauen (Standard 1)
   --cards LISTE  Markt fest vorgeben, z. B. training,lance (leer = ohne Karten)
   --gift X       Messung: Spieler A bekommt die Karte X geschenkt (sobald sie wirken kann)
                  oder N Rohstoffeinheiten: units:N ab Runde 3, units@fig:N mit der

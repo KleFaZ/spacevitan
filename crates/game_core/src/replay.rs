@@ -287,7 +287,7 @@ pub fn state_json(game: &Game) -> String {
         format!(r#"{{"cell":{},"items":{}}}"#, cell.0, inv_json(inv))
     });
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"king_moved":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"charge":{},"extra_deposits":{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"charge":{},"extra_deposits":{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
@@ -300,7 +300,6 @@ pub fn state_json(game: &Game) -> String {
             "[{},{},{}]",
             c.0, r.0, back
         )),
-        st.king_moved,
         list(st.harvested.iter(), |((c, r), n)| format!(
             "[{},{},{}]",
             c.0, r.0, n

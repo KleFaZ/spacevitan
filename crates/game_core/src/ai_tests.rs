@@ -121,9 +121,9 @@ fn moves_a_threatened_piece_to_safety() {
 }
 
 #[test]
-fn builds_a_factory_on_its_own_category_1_deposit() {
+fn builds_a_factory_with_carried_category_1() {
     let mut g = blank(2);
-    put(&mut g, 0, 0, cat1(0));
+    g.setup_carry(P0, cat1(0), 1);
     assert_eq!(choose(&g), Action::BuildFactory { pay: cat1(0) });
 }
 

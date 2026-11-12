@@ -270,11 +270,7 @@ fn the_king_collects_everything_on_his_cell_at_the_end_of_his_turn() {
     put(&mut g, 1, 0, cat3(1, 2));
     put(&mut g, 0, 1, cat3(0, 0));
     let events = act!(g, king_to(&g, P0, 1, 0));
-    assert_eq!(
-        carry(&g, P0, cat1(0)),
-        0,
-        "Kat 1 erst, wenn er stehen bleibt"
-    );
+    assert_eq!(carry(&g, P0, cat1(0)), 1, "Kat 1 erntet er beim Betreten");
     assert_eq!(carry(&g, P0, cat2(0, 0)), 1);
     assert_eq!(carry(&g, P0, cat3(1, 2)), 1);
     assert_eq!(
@@ -285,9 +281,9 @@ fn the_king_collects_everything_on_his_cell_at_the_end_of_his_turn() {
     assert!(events.contains(&Event::Collected {
         player: P0,
         cell: c(&g, 1, 0),
-        gained: inv(&[(cat2(0, 0), 1), (cat3(1, 2), 1)]),
+        gained: inv(&[(cat1(0), 1), (cat2(0, 0), 1), (cat3(1, 2), 1)]),
     }));
-    assert_eq!(g.state.ledger.created, 2);
+    assert_eq!(g.state.ledger.created, 3);
 }
 
 #[test]
@@ -343,21 +339,22 @@ fn only_the_king_collects_from_fields_other_pieces_do_not() {
 // ----- Fabriken ------------------------------------------------------------------------------
 
 #[test]
-fn building_needs_a_category_1_deposit_under_the_king() {
+fn building_needs_category_1_in_the_kings_luggage() {
     let mut g = blank(2);
-    g.setup_carry(P0, cat1(0), 3); // Gepaeck allein reicht nicht
+    put(&mut g, 0, 0, cat1(0)); // ein Vorkommen unter dem Koenig allein reicht nicht
     assert!(!g
         .legal_actions()
         .iter()
         .any(|a| matches!(a, Action::BuildFactory { .. })));
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat1(0) }),
-        Err(RuleError::Illegal(IllegalReason::NoCategory1DepositHere))
+        Err(RuleError::Illegal(IllegalReason::NoCategory1Carried))
     );
-    put(&mut g, 0, 0, cat2(0, 0));
+    g.setup_carry(P0, cat2(0, 0), 3);
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat2(0, 0) }),
-        Err(RuleError::Illegal(IllegalReason::PayTypeIsNotCategory1))
+        Err(RuleError::Illegal(IllegalReason::PayTypeIsNotCategory1)),
+        "Kat 2 baut keine Fabrik"
     );
     assert_eq!(
         g.apply(Action::BuildFactory {
@@ -365,48 +362,49 @@ fn building_needs_a_category_1_deposit_under_the_king() {
         }),
         Err(RuleError::Illegal(IllegalReason::UnknownResource))
     );
-    put(&mut g, 0, 0, cat1(1));
+    g.setup_carry(P0, cat1(1), 1);
+    g.setup_carry(P0, cat1(2), 1);
     assert_eq!(
         g.legal_actions()
             .into_iter()
             .filter(|a| matches!(a, Action::BuildFactory { .. }))
             .collect::<Vec<_>>(),
-        vec![Action::BuildFactory { pay: cat1(1) }],
-        "nur das Kat-1-Vorkommen auf dem Feld zaehlt, nicht das Gepaeck"
+        vec![
+            Action::BuildFactory { pay: cat1(1) },
+            Action::BuildFactory { pay: cat1(2) }
+        ],
+        "jede Kat-1-Farbe im Gepaeck, auf jedem freien Feld"
     );
 }
 
 #[test]
-fn building_consumes_the_category_1_deposit_and_puts_it_into_the_storage() {
+fn the_king_builds_anywhere_with_carried_category_1() {
     let mut g = blank(2);
-    put(&mut g, 0, 0, cat1(1));
     put(&mut g, 0, 0, cat2(0, 0));
+    g.setup_carry(P0, cat1(1), 2);
     let events = act!(g, Action::BuildFactory { pay: cat1(1) });
     let factory = g.factories_of(P0).next().expect("Fabrik").clone();
-    assert_eq!(factory.cell, c(&g, 0, 0));
+    assert_eq!(factory.cell, c(&g, 0, 0), "dort, wo der Koenig steht");
     assert!(events.contains(&Event::FactoryBuilt {
         factory: factory.id,
         owner: P0,
         cell: c(&g, 0, 0),
     }));
-    assert!(g.state.depleted.contains(&(c(&g, 0, 0), cat1(1))));
-    assert_eq!(
-        g.available_deposits(c(&g, 0, 0)),
-        vec![cat2(0, 0)],
-        "nur Kat 1 ist weg"
-    );
-    // 1x Kat 1 aus dem Vorkommen; Kat 2 sammelt der Koenig am Zugende und laedt es ab,
-    // ausserdem erntet die Fabrik ihr eigenes Feld.
-    assert_eq!(factory.storage.get(cat1(1)), 1);
+    // Eine Einheit Kat 1 bleibt im Lager der Fabrik; die zweite lud der Koenig am Zugende ab,
+    // dazu erntete die Fabrik ihr eigenes Feld.
+    assert_eq!(factory.storage.get(cat1(1)), 2);
     assert_eq!(factory.storage.get(cat2(0, 0)), 2);
-    assert_eq!(g.deposit_remaining(c(&g, 0, 0), cat1(1)), Some(0));
+    assert!(g.state.carried[P0.idx()].is_empty());
+    assert!(g.state.depleted.is_empty(), "gebaut wird ohne Vorkommen");
 }
 
 #[test]
-fn a_used_category_1_deposit_never_comes_back() {
-    let mut g = blank(2);
+fn a_category_1_deposit_is_taken_by_the_first_king_who_steps_on_it_and_never_comes_back() {
+    let mut g = blank_with(Config::new(2, 1));
     put(&mut g, 1, 0, cat1(0));
     act!(g, king_to(&g, P0, 1, 0));
+    assert_eq!(carry(&g, P0, cat1(0)), 1);
+    assert!(g.state.depleted.contains(&(c(&g, 1, 0), cat1(0))));
     act!(g, king_to(&g, P1, 8, 9));
     act!(g, Action::BuildFactory { pay: cat1(0) });
     let f = g.factories_of(P0).next().unwrap().id;
@@ -414,7 +412,6 @@ fn a_used_category_1_deposit_never_comes_back() {
     act!(g, king_to(&g, P0, 2, 0));
     act!(g, king_to(&g, P1, 8, 9));
     act!(g, Action::SpawnPiece { factory: f });
-    // Fabrik ist aufgeloest; das Feld hat kein Kat 1 mehr, hier kann nie wieder gebaut werden.
     let pawn = g.state.piece_at(c(&g, 1, 0)).unwrap().id;
     act!(g, king_to(&g, P1, 9, 9));
     act!(
@@ -430,10 +427,24 @@ fn a_used_category_1_deposit_never_comes_back() {
     assert_eq!(g.state.ledger.created, before, "nichts mehr zu sammeln");
     assert!(g.available_deposits(c(&g, 1, 0)).is_empty());
     act!(g, king_to(&g, P1, 9, 9));
-    assert!(!g
-        .legal_actions()
-        .iter()
-        .any(|a| matches!(a, Action::BuildFactory { .. })));
+    assert!(
+        !g.legal_actions()
+            .iter()
+            .any(|a| matches!(a, Action::BuildFactory { .. })),
+        "kein Kat 1 mehr im Gepaeck"
+    );
+}
+
+#[test]
+fn walking_over_an_enemy_category_1_deposit_takes_it_away() {
+    let mut g = blank_with(Config::new(2, 1));
+    put(&mut g, 1, 0, cat1(1));
+    act!(g, king_to(&g, P0, 1, 0));
+    assert_eq!(carry(&g, P0, cat1(1)), 1, "auch eine fremde Farbe");
+    act!(g, king_to(&g, P1, 8, 9));
+    act!(g, king_to(&g, P0, 2, 0));
+    assert_eq!(carry(&g, P0, cat1(1)), 1, "er traegt es weiter");
+    assert!(g.available_deposits(c(&g, 1, 0)).is_empty());
 }
 
 #[test]
@@ -466,13 +477,13 @@ fn spawning_right_after_building_gives_only_a_pawn() {
 
 #[test]
 fn the_king_unloads_everything_into_the_factory_he_stands_on_at_turn_end() {
-    let mut g = blank(2);
+    let mut g = blank_with(Config::new(2, 1));
     put(&mut g, 1, 0, cat1(0));
     g.setup_carry(P0, cat2(0, 0), 2);
-    act!(g, king_to(&g, P0, 1, 0)); // Kat 1 bleibt liegen: er ist gerade erst angekommen
+    act!(g, king_to(&g, P0, 1, 0)); // erntet das Kat 1 und baut im naechsten Zug damit
     act!(g, king_to(&g, P1, 8, 9));
     let events = act!(g, Action::BuildFactory { pay: cat1(0) });
-    // 1 Einheit aus dem verbauten Vorkommen, dazu das Gepaeck des Koenigs.
+    // 1 Einheit Kat 1 aus dem Gepaeck verbaut, dazu das restliche Gepaeck des Koenigs.
     let factory = g.factories_of(P0).next().unwrap();
     assert_eq!(factory.storage.get(cat1(0)), 1);
     assert_eq!(factory.storage.get(cat2(0, 0)), 2);
@@ -507,7 +518,7 @@ fn factories_keep_a_minimum_distance_to_each_other() {
     ] {
         let mut g = blank(2);
         g.setup_factory(P1, c(&g, fx, fy));
-        put(&mut g, 0, 0, cat1(0));
+        g.setup_carry(P0, cat1(0), 1);
         let offered = g
             .legal_actions()
             .iter()
@@ -523,7 +534,7 @@ fn the_minimum_distance_is_configurable() {
     config.min_factory_distance = 2;
     let mut g = blank_with(config);
     g.setup_factory(P1, c(&g, 2, 0));
-    put(&mut g, 0, 0, cat1(0));
+    g.setup_carry(P0, cat1(0), 1);
     assert!(g
         .legal_actions()
         .iter()
@@ -534,7 +545,7 @@ fn the_minimum_distance_is_configurable() {
 fn the_distance_rule_also_applies_to_the_own_factories_and_explains_itself() {
     let mut g = blank(2);
     g.setup_factory(P0, c(&g, 0, 2));
-    put(&mut g, 0, 0, cat1(0));
+    g.setup_carry(P0, cat1(0), 1);
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat1(0) }),
         Err(RuleError::Illegal(IllegalReason::TooCloseToAnotherFactory))
@@ -545,7 +556,7 @@ fn the_distance_rule_also_applies_to_the_own_factories_and_explains_itself() {
 fn no_second_factory_on_the_same_cell() {
     let mut g = blank(2);
     g.setup_factory(P0, c(&g, 0, 0));
-    put(&mut g, 0, 0, cat1(0));
+    g.setup_carry(P0, cat1(0), 1);
     assert_eq!(
         g.apply(Action::BuildFactory { pay: cat1(0) }),
         Err(RuleError::Illegal(IllegalReason::FactoryAlreadyHere))
@@ -1251,7 +1262,7 @@ fn level_of(g: &Game, f: crate::ids::FactoryId) -> u8 {
 fn building_on_any_colour_gives_a_level_one_factory() {
     for res in [cat1(0), cat1(1)] {
         let mut g = blank(2);
-        put(&mut g, 0, 0, res);
+        g.setup_carry(P0, res, 1);
         act!(g, Action::BuildFactory { pay: res });
         let f = g.factories_of(P0).next().expect("Fabrik").clone();
         assert_eq!(f.storage.total(), 1, "kein Bonus fuer fremde Farben");
@@ -1259,7 +1270,7 @@ fn building_on_any_colour_gives_a_level_one_factory() {
     }
     let mut g = blank(2);
     let centre = g.map.center_types().next().expect("Zentrumsfarbe").id;
-    put(&mut g, 0, 0, centre);
+    g.setup_carry(P0, centre, 1);
     act!(g, Action::BuildFactory { pay: centre });
     let f = g.factories_of(P0).next().expect("Fabrik").clone();
     assert_eq!(level_of(&g, f.id), 1);
@@ -1397,34 +1408,23 @@ fn category_two_is_gone_after_mining_and_back_after_five_rounds() {
 }
 
 #[test]
-fn category_one_is_mined_only_by_a_king_who_stays_and_then_gone_for_good() {
+fn category_one_is_gone_for_good_once_the_king_stepped_on_it() {
     let mut g = blank_with(Config::new(2, 1));
     put(&mut g, 1, 0, cat1(1));
     let field = c(&g, 1, 0);
     let unit = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
     round_to(&mut g, 1, 0, (8, 9));
-    assert!(
-        g.state.carried[0].is_empty(),
-        "angekommen: noch ein Bauplatz"
+    assert_eq!(
+        g.state.carried[0].get(cat1(1)),
+        1,
+        "beim Betreten geerntet, nicht erst nach einem Zug Warten"
     );
-    assert!(g
-        .legal_actions()
-        .contains(&Action::BuildFactory { pay: cat1(1) }));
-    // Der Koenig bleibt stehen (eine Figur zieht): jetzt baut er die Farbe ab.
-    act!(
-        g,
-        Action::Move {
-            piece: unit,
-            to: c(&g, 6, 5)
-        }
-    );
-    assert_eq!(g.state.carried[0].get(cat1(1)), 1);
     assert!(g.state.depleted.contains(&(field, cat1(1))));
-    act!(g, king_to(&g, P1, 9, 9));
+    assert!(g.available_deposits(field).is_empty());
     assert!(
-        !g.legal_actions()
+        g.legal_actions()
             .contains(&Action::BuildFactory { pay: cat1(1) }),
-        "abgebaut ist kein Bauplatz mehr"
+        "gebaut wird mit dem Gepaeck"
     );
     for _ in 0..12 {
         act!(

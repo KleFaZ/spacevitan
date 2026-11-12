@@ -392,9 +392,9 @@ impl Game {
         }
 
         if let Some(king) = self.king(me) {
-            let cat1: Vec<ResourceId> = self
-                .available_deposits(king.cell)
-                .into_iter()
+            // Gebaut wird mit Kat 1 aus dem Gepaeck des Koenigs, auf jedem freien Feld.
+            let cat1: Vec<ResourceId> = self.state.carried[me.idx()]
+                .kinds()
                 .filter(|&r| self.map.category(r) == 1)
                 .collect();
             // Abstandspruefung (Breitensuche) nur, wenn hier ueberhaupt gebaut werden koennte.
@@ -614,8 +614,8 @@ impl Game {
                     return IllegalReason::PayTypeIsNotCategory1;
                 }
                 if let Some(king) = self.king(me) {
-                    if !self.available_deposits(king.cell).contains(&pay) {
-                        return IllegalReason::NoCategory1DepositHere;
+                    if self.state.carried[me.idx()].get(pay) == 0 {
+                        return IllegalReason::NoCategory1Carried;
                     }
                     if self.state.factory_at(king.cell).is_some() {
                         return IllegalReason::FactoryAlreadyHere;
@@ -710,9 +710,6 @@ impl Game {
 
     fn do_move(&mut self, actor: PlayerId, id: PieceId, to: CellId, events: &mut Vec<Event>) {
         let from = self.state.pieces[&id].cell;
-        if self.state.pieces[&id].is_king() {
-            self.state.king_moved = true;
-        }
 
         if let Some(victim_id) = self.state.occupant[to.idx()] {
             let victim = self.state.remove_piece(victim_id).expect("Opfer existiert");
@@ -763,10 +760,12 @@ impl Game {
 
     fn do_build(&mut self, actor: PlayerId, pay: ResourceId, events: &mut Vec<Event>) {
         let cell = self.king(actor).expect("Koenig lebt").cell;
-        // Das Kat-1-Vorkommen geht in der Fabrik auf: es ist dauerhaft weg, liegt aber als
-        // eine Einheit im Lager. Sofort aufgeloest ergibt das einen Bauern.
-        self.state.depleted.insert((cell, pay));
-        self.state.ledger.created += 1;
+        // Eine Einheit Kat 1 aus dem Gepaeck geht in der Fabrik auf und liegt dort im Lager.
+        // Sofort aufgeloest ergibt das einen Bauern.
+        assert!(
+            self.state.carried[actor.idx()].take(pay, 1),
+            "Kat 1 im Gepaeck geprueft"
+        );
         let factory = self.state.insert_factory(actor, cell);
         self.state
             .factories
@@ -1036,12 +1035,7 @@ impl Game {
 
         if let Some(king_cell) = self.king(actor).map(|k| k.cell) {
             let mut gained = Inventory::new();
-            // Kat 1 baut der Koenig nur ab, wenn er in diesem Zug stehen geblieben ist.
-            let stayed = !self.state.king_moved;
             for res in self.available_deposits(king_cell) {
-                if self.map.category(res) == 1 && !stayed {
-                    continue;
-                }
                 let amount = self.harvest(king_cell, res, yield_n);
                 gained.add(res, amount);
             }
@@ -1123,7 +1117,6 @@ impl Game {
     /// Naechster lebender Spieler; nach dem letzten beginnt eine neue Runde.
     fn advance_turn(&mut self, events: &mut Vec<Event>) {
         self.state.bought_this_turn = false;
-        self.state.king_moved = false;
         self.state.extra_actions = 0;
         self.state.charge = false;
         let n = self.config.players as usize;

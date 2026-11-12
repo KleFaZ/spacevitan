@@ -120,7 +120,7 @@ pub enum IllegalReason {
     CannotReach,
     UnknownResource,
     PayTypeIsNotCategory1,
-    NoCategory1DepositHere,
+    NoCategory1Carried,
     FactoryAlreadyHere,
     TooCloseToAnotherFactory,
     NoSuchFactory,
@@ -148,9 +148,7 @@ impl std::fmt::Display for IllegalReason {
             IllegalReason::PayTypeIsNotCategory1 => {
                 "bezahlt werden kann nur mit einem Kat-1-Rohstoff"
             }
-            IllegalReason::NoCategory1DepositHere => {
-                "auf dem Feld des Koenigs liegt kein solches Kat-1-Vorkommen"
-            }
+            IllegalReason::NoCategory1Carried => "der Koenig traegt keinen solchen Kat-1-Rohstoff",
             IllegalReason::FactoryAlreadyHere => "hier steht schon eine Fabrik",
             IllegalReason::TooCloseToAnotherFactory => "zu nah an einer anderen Fabrik",
             IllegalReason::NoSuchFactory => "diese Fabrik gibt es nicht",

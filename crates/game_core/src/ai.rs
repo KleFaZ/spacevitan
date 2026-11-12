@@ -1179,27 +1179,27 @@ impl SearchBot {
             }
         }
 
-        // Freie Bauplaetze in Reichweite des Koenigs.
+        // Bauplaetze: wer Kat 1 im Gepaeck hat, baut auf jedem freien Feld. Sonst lockt das
+        // naechste Kat-1-Vorkommen: der Koenig erntet es beim Betreten und baut im Zug danach.
         let mut best_site = 0;
+        let site = (unit_value(1) * w.factory_share / 100 + w.factory_base) * w.site_share / 100;
+        if carried.kinds().any(is_cat1) {
+            let min_dist = g.config.min_factory_distance;
+            let steps = st
+                .factories
+                .values()
+                .map(|f| min_dist.saturating_sub(self.dist.get(board, f.cell, kc)))
+                .max()
+                .unwrap_or(0);
+            best_site = site - w.site_step * steps as i32;
+        }
         for i in 0..self.cat1.len() {
             let (cell, res) = self.cat1[i];
-            if st.depleted.contains(&(cell, res)) || st.factory_at(cell).is_some() {
+            if st.depleted.contains(&(cell, res)) {
                 continue;
             }
-            let min_dist = g.config.min_factory_distance;
-            let mut free = true;
-            for f in st.factories.values() {
-                if self.dist.get(board, f.cell, cell) < min_dist {
-                    free = false;
-                    break;
-                }
-            }
-            if free {
-                let fv = unit_value(1) * w.factory_share / 100 + w.factory_base;
-                let val =
-                    fv * w.site_share / 100 - w.site_step * self.dist.get(board, cell, kc) as i32;
-                best_site = best_site.max(val);
-            }
+            let val = site - w.site_step * self.dist.get(board, cell, kc) as i32;
+            best_site = best_site.max(val);
         }
         // Karten des Spielers.
         let pp = st.player_perks[p.idx()];
