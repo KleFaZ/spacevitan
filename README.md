@@ -121,14 +121,29 @@ cargo test --workspace
 | `center_colors` | Spieler/2 | neutrale Kat-1-Typen (Zentrumsfarben) rund um die Mitte |
 | `center_cells` | 3 | Felder je Zentrumsfarbe in der Mitte |
 | `center_radius` | 2 | so weit von der Mitte liegen sie (auf kleinen Karten weniger) |
-| `foreign_build_bonus` | 1 | Fabrik auf fremder Farbe bekommt die eigene dazu: gleich Stufe 2 |
-| `upgrade_step` | 10 | je 10 Einheiten ab Kat 2 im Lager (aus mindestens Stufe+1 Typen) Stufe +1; 0 = aus |
+| `upgrade_step` | 10 | 10 Quader/Baelle im Lager: Stufe +1; 20 aus zwei Regionen: Stufe +2; 0 = aus |
+| `upgrade_region_min` | 3 | so viele Einheiten einer Farbe muessen im Lager liegen, damit die Region zaehlt |
+| `regrow_cat1` / `regrow_cat2` / `regrow_cat3` | 0 / 5 / 3 | nach dem Abbau so viele Runden weg; 0 = fuer immer, 1 = jede Runde wieder da |
+| `center_mix` | 1 | so oft liegt jede Regionsfarbe (Quader und Ball) zusaetzlich rund um die Mitte |
 | `max_upgrades` | 2 | hoechstens so viele Stufen durch Ausbau |
 | `market_size` | 2 je Spieler (ab 5 Spielern 1) | Karten im Markt, jede Partie zufaellig gezogen; 0 = ohne Karten |
 | `card_target_near` | 0 | 1 = Figurenkarten nur fuer eine Figur auf oder neben dem Zahlfeld |
 
 Kat 1 wird also zur Mitte hin dichter: in jeder Ecke ein Feld der eigenen Farbe, im
 Zwischenring eins je Spieler, in der Mitte drei je Zentrumsfarbe.
+
+### Regionen, Abbau, Stufen
+
+Jede Region (Ecke, auch die freien) hat genau einen Quader (Kat 2) und einen Ball (Kat 3) in
+ihrer Farbe, in mehreren Adern; rund um die Mitte liegt jede Farbe noch einmal. Ein Vorkommen
+ist nach dem Abbau weg: Kat 1 fuer immer, Quader 5 Runden, Baelle 3 Runden. Das gilt fuer den
+Koenig und fuer Fabriken, hin und her laufen bringt also nichts. Kat 1 baut der Koenig nur ab,
+wenn er einen Zug lang darauf stehen bleibt; ein frisch betretenes Feld bleibt Bauplatz.
+
+Jede neue Fabrik ist Stufe 1. Stufe 2 braucht 10 Quader/Baelle, Stufe 3 braucht 20 aus zwei
+Regionen (oder eine zweite Kat-1-Farbe). Gemessen mit `stark` gegen `stark`, 40 Partien, 2 Spieler:
+erste Stufe-2-Figur um Runde 17, Stufe 3 nur in 4 von 40 Partien (um Runde 48), kein Remis,
+im Schnitt 36 Runden. Mit 3 Spielern enden dagegen 4 von 8 Partien remis: offen.
 
 ## Karten
 
@@ -139,23 +154,23 @@ auf eine beliebige eigene Figur (mit `card_target_near=1` nur auf oder neben dem
 Deck staerkt nur Angriff und Wirtschaft, Verteidigungskarten gibt es nicht. Texte und Preise:
 `crates/game_core/src/cards.rs`; der Entwurf mit 100 Karten steht im Projekt-Dokument.
 
-| Karte | Wirkung | Preis (Einheiten Kat 2/3) |
+| Karte | Wirkung | Preis (Quader und Baelle; "Farben" = Regionen) |
 |---|---|---|
-| Ausbildung | Figur: Stufe +1, Reichweite waechst mit | je Reichweite der Figur 2+2: Bauer 4, Reichweite 2: 8, Reichweite 3: 12 |
-| Lange Beine | Figur: Reichweite +1, hoechstens zweimal | je Reichweite 1+2: 3, 6, 9 |
+| Ausbildung | Figur: Stufe +1, Reichweite waechst mit | je Reichweite der Figur 2+2: Bauer 4, Reichweite 2: 8, Reichweite 3: 12; so viele Farben wie die Reichweite |
+| Lange Beine | Figur: Reichweite +1, hoechstens zweimal | je Reichweite 1+2: 3, 6, 9; so viele Farben wie die Reichweite |
 | Laeuferschlag | Figur schlaegt auch diagonal (nur Quadratkarten) | 3 |
 | Lanze | Figur schlaegt zwei Felder weit geradeaus | 4 |
 | Sprungfeder | Figur springt ueber eine Nachbarfigur | 3 |
 | Pferd | Figur springt auf jedes Feld im Abstand 2 | 4 |
-| Sturmangriff | in diesem Zug alle Figuren Reichweite +1 | 3 |
+| Sturmangriff | in diesem Zug alle Figuren Reichweite +1 | 3 Baelle in 2 Farben |
 | Rekrut | Bauer neben der zahlenden Fabrik, die Fabrik bleibt | 1 Farbe + 5 |
-| Doppelzug | in diesem Zug eine zweite Aktion | 5 |
-| Doppelschicht | alle Fabriken ernten sofort noch einmal | 4 |
+| Doppelzug | in diesem Zug eine zweite Aktion | 5, je 2 Farben |
+| Doppelschicht | rund um die eigenen Fabriken waechst alles sofort nach und wird geerntet | 4 |
 | Bergbau / Ackerbau | Fabriken ernten Kat 2 / Kat 3 doppelt | 5 |
-| Runenstein (Set) | der dritte gibt einer Figur Stufe +2 | 6, Set 18 |
-| Sternsplitter (Set) | der dritte legt ein Kat-1-Feld der eigenen Farbe unter den Koenig | 4, Set 12 |
+| Runenstein (Set) | der dritte gibt einer Figur Stufe +2 | 6 (Quader in 3 Farben), Set 18 |
+| Sternsplitter (Set) | der dritte legt ein Kat-1-Feld der eigenen Farbe unter den Koenig | 4 (Quader in 2 Farben), Set 12 |
 
-### Kartenwert-Messung
+### Kartenwert-Messung (Stand vor den Regionsfarben)
 
 `--gift` schenkt Spieler A eine Karte, sobald sie wirken kann (Figurenkarten an seine staerkste
 Figur, sobald er eine hat; Fabrikkarten mit der ersten Fabrik; Sets komplett). Beide Seiten
@@ -189,8 +204,8 @@ lassen sich so nicht messen.
 Umgesetzt: 2 bis 8 Spieler (2 und 4: Quadrat, 3: Dreieck aus Dreiecksfeldern, 5 bis 8:
 regelmaessiges Vieleck aus Hexfeldern; ab 6 Spielern eine vierte Rohstoffkategorie); Kartengenerator mit Fairnesspruefung;
 Koenig sammelt, baut Fabriken nur auf Kat-1-Vorkommen (das Vorkommen ist danach weg; Kat 1 liegt
-zwei Felder vom Start Richtung Mitte, dazu Zentrumsfarben), laedt ab; Fabrik auf fremder Farbe =
-Stufe 2; Ausbau ueber Kat 2/3 im Lager; Kartenmarkt mit 14 Karten (nur Angriff und Wirtschaft); Fabriken sammeln Kat 2/3 vom eigenen Feld und den
+zwei Felder vom Start Richtung Mitte, dazu Zentrumsfarben), laedt ab; Quader und Baelle in der Farbe ihrer Region, Abbau mit Nachwachsen;
+Ausbau ueber Quader/Baelle im Lager, Stufe 3 erst mit zweiter Region; Kartenmarkt mit 14 Karten (nur Angriff und Wirtschaft); Fabriken sammeln Kat 2/3 vom eigenen Feld und den
 Nachbarfeldern (im Quadratgitter 5 Felder); Aufloesen in Figuren (Stufe = Zahl der
 Kat-1-Farben, Reichweite = Stufe); Stufe 1 zieht gerade, ab Stufe 2 frei;
 Schlagen wie im Schach; Fabrik-Einnahme mit Beute, die nur Koenige aufnehmen; Koenig faellt =

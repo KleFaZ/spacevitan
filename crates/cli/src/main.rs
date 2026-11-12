@@ -35,9 +35,9 @@ Optionen:
   --gift X       Messung: Spieler A bekommt die Karte X geschenkt (sobald sie wirken kann)
                  oder N Rohstoffeinheiten: units:N ab Runde 3, units@fig:N mit der
                  ersten Figur, units@fab:N mit der ersten Fabrik
-  --rule LISTE   weitere Regeln, z. B. upgrade_step=6,foreign_build_bonus=0
+  --rule LISTE   weitere Regeln, z. B. upgrade_step=6,regrow_cat2=4
                  (cat1_distance, center_colors, center_radius, center_cells, mid_cat1,
-                 foreign_build_bonus, upgrade_step, max_upgrades, market_size,
+                 regrow_cat1..4, center_mix, upgrade_region_min, upgrade_step, max_upgrades, market_size,
                  card_target_near, min_factory_distance)
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
                  z. B. stark,gierig
