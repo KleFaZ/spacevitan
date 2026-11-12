@@ -761,7 +761,78 @@ impl Game {
             target,
             paid: paid.clone(),
         });
+        let color = paid.kinds().find(|&r| self.map.category(r) == 1);
+        self.apply_card(actor, card, from, target, color, events);
+    }
 
+    /// Schenkt `player` die Wirkung einer Karte ohne Bezahlung (fuer die Kartenwert-Messung
+    /// und Tests). Sets wirken sofort ganz (drei Runensteine bzw. Sternsplitter). Rekrut braucht
+    /// eine eigene Fabrik mit freiem Nachbarfeld, Figurenkarten eine Figur. Gibt `false`
+    /// zurueck, wenn die Karte gerade nicht wirken kann.
+    pub fn grant_card(&mut self, player: PlayerId, card: Card, target: Option<PieceId>) -> bool {
+        let mut events = Vec::new();
+        let from = match card {
+            Card::Recruit => {
+                let Some(f) = self
+                    .factories_of(player)
+                    .map(|f| f.id)
+                    .find(|&f| self.recruit_cell(f).is_some())
+                else {
+                    return false;
+                };
+                PaySource::Factory(f)
+            }
+            _ => PaySource::King,
+        };
+        if card.target() == CardTarget::Unit && target.is_none() {
+            return false;
+        }
+        if card == Card::Starshard
+            && !self
+                .king(player)
+                .is_some_and(|k| self.shard_cell_ok(k.cell))
+        {
+            return false;
+        }
+        // Sets: die vorherigen Teile gelten als schon gekauft.
+        if card.is_set_piece() {
+            let perks = &mut self.state.player_perks[player.idx()];
+            match card {
+                Card::Runestone => perks.runes = SET_SIZE - 1,
+                _ => perks.shards = SET_SIZE - 1,
+            }
+        }
+        let color = Some(self.map.own_color(player));
+        self.apply_card(player, card, from, target, color, &mut events);
+        true
+    }
+
+    /// Schenkt `player` `units` Rohstoffeinheiten ab Kat 2 ins Gepaeck, abwechselnd aus den
+    /// Kat-2- und Kat-3-Typen seiner Ecke (fuer die Kartenwert-Messung).
+    pub fn grant_resources(&mut self, player: PlayerId, units: u32) {
+        let corner = self.map.player_corners[player.idx()];
+        let types: Vec<ResourceId> = self
+            .map
+            .types_of_corner(corner)
+            .filter(|t| t.category >= 2)
+            .map(|t| t.id)
+            .collect();
+        for i in 0..units as usize {
+            self.state.carried[player.idx()].add(types[i % types.len()], 1);
+        }
+        self.state.ledger.created += units as u64;
+    }
+
+    /// Wirkung einer Karte (nach der Bezahlung). `color`: die bezahlte Farbe (Rekrut).
+    fn apply_card(
+        &mut self,
+        actor: PlayerId,
+        card: Card,
+        from: PaySource,
+        target: Option<PieceId>,
+        color: Option<ResourceId>,
+        events: &mut Vec<Event>,
+    ) {
         let cap = self.config.corner_count() as u8;
         let raise = |piece: &mut Piece, by: u8| {
             if let PieceKind::Unit { level, range, .. } = &mut piece.kind {
@@ -794,10 +865,7 @@ impl Game {
                     unreachable!("Rekrut wird aus einer Fabrik bezahlt")
                 };
                 let cell = self.recruit_cell(fid).expect("freies Nachbarfeld");
-                let color = paid
-                    .kinds()
-                    .find(|&r| self.map.category(r) == 1)
-                    .expect("Rekrut kostet eine Farbe");
+                let color = color.expect("Rekrut kostet eine Farbe");
                 let piece = self.state.insert_piece(
                     actor,
                     cell,

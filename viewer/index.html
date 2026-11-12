@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: links das isometrische Brett mit Steuerleiste, rechts die Spieltafel; unter 900px gestapelt. */
+/* Layout: links das isometrische Brett mit Steuerleiste, rechts die Spieltafel; Kartenmarkt und Lager direkt unter dem Brett; unter 900px gestapelt. */
 :root {
   --bg: #e9ece6;
   --surface: #f8f9f5;
@@ -99,6 +99,9 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .status .what { font-weight: 600; }
 
 .panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.below { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; margin-top: 14px; align-items: start; }
+.below > [hidden] { display: none; }
+.below .panel { gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
 .panel h2 {
   font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
   color: var(--muted); margin-bottom: 8px;
@@ -221,6 +224,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <div class="actions" id="actions"></div>
       <div><button class="btn" id="toNow" type="button" hidden>Zur aktuellen Stellung</button></div>
     </div>
+    <div class="below">
+      <div id="marketBox" class="panel" hidden>
+        <h2>Kartenmarkt</h2>
+        <p class="note" id="marketNote"></p>
+        <ul class="market" id="market"></ul>
+      </div>
+      <div id="stockBox" class="panel" hidden>
+        <h2 id="stockTitle">Lager</h2>
+        <div class="stock" id="stock"></div>
+      </div>
+    </div>
   </section>
 
   <aside class="panel">
@@ -259,15 +273,6 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     <div>
       <h2>Spieler</h2>
       <div class="players" id="players"></div>
-    </div>
-    <div id="stockBox" hidden>
-      <h2 id="stockTitle">Lager</h2>
-      <div class="stock" id="stock"></div>
-    </div>
-    <div id="marketBox" hidden>
-      <h2>Kartenmarkt</h2>
-      <p class="note" id="marketNote"></p>
-      <ul class="market" id="market"></ul>
     </div>
     <div>
       <h2>Dieser Zug</h2>
@@ -1696,8 +1701,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const note = document.createElement("p");
         note.className = "note";
         note.textContent = buys
-          ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"} rechts im Kartenmarkt (zusätzlich zum Zug).`
-          : "Karten: im Kartenmarkt rechts steht, was dir zum Kaufen noch fehlt.";
+          ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"} im Kartenmarkt unter dem Brett (zusätzlich zum Zug).`
+          : "Karten: im Kartenmarkt unter dem Brett steht, was dir zum Kaufen noch fehlt.";
         actions.appendChild(note);
       }
     }

@@ -561,3 +561,37 @@ fn three_star_shards_create_a_new_building_site_under_the_king() {
     act!(g, Action::BuildFactory { pay: cat1(0) });
     assert!(g.factories_of(P0).any(|f| f.cell == site));
 }
+
+// ----- Geschenke fuer die Kartenwert-Messung ------------------------------------------------
+
+#[test]
+fn granted_cards_work_without_payment() {
+    let mut g = blank(&[]);
+    let u = g.setup_unit(P0, c(&g, 3, 3), 1, 1);
+    assert!(g.grant_card(P0, Card::Training, Some(u)));
+    assert_eq!(level_range(&g, u), (2, 2));
+    assert!(g.grant_card(P0, Card::Runestone, Some(u)), "ein ganzes Set");
+    assert_eq!(level_range(&g, u), (4, 4));
+    assert_eq!(g.state.player_perks[P0.idx()].runes, 0);
+    assert!(
+        !g.grant_card(P0, Card::Lance, None),
+        "Figurenkarte ohne Figur"
+    );
+    assert!(!g.grant_card(P0, Card::Recruit, None), "Rekrut ohne Fabrik");
+    let f = g.setup_factory(P0, c(&g, 6, 6));
+    g.setup_storage(f, cat1(0), 1);
+    assert!(g.grant_card(P0, Card::Recruit, None));
+    assert_eq!(g.state.ledger.spent_on_cards, 0, "nichts bezahlt");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn granted_resources_land_in_the_kings_bag_and_are_booked() {
+    let mut g = blank(&[]);
+    g.grant_resources(P0, 7);
+    let bag = &g.state.carried[P0.idx()];
+    assert_eq!(bag.total(), 7);
+    assert!(bag.kinds().all(|r| g.map.category(r) >= 2));
+    assert!(bag.kinds().count() >= 4, "verschiedene Typen");
+    g.check_invariants().unwrap();
+}

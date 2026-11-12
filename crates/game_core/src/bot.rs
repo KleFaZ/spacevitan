@@ -249,6 +249,17 @@ impl Bot for GreedyBot {
 pub fn play_out(
     game: &mut Game,
     bots: &mut [Box<dyn Bot>],
+    on_turn: impl FnMut(&Game, PlayerId, &Action, &[Event]),
+) -> Outcome {
+    play_out_with(game, bots, |_| {}, on_turn)
+}
+
+/// Wie `play_out`, mit einem Haken `before`, der vor jeder Aktion den Zustand aendern darf
+/// (Experimente, z. B. eine geschenkte Karte fuer die Kartenwert-Messung).
+pub fn play_out_with(
+    game: &mut Game,
+    bots: &mut [Box<dyn Bot>],
+    mut before: impl FnMut(&mut Game),
     mut on_turn: impl FnMut(&Game, PlayerId, &Action, &[Event]),
 ) -> Outcome {
     assert_eq!(
@@ -257,6 +268,7 @@ pub fn play_out(
         "ein Bot pro Spieler"
     );
     while game.outcome().is_none() {
+        before(game);
         let player = game.current_player();
         let action = bots[player.idx()].choose(game);
         let events = game.apply(action).unwrap_or_else(|e| {

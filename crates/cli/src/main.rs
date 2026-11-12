@@ -2,8 +2,9 @@
 
 use game_core::action::{Action, Event};
 use game_core::ai::{SearchBot, SearchParams, Weights};
-use game_core::bot::{play_out, Bot, GreedyBot, RandomBot};
+use game_core::bot::{play_out_with, Bot, GreedyBot, RandomBot};
 use game_core::cards::Card;
+use game_core::cards::CardTarget;
 use game_core::config::Config;
 use game_core::game::Game;
 use game_core::ids::PlayerId;
@@ -29,11 +30,15 @@ Optionen:
   --side N       Kantenlaenge der Karte (Standard 10)
   --rounds N     Unentschieden nach N Runden (Standard 300)
   --stock N      Vorrat je Rohstoffvorkommen in Einheiten (Standard 0 = unerschoepflich)
-  --kat1 N       Felder je Kat-1-Typ, also Bauplaetze fuer Fabriken je Ecke (Standard 2)
+  --kat1 N       eigene Kat-1-Felder je Ecke, also Bauplaetze fuer Fabriken (Standard 1)
   --cards LISTE  Markt fest vorgeben, z. B. training,lance (leer = ohne Karten)
+  --gift X       Messung: Spieler A bekommt die Karte X geschenkt (sobald sie wirken kann)
+                 oder N Rohstoffeinheiten: units:N ab Runde 3, units@fig:N mit der
+                 ersten Figur, units@fab:N mit der ersten Fabrik
   --rule LISTE   weitere Regeln, z. B. upgrade_step=6,foreign_build_bonus=0
-                 (cat1_distance, center_colors, center_radius, foreign_build_bonus,
-                 upgrade_step, max_upgrades, min_factory_distance)
+                 (cat1_distance, center_colors, center_radius, center_cells, mid_cat1,
+                 foreign_build_bonus, upgrade_step, max_upgrades, market_size,
+                 card_target_near, min_factory_distance)
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
                  z. B. stark,gierig
                  (Standard: gierig)
@@ -55,6 +60,7 @@ struct Options {
     kat1: u32,
     rules: String,
     cards: Option<Vec<Card>>,
+    gift: Option<Gift>,
     bots: Vec<String>,
     nodes: u64,
     show: bool,
@@ -72,6 +78,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
         kat1: 0,
         rules: String::new(),
         cards: None,
+        gift: None,
         bots: Vec::new(),
         nodes: SearchParams::DEFAULT.node_budget,
         show: false,
@@ -113,6 +120,11 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
             }
             "--kat1" => {
                 o.kat1 = number(value(i)?, "--kat1")? as u32;
+                i += 1;
+            }
+            "--gift" => {
+                let spec = value(i)?;
+                o.gift = Some(parse_gift(spec)?);
                 i += 1;
             }
             "--cards" => {
@@ -201,6 +213,83 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
             }
         })
         .collect()
+}
+
+/// Geschenk an Spieler A fuer die Kartenwert-Messung (`--gift`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Gift {
+    Card(Card),
+    Units(u32, GiftTime),
+}
+
+/// Wann ein Rohstoff-Geschenk kommt: ab Runde 3, mit der ersten Figur oder mit der ersten
+/// Fabrik. So laesst sich eine Karte mit Rohstoffen zum selben Zeitpunkt vergleichen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GiftTime {
+    Round3,
+    FirstUnit,
+    FirstFactory,
+}
+
+fn parse_gift(spec: &str) -> Result<Gift, String> {
+    let units = |n: &str, when| {
+        n.parse()
+            .map(|n| Gift::Units(n, when))
+            .map_err(|_| format!("--gift {spec}: keine Zahl"))
+    };
+    if let Some(n) = spec.strip_prefix("units:") {
+        units(n, GiftTime::Round3)
+    } else if let Some(n) = spec.strip_prefix("units@fig:") {
+        units(n, GiftTime::FirstUnit)
+    } else if let Some(n) = spec.strip_prefix("units@fab:") {
+        units(n, GiftTime::FirstFactory)
+    } else {
+        Card::from_key(spec)
+            .map(Gift::Card)
+            .ok_or_else(|| format!("unbekannte Karte '{spec}'"))
+    }
+}
+
+/// Gibt das Geschenk, sobald es wirken kann: Figurenkarten an A's staerkste Figur, sobald es
+/// eine gibt; Fabrikkarten (Rekrut, Doppelschicht, Bergbau, Ackerbau) mit der ersten Fabrik;
+/// Rohstoffe zum gewaehlten Zeitpunkt; sonst ab Runde 3. `true` = vergeben.
+fn give_gift(g: &mut Game, gift: Gift) -> bool {
+    let a = PlayerId(0);
+    if g.current_player() != a || g.state.round < 3 || !g.state.alive[0] {
+        return false;
+    }
+    let has_unit = g.pieces_of(a).any(|p| !p.is_king());
+    let has_factory = g.factories_of(a).next().is_some();
+    match gift {
+        Gift::Units(n, when) => {
+            let ready = match when {
+                GiftTime::Round3 => true,
+                GiftTime::FirstUnit => has_unit,
+                GiftTime::FirstFactory => has_factory,
+            };
+            if ready {
+                g.grant_resources(a, n);
+            }
+            ready
+        }
+        Gift::Card(Card::Recruit | Card::DoubleShift | Card::Mining | Card::Farming)
+            if !has_factory =>
+        {
+            false
+        }
+        Gift::Card(card) if card.target() == CardTarget::Unit => {
+            let best = g
+                .pieces_of(a)
+                .filter(|p| !p.is_king())
+                .max_by_key(|p| match &p.kind {
+                    game_core::state::PieceKind::Unit { level, .. } => *level,
+                    game_core::state::PieceKind::King => 0,
+                })
+                .map(|p| p.id);
+            best.is_some() && g.grant_card(a, card, best)
+        }
+        Gift::Card(card) => g.grant_card(a, card, None),
+    }
 }
 
 /// Misst die Rechenzeit eines Bots.
@@ -319,32 +408,45 @@ fn run() -> Result<(), String> {
             .export
             .as_ref()
             .map(|_| ReplayWriter::new(&game, &bot_names));
-        let outcome = play_out(&mut game, &mut bots, |game, player, action, events| {
-            if let Some(w) = writer.as_mut() {
-                w.record(game, player, action, events);
-            }
-            for e in events {
-                match e {
-                    Event::Spawned { .. } => stats.spawned += 1,
-                    Event::FactoryBuilt { .. } => stats.factories += 1,
-                    Event::Captured { .. } => stats.captures += 1,
-                    Event::CardBought { card, .. } => {
-                        stats.cards += 1;
-                        *stats.cards_by_kind.entry(card.name()).or_default() += 1;
-                    }
-                    _ => {}
-                }
-                if show {
-                    if let Event::PlayerEliminated { player } = e {
-                        println!("Spieler {} ist ausgeschieden.", player_letter(*player));
-                    }
+        let mut gift = o.gift;
+        let before = |g: &mut Game| {
+            if let Some(gv) = gift {
+                if give_gift(g, gv) {
+                    gift = None;
                 }
             }
-            if show && game.outcome().is_none() && game.state.round != last_round {
-                println!("Nach Runde {last_round}:\n{}", render_game(game));
-                last_round = game.state.round;
-            }
-        });
+        };
+        let outcome = play_out_with(
+            &mut game,
+            &mut bots,
+            before,
+            |game, player, action, events| {
+                if let Some(w) = writer.as_mut() {
+                    w.record(game, player, action, events);
+                }
+                for e in events {
+                    match e {
+                        Event::Spawned { .. } => stats.spawned += 1,
+                        Event::FactoryBuilt { .. } => stats.factories += 1,
+                        Event::Captured { .. } => stats.captures += 1,
+                        Event::CardBought { card, .. } => {
+                            stats.cards += 1;
+                            *stats.cards_by_kind.entry(card.name()).or_default() += 1;
+                        }
+                        _ => {}
+                    }
+                    if show {
+                        if let Event::PlayerEliminated { player } = e {
+                            println!("Spieler {} ist ausgeschieden.", player_letter(*player));
+                        }
+                    }
+                }
+                if show && game.outcome().is_none() && game.state.round != last_round {
+                    println!("Nach Runde {last_round}:\n{}", render_game(game));
+                    last_round = game.state.round;
+                }
+            },
+        );
         if show {
             println!("Endstand:\n{}", render_game(&game));
         }
@@ -521,6 +623,32 @@ mod tests {
         );
         o.bots = vec!["schach".into()];
         assert!(make_bots(&o, 1).is_err());
+    }
+
+    #[test]
+    fn gifts_and_fixed_markets_can_be_given() {
+        let o = parse(&args("--gift units:8 --cards lance,horse"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(o.gift, Some(Gift::Units(8, GiftTime::Round3)));
+        assert_eq!(o.cards, Some(vec![Card::Lance, Card::Horse]));
+        let o = parse(&args("--gift units@fab:4")).unwrap().unwrap();
+        assert_eq!(o.gift, Some(Gift::Units(4, GiftTime::FirstFactory)));
+        let o = parse(&args("--gift units@fig:2")).unwrap().unwrap();
+        assert_eq!(o.gift, Some(Gift::Units(2, GiftTime::FirstUnit)));
+        assert!(parse(&args("--gift units@fig:")).is_err());
+        let o = parse(&args("--gift training")).unwrap().unwrap();
+        assert_eq!(o.gift, Some(Gift::Card(Card::Training)));
+        assert!(parse(&args("--gift schild")).is_err());
+        assert!(parse(&args("--gift units:x")).is_err());
+        assert!(parse(&args("--cards lance,schild")).is_err());
+        let names: Vec<&str> =
+            make_bots(&parse(&args("--bots stark-pur,stark")).unwrap().unwrap(), 1)
+                .unwrap()
+                .iter()
+                .map(|b| b.name())
+                .collect();
+        assert_eq!(names, vec!["stark-pur", "stark"]);
     }
 
     #[test]
