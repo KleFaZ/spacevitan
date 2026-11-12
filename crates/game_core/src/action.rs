@@ -87,6 +87,10 @@ pub enum Event {
     Passed {
         player: PlayerId,
     },
+    /// Die Wertung am Ende nach `score_after` Runden, ein Wert je Spieler.
+    Scored {
+        scores: Vec<u32>,
+    },
     GameOver {
         outcome: Outcome,
     },

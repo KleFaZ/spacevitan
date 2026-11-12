@@ -560,8 +560,8 @@ impl SearchBot {
             return Some(-WIN + ply);
         }
         match g.state.outcome {
-            Some(Outcome::Winner(p)) if p == self.root => Some(WIN - ply),
-            Some(Outcome::Winner(_)) => Some(-WIN + ply),
+            Some(Outcome::Winner(p) | Outcome::Points(p)) if p == self.root => Some(WIN - ply),
+            Some(Outcome::Winner(_) | Outcome::Points(_)) => Some(-WIN + ply),
             Some(Outcome::Draw) => Some(0),
             None => None,
         }
@@ -1154,7 +1154,10 @@ impl SearchBot {
                     let home = f.cell;
                     for i in 0..self.cat1.len() {
                         let (cell, res) = self.cat1[i];
-                        if f.storage.get(res) > 0 || st.depleted.contains(&(cell, res)) {
+                        if f.storage.get(res) > 0
+                            || st.depleted.contains(&(cell, res))
+                            || st.regrow.contains_key(&(cell, res))
+                        {
                             continue;
                         }
                         let val = base
@@ -1195,7 +1198,7 @@ impl SearchBot {
         }
         for i in 0..self.cat1.len() {
             let (cell, res) = self.cat1[i];
-            if st.depleted.contains(&(cell, res)) {
+            if st.depleted.contains(&(cell, res)) || st.regrow.contains_key(&(cell, res)) {
                 continue;
             }
             let val = site - w.site_step * self.dist.get(board, cell, kc) as i32;

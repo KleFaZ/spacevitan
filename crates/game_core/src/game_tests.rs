@@ -399,8 +399,8 @@ fn the_king_builds_anywhere_with_carried_category_1() {
 }
 
 #[test]
-fn a_category_1_deposit_is_taken_by_the_first_king_who_steps_on_it_and_never_comes_back() {
-    let mut g = blank_with(Config::new(2, 1));
+fn a_category_1_deposit_is_taken_by_the_first_king_who_steps_on_it_and_stays_gone_with_regrow_0() {
+    let mut g = blank_with(kat1_forever());
     put(&mut g, 1, 0, cat1(0));
     act!(g, king_to(&g, P0, 1, 0));
     assert_eq!(carry(&g, P0, cat1(0)), 1);
@@ -1370,6 +1370,13 @@ fn the_king_speeds_up_the_upgrade_by_unloading() {
 
 // ----- Abbau und Nachwachsen ------------------------------------------------------------------
 
+/// Kat 1 kommt nie wieder (Regel `regrow_cat1=0`).
+fn kat1_forever() -> Config {
+    let mut cfg = Config::new(2, 1);
+    cfg.set("regrow_cat1", 0).unwrap();
+    cfg
+}
+
 /// P0 und P1 ziehen je einmal; der Koenig von P0 geht auf (x, y).
 fn round_to(g: &mut Game, x: i32, y: i32, p1: (i32, i32)) {
     apply_checked(g, king_to(g, P0, x, y));
@@ -1379,7 +1386,7 @@ fn round_to(g: &mut Game, x: i32, y: i32, p1: (i32, i32)) {
 #[test]
 fn category_two_is_gone_after_mining_and_back_after_five_rounds() {
     let mut g = blank_with(Config::new(2, 1));
-    assert_eq!(g.config.regrow_rounds, [0, 5, 3, 2]);
+    assert_eq!(g.config.regrow_rounds, [20, 5, 3, 2]);
     put(&mut g, 1, 0, cat2(0, 0));
     put(&mut g, 1, 0, cat3(0, 0));
     let field = c(&g, 1, 0);
@@ -1408,8 +1415,28 @@ fn category_two_is_gone_after_mining_and_back_after_five_rounds() {
 }
 
 #[test]
-fn category_one_is_gone_for_good_once_the_king_stepped_on_it() {
+fn category_one_is_back_after_twenty_rounds() {
     let mut g = blank_with(Config::new(2, 1));
+    put(&mut g, 1, 0, cat1(1));
+    let field = c(&g, 1, 0);
+    round_to(&mut g, 1, 0, (8, 9)); // Runde 1: der Koenig erntet es
+    assert_eq!(g.state.carried[0].get(cat1(1)), 1);
+    assert_eq!(g.regrows_in_round(field, cat1(1)), Some(21));
+    for k in 2..=21 {
+        let (to, p1) = if k % 2 == 0 {
+            ((0, 0), (9, 9))
+        } else {
+            ((1, 0), (8, 9))
+        };
+        round_to(&mut g, to.0, to.1, p1);
+        let expected = if k == 21 { 2 } else { 1 };
+        assert_eq!(g.state.carried[0].get(cat1(1)), expected, "Runde {k}");
+    }
+}
+
+#[test]
+fn category_one_stays_gone_with_regrow_cat1_0() {
+    let mut g = blank_with(kat1_forever());
     put(&mut g, 1, 0, cat1(1));
     let field = c(&g, 1, 0);
     let unit = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
@@ -1464,4 +1491,83 @@ fn a_factory_gets_each_neighbouring_deposit_only_when_it_has_regrown() {
     }
     // Runde 1: beides. Kat 3 wieder in Runde 4 und 7, Kat 2 wieder in Runde 6.
     assert_eq!(totals, vec![2, 2, 2, 3, 3, 4, 5]);
+}
+
+// ----- Wertung nach `score_after` Runden ------------------------------------------------------
+
+#[test]
+fn score_counts_unit_levels_factories_and_colours_but_not_the_king() {
+    let mut g = blank(2);
+    g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let f = g.setup_factory(P0, c(&g, 2, 2));
+    g.setup_storage(f, cat1(0), 3); // Farbe 0, mehrere Einheiten zaehlen nur einmal
+    g.setup_storage(f, cat1(1), 1); // Farbe 1
+    g.setup_carry(P0, cat1(1), 2); // Farbe 1 noch einmal: zaehlt nicht doppelt
+    g.setup_unit(P1, c(&g, 7, 7), 1, 1);
+    assert_eq!(g.score(P0), 2 + 1 + 2);
+    assert_eq!(g.score(P1), 1);
+    assert_eq!(g.scores(), vec![5, 1]);
+}
+
+fn play_rounds_without_contact(g: &mut Game, rounds: u32) -> Vec<Event> {
+    let mut last = Vec::new();
+    for k in 1..=rounds {
+        let (to, p1) = if k % 2 == 1 {
+            ((1, 0), (8, 9))
+        } else {
+            ((0, 0), (9, 9))
+        };
+        apply_checked(g, king_to(g, P0, to.0, to.1));
+        last = apply_checked(g, king_to(g, P1, p1.0, p1.1));
+    }
+    last
+}
+
+#[test]
+fn after_score_after_rounds_the_higher_score_wins() {
+    let mut cfg = Config::new(2, 1);
+    cfg.set("score_after", 3).unwrap();
+    let mut g = blank_with(cfg);
+    g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    g.setup_unit(P1, c(&g, 7, 7), 1, 1);
+    let events = play_rounds_without_contact(&mut g, 3);
+    assert_eq!(g.outcome(), Some(Outcome::Points(P0)));
+    assert!(events.contains(&Event::Scored { scores: vec![2, 1] }));
+    assert!(events.contains(&Event::GameOver {
+        outcome: Outcome::Points(P0)
+    }));
+}
+
+#[test]
+fn a_tie_in_the_score_is_a_draw_and_zero_switches_the_score_off() {
+    let mut cfg = Config::new(2, 1);
+    cfg.set("score_after", 3).unwrap();
+    let mut g = blank_with(cfg);
+    g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    g.setup_unit(P1, c(&g, 7, 7), 1, 1);
+    play_rounds_without_contact(&mut g, 3);
+    assert_eq!(g.outcome(), Some(Outcome::Draw));
+
+    // Gleiche Wertung, aber P1 hat mehr Rohstoffe im Gepaeck: das entscheidet.
+    let mut cfg = Config::new(2, 1);
+    cfg.set("score_after", 3).unwrap();
+    let mut g = blank_with(cfg);
+    g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    g.setup_unit(P1, c(&g, 7, 7), 1, 1);
+    g.setup_carry(P1, cat2(0, 0), 4);
+    g.setup_carry(P0, cat2(0, 0), 1);
+    play_rounds_without_contact(&mut g, 3);
+    assert_eq!(
+        g.scores(),
+        vec![2, 2],
+        "gleiche Wertung (Stufe 1 + eine Farbe)"
+    );
+    assert_eq!(g.outcome(), Some(Outcome::Points(P1)));
+
+    let mut cfg = Config::new(2, 1);
+    cfg.set("score_after", 0).unwrap();
+    let mut g = blank_with(cfg);
+    g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    play_rounds_without_contact(&mut g, 6);
+    assert_eq!(g.outcome(), None, "ohne Wertung geht es weiter");
 }

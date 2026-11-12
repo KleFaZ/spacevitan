@@ -138,6 +138,8 @@ pub struct Factory {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Winner(PlayerId),
+    /// Nach `score_after` Runden ohne Sieger entscheidet die Wertung (`Game::score`).
+    Points(PlayerId),
     Draw,
 }
 

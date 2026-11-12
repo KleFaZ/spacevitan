@@ -80,6 +80,15 @@ python3 viewer/build.py spacevitan.html --wasm spacevitan.wasm --standalone
 
 Die entstandene `spacevitan.html` laesst sich per Doppelklick im Browser oeffnen.
 
+**Wege vorplanen (Premoves):** Eigene Figur anklicken, dann mit der Maus ueber das Zielfeld
+fahren und **Shift** halten: der kuerzeste freie Weg wird gestrichelt gezeigt. **Shift+Klick**
+laeuft ihn Zug um Zug von selbst (so weit es die Figur je Zug schafft, der Koenig ein Feld),
+auch waehrend die Bots ziehen. Mit **Strg+Klick** (am Mac auch Cmd) waehlt man die Kacheln
+einzeln; Strg loslassen oder Enter startet den Weg. **Esc** oder der Knopf *Route abbrechen*
+stoppt. Eine Route bricht von selbst ab, wenn der Weg versperrt ist, und schlaegt unterwegs
+nie; nur ein Gegner auf dem Zielfeld wird am Ende geschlagen. Mehrere Routen laufen nacheinander,
+ein Zug je Runde.
+
 ### Browser-Ansicht
 
 `viewer/` spielt exportierte Partien isometrisch ab (Runde fuer Runde, mit Ereignissen und
@@ -123,7 +132,8 @@ cargo test --workspace
 | `center_radius` | 2 | so weit von der Mitte liegen sie (auf kleinen Karten weniger) |
 | `upgrade_step` | 10 | 10 Quader/Baelle im Lager: Stufe +1; 20 aus zwei Regionen: Stufe +2; 0 = aus |
 | `upgrade_region_min` | 3 | so viele Einheiten einer Farbe muessen im Lager liegen, damit die Region zaehlt |
-| `regrow_cat1` / `regrow_cat2` / `regrow_cat3` | 0 / 5 / 3 | nach dem Abbau so viele Runden weg; 0 = fuer immer, 1 = jede Runde wieder da |
+| `regrow_cat1` / `regrow_cat2` / `regrow_cat3` | 20 / 5 / 3 | nach dem Abbau so viele Runden weg; 0 = fuer immer, 1 = jede Runde wieder da |
+| `score_after` | 100 | ohne Sieger entscheidet nach so vielen Runden die Wertung (siehe unten); 0 = aus, dann Remis nach `max_rounds` |
 | `center_mix` | 1 | so oft liegt jede Regionsfarbe (Quader und Ball) zusaetzlich rund um die Mitte |
 | `max_upgrades` | 2 | hoechstens so viele Stufen durch Ausbau |
 | `market_size` | 2 je Spieler (ab 5 Spielern 1) | Karten im Markt, jede Partie zufaellig gezogen; 0 = ohne Karten |
@@ -136,8 +146,9 @@ Zwischenring eins je Spieler, in der Mitte drei je Zentrumsfarbe.
 
 Jede Region (Ecke, auch die freien) hat genau einen Quader (Kat 2) und einen Ball (Kat 3) in
 ihrer Farbe, in mehreren Adern; rund um die Mitte liegt jede Farbe noch einmal. Ein Vorkommen
-ist nach dem Abbau weg: Kat 1 fuer immer, Quader 5 Runden, Baelle 3 Runden. Das gilt fuer den
-Koenig und fuer Fabriken, hin und her laufen bringt also nichts.
+ist nach dem Abbau weg und kommt wieder: Kat 1 nach 20 Runden, Quader nach 5, Baelle nach 3.
+Das gilt fuer den Koenig und fuer Fabriken, hin und her laufen bringt also nichts. Auf dem
+Brett sind abgebaute Vorkommen blass und zeigen die Runden bis zur Rueckkehr.
 
 Kat 1 erntet der Koenig, sobald er das Feld betritt, und traegt es im Gepaeck. Damit baut er
 auf jedem freien Feld eine Fabrik (Mindestabstand 3 zu jeder anderen), oder er laedt es in
@@ -145,13 +156,20 @@ einer eigenen Fabrik ab: jede neue Farbe dort hebt die Stufe der Figur um eins.
 
 Jede neue Fabrik ist Stufe 1. Stufe 2 braucht 10 Quader/Baelle, Stufe 3 braucht 20 aus zwei
 Regionen (oder eine zweite Kat-1-Farbe). Gemessen mit `stark` gegen `stark`, 40 Partien, 2 Spieler:
-erste Stufe-2-Figur um Runde 9, Stufe 3 in 21 von 40 Partien (um Runde 15), 1 Remis, im Schnitt
-36 Runden; Anzug A gewinnt 25, B 14.
+erste Stufe-2-Figur um Runde 9, Stufe 3 in 22 von 40 Partien (um Runde 15), im Schnitt 31 Runden.
 
-**Offen: Remis bei vielen Spielern.** Kat 1 ist endlich (2 Spieler: 7 Vorkommen, 3 Spieler: 12).
-Sind alle verbraucht und alle Figuren getauscht, bleiben nur Koenige uebrig, und die fangen
-sich nicht mehr: Remis nach 300 Runden. Gemessen mit `gierig` (100 Partien): 2 Spieler 11 %,
-3 Spieler 24 %, 5 Spieler 52 %. Mit `stark` 3 Spieler: 6 von 16.
+### Wertung nach 100 Runden
+
+Hat nach `score_after` = 100 Runden niemand gewonnen, entscheidet die Wertung: Summe der
+Figurenstufen (der Koenig zaehlt nicht) plus eine Einheit je Fabrik plus eine Einheit je Farbe
+(Region oder Zentrumsfarbe), von der man etwas im Gepaeck oder in einem Fabriklager hat. Bei
+Gleichstand gewinnt, wer mehr Rohstoffe besitzt, danach ist es Remis. Der Viewer zeigt die
+laufende Wertung je Spieler.
+
+Warum: Kat 1 ist begrenzt. Ohne Nachwachsen und ohne Wertung endeten mit `gierig` bei 3 Spielern
+24 %, bei 5 Spielern 52 % der Partien remis (nur noch Koenige, die sich nicht fangen). Jetzt
+sind es 0 bis 1 %. Mit `stark` bei 3 Spielern: 0 Remis in 24 Partien, 11 davon fielen erst durch
+die Wertung (Runde 101), im Schnitt 82 Runden.
 
 ## Karten
 
@@ -211,13 +229,13 @@ lassen sich so nicht messen.
 
 Umgesetzt: 2 bis 8 Spieler (2 und 4: Quadrat, 3: Dreieck aus Dreiecksfeldern, 5 bis 8:
 regelmaessiges Vieleck aus Hexfeldern; ab 6 Spielern eine vierte Rohstoffkategorie); Kartengenerator mit Fairnesspruefung;
-Koenig sammelt, baut Fabriken nur auf Kat-1-Vorkommen (das Vorkommen ist danach weg; Kat 1 liegt
-zwei Felder vom Start Richtung Mitte, dazu Zentrumsfarben), laedt ab; Quader und Baelle in der Farbe ihrer Region, Abbau mit Nachwachsen;
+Koenig sammelt, erntet Kat 1 beim Betreten und baut damit auf jedem freien Feld Fabriken (Kat 1 liegt
+zwei Felder vom Start Richtung Mitte, dazu Zentrumsfarben, kommt nach 20 Runden wieder), laedt ab; Quader und Baelle in der Farbe ihrer Region, Abbau mit Nachwachsen;
 Ausbau ueber Quader/Baelle im Lager, Stufe 3 erst mit zweiter Region; Kartenmarkt mit 14 Karten (nur Angriff und Wirtschaft); Fabriken sammeln Kat 2/3 vom eigenen Feld und den
 Nachbarfeldern (im Quadratgitter 5 Felder); Aufloesen in Figuren (Stufe = Zahl der
 Kat-1-Farben, Reichweite = Stufe); Stufe 1 zieht gerade, ab Stufe 2 frei;
 Schlagen wie im Schach; Fabrik-Einnahme mit Beute, die nur Koenige aufnehmen; Koenig faellt =
-Spieler raus; Unentschieden nach `max_rounds`; Computergegner `stark`, `gierig`, `zufall`.
+Spieler raus; nach 100 Runden Wertung (`score_after`), Remis erst bei Gleichstand oder nach `max_rounds`; Computergegner `stark`, `gierig`, `zufall`.
 
 Noch nicht umgesetzt: verdeckte Karte, die restlichen Karten aus dem Entwurf (Nahrung, Sabotage,
 Waffen mit Fernkampf), Kachel-Zukauf, Zugzeit, Netzwerkprotokoll, Godot-Client.

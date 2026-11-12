@@ -113,6 +113,7 @@ pub fn action_json(action: &Action) -> String {
 fn outcome_json(outcome: Outcome) -> String {
     match outcome {
         Outcome::Winner(p) => format!(r#"{{"type":"winner","player":{}}}"#, p.0),
+        Outcome::Points(p) => format!(r#"{{"type":"points","player":{}}}"#, p.0),
         Outcome::Draw => r#"{"type":"draw"}"#.to_string(),
     }
 }
@@ -194,6 +195,10 @@ pub fn event_json(event: &Event) -> String {
             format!(r#"{{"type":"eliminated","player":{}}}"#, player.0)
         }
         Event::Passed { player } => format!(r#"{{"type":"passed","player":{}}}"#, player.0),
+        Event::Scored { scores } => {
+            let list: Vec<String> = scores.iter().map(u32::to_string).collect();
+            format!(r#"{{"type":"scored","scores":[{}]}}"#, list.join(","))
+        }
         Event::GameOver { outcome } => format!(
             r#"{{"type":"game_over","outcome":{}}}"#,
             outcome_json(*outcome)
@@ -341,9 +346,10 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{}}}"#,
         c.side,
         c.max_rounds,
+        c.score_after,
         c.min_factory_distance,
         c.deposit_stock,
         c.yield_per_round,

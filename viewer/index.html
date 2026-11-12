@@ -267,6 +267,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         <button class="btn primary wide" type="submit">Partie starten</button>
       </form>
       <p class="error" id="playError" hidden></p>
+      <p class="note">Wege vorplanen: Figur anklicken, dann <b>Shift</b> halten (zeigt den Weg bis zum Feld unter der Maus), <b>Shift+Klick</b> geht ihn von selbst Zug um Zug. Mit <b>Strg+Klick</b> wählst du Kacheln einzeln, Strg loslassen startet. <b>Esc</b> bricht ab.</p>
     </div>
     <div>
       <h2>Partie</h2>
@@ -359,6 +360,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   let liveR = null;    // vorbereitete laufende Partie (waechst Zug fuer Zug)
   let botTimer = null;
   let selected = null; // ausgewaehlte eigene Figur
+  // Premoves: Wege, die eine Figur ueber mehrere eigene Zuege von selbst geht.
+  let routes = [];       // [{ piece, owner, cells: [Startfeld, ..., Ziel] }]
+  let ctrlPath = null;   // Strg gehalten: einzeln angeklickte Kacheln { piece, cells }
+  let shiftDown = false, ctrlDown = false;
+  let premoveTimer = null;
+  let routeNote = "";    // letzte Meldung zu Routen (z. B. warum eine abbrach)
 
   function prepare(replay) {
     if (!replay || replay.format !== "spacevitan-replay") throw new Error("Das ist keine Spacevitan-Partie (Feld \"format\" fehlt).");
@@ -1006,6 +1013,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
 
+    drawRoutes(f);
+
     // Objekte sammeln und nach Tiefe sortieren
     const objs = [];
     const occupied = new Set(f.pieces.map((p) => p.cell));
@@ -1150,7 +1159,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       case "factory_yield": return `Fabrik ${e.factory} sammelt ${invText(e.gained)}.`;
       case "eliminated": return `${playerName(e.player)} scheidet aus.`;
       case "passed": return `${playerName(e.player)} passt.`;
-      case "game_over": return e.outcome.type === "winner" ? `Spielende: ${playerName(e.outcome.player)} gewinnt.` : "Spielende: unentschieden.";
+      case "scored": return `Wertung nach ${(R.config || {}).score_after || ""} Runden: ${e.scores.map((n, p) => `${playerName(p)} ${n}`).join(", ")} (Figurenstufen + Fabriken + Farben).`;
+      case "game_over":
+        if (e.outcome.type === "winner") return `Spielende: ${playerName(e.outcome.player)} gewinnt.`;
+        if (e.outcome.type === "points") return `Spielende: ${playerName(e.outcome.player)} gewinnt nach Wertung.`;
+        return "Spielende: unentschieden.";
       default: return null;
     }
   }
@@ -1159,7 +1172,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const round = last > 0 ? rep.frames[last - 1].round : 1;
     if (!rep.outcome) return "läuft noch";
     if (rep.outcome.type === "winner") return `${playerName(rep.outcome.player)} gewinnt in Runde ${round}`;
-    return `unentschieden nach ${rep.config.max_rounds} Runden`;
+    if (rep.outcome.type === "points") return `${playerName(rep.outcome.player)} gewinnt nach Wertung in Runde ${round}`;
+    return `unentschieden nach ${round} Runden`;
   }
   function gameLabel(rep) {
     const bots = rep.bots || [];
@@ -1316,7 +1330,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const stock = facs.reduce((s, x) => s + total(x.storage), 0);
       const carried = f.carried[p] || [];
       const colors = carried.filter(([res]) => category(res) === 1).map(([res]) => crystalColor(res));
-      const isWinner = fi === last && R.outcome && R.outcome.type === "winner" && R.outcome.player === p;
+      const isWinner = fi === last && R.outcome && (R.outcome.type === "winner" || R.outcome.type === "points") && R.outcome.player === p;
       const turn = fi < last && f.current === p && f.alive[p];
       const div = document.createElement("div");
       div.className = "player" + (turn ? " turn" : "") + (f.alive[p] ? "" : " out");
@@ -1337,13 +1351,20 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (pp.shards) cardBits.push(`Splitter ${pp.shards}/3`);
         if (pp.cards_bought) cardBits.push(`${pp.cards_bought} Karten gekauft`);
       }
+      // Wertung wie im Spielkern: Figurenstufen + Fabriken + Farben (Region/Zentrum) im Besitz.
+      const held = new Set();
+      for (const [res] of carried) held.add(typeInfo(res).home === null ? `z${res}` : typeInfo(res).home);
+      for (const x of facs) for (const [res] of x.storage) held.add(typeInfo(res).home === null ? `z${res}` : typeInfo(res).home);
+      const score = f.alive[p] ? units.reduce((a, u) => a + u.level, 0) + facs.length + held.size : 0;
+      const scoreAt = (R.config || {}).score_after || 0;
       const facLevels = facs.map((x) => x.level).filter((l) => l > 0);
       const facText = facLevels.length ? ` → St.${facLevels.join("/")}` : "";
       div.innerHTML =
         `<span class="chip" style="background:${PLAYER[p].color}">${PLAYER[p].name}</span>` +
         `<div class="pname">Spieler ${PLAYER[p].name} <small>${seatLabel(p)}</small> ${tag}</div>` +
         `<div class="pstats"><span>Figuren ${levelText}</span><span>Fabriken ${facs.length}${facText} (Lager ${stock})</span>` +
-        `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span></div>` +
+        `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span>` +
+        (scoreAt ? `<span title="Figurenstufen + Fabriken + Farben im Besitz. Nach Runde ${scoreAt} entscheidet sie, wenn niemand gewonnen hat (bei Gleichstand die meisten Rohstoffe).">Wertung ${score}</span>` : "") + `</div>` +
         (cardBits.length ? `<div class="perks">${escapeHtml(cardBits.join(" · "))}</div>` : "");
       players.appendChild(div);
     }
@@ -1493,6 +1514,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const rect = canvas.getBoundingClientRect();
     const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
     const cell = cellAt(mx, my);
+    modifiersChanged(ev.shiftKey, ev.ctrlKey || ev.metaKey);
     if (cell !== hoverCell) { hoverCell = cell; requestAnimationFrame(draw); }
     showTip(cell, mx, my);
   }
@@ -1506,8 +1528,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (moved > 10 || !canAct()) return;
     $("tip").hidden = true;
     const rect = canvas.getBoundingClientRect();
-    boardClick(cellAt(ev.clientX - rect.left, ev.clientY - rect.top));
+    const cell = cellAt(ev.clientX - rect.left, ev.clientY - rect.top);
+    if (ev.shiftKey) routeClick(cell, "auto");
+    else if (ev.ctrlKey || ev.metaKey) routeClick(cell, "tile");
+    else boardClick(cell);
   });
+  canvas.addEventListener("contextmenu", (ev) => { if (ev.ctrlKey) ev.preventDefault(); });
   canvas.addEventListener("pointerleave", () => { hoverCell = null; $("tip").hidden = true; requestAnimationFrame(draw); });
 
   // ----- Legende -----------------------------------------------------------------------------
@@ -1519,7 +1545,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["unitCards", "Karten sieht man an der Figur: Lanze, weiße Schärpe = Läuferschlag, Pferdekopf, Feder = Sprungfeder, Flügel = Lange Beine, Sterne = Stufen durch Karten."],
       ["factory", "Fabrik: der König baut sie mit Kat 1 aus dem Gepäck auf jedem freien Feld; sie sammelt Quader und Bälle von Feld und Nachbarn. 10 davon: Stufe +1. 20 aus zwei Regionen (zwei Farben): Stufe +2."],
       ["pill", "Lager über Fabrik und König: Rauten = Kat-1-Farben, Quadrat = Quader, Kreis = Ball, je in der Farbe der Region; →2 = Stufe der Figur beim Auflösen."],
-      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Limette, Braun, Silber, Cyan = Zentrumsfarben. Nach dem Abbau für immer weg; der König erntet es beim Betreten und trägt es im Gepäck: damit baut er eine Fabrik oder bringt eine neue Farbe in eine Fabrik (höhere Stufe)."],
+      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Limette, Braun, Silber, Cyan = Zentrumsfarben. Nach dem Abbau 20 Runden weg (bei Quadern 5, bei Bällen 3); der König erntet es beim Betreten und trägt es im Gepäck: damit baut er eine Fabrik oder bringt eine neue Farbe in eine Fabrik (höhere Stufe)."],
       ["ingot", "Quader (Kat 2) in der Farbe seiner Region. Nach dem Abbau weg, nach 5 Runden wieder da (blass mit Zahl = Runden bis dahin)."],
       ["grain", "Ball (Kat 3) in der Farbe seiner Region. Nach 3 Runden wieder da."],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
@@ -1597,6 +1623,174 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     renderTurnBox();
     requestAnimationFrame(draw);
   }
+  // ----- Premoves -------------------------------------------------------------------------------
+  /** Nachbarfelder (gemeinsame Kante), aus den Feldumrissen abgeleitet; gilt fuer jede Brettform. */
+  function boardAdj() {
+    const b = R.board;
+    if (b.adj) return b.adj;
+    const key = ([x, y]) => `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
+    const edges = new Map();
+    b.shapes.forEach((poly, c) => {
+      poly.forEach((p, i) => {
+        const q = poly[(i + 1) % poly.length];
+        const k = [key(p), key(q)].sort().join("|");
+        if (!edges.has(k)) edges.set(k, []);
+        edges.get(k).push(c);
+      });
+    });
+    const adj = b.cells.map(() => []);
+    for (const cs of edges.values()) {
+      if (cs.length === 2) { adj[cs[0]].push(cs[1]); adj[cs[1]].push(cs[0]); }
+    }
+    b.adj = adj;
+    return adj;
+  }
+  function enemyAt(f, cell, owner) {
+    return f.pieces.some((q) => q.cell === cell && q.owner !== owner) ||
+      f.factories.some((x) => x.cell === cell && x.owner !== owner);
+  }
+  /** Kuerzester Weg ueber freie Felder; nur das Ziel darf ein Gegner sein (Angriff am Ende). */
+  function shortestPath(f, piece, from, to) {
+    if (from === to) return [from];
+    const blocked = new Set();
+    for (const p of f.pieces) if (p.id !== piece.id) blocked.add(p.cell);
+    for (const x of f.factories) if (x.owner !== piece.owner) blocked.add(x.cell);
+    if (blocked.has(to) && !enemyAt(f, to, piece.owner)) return null;
+    const adj = boardAdj();
+    const prev = new Map([[from, -1]]);
+    const queue = [from];
+    for (let i = 0; i < queue.length && !prev.has(to); i++) {
+      for (const n of adj[queue[i]]) {
+        if (prev.has(n) || (blocked.has(n) && n !== to)) continue;
+        prev.set(n, queue[i]);
+        queue.push(n);
+      }
+    }
+    if (!prev.has(to)) return null;
+    const path = [];
+    for (let c = to; c !== -1; c = prev.get(c)) path.push(c);
+    return path.reverse();
+  }
+  /** Weg, den die Vorschau gerade zeigt (Shift: automatisch; Strg: Kacheln plus naechste). */
+  function previewRoute() {
+    if (!canAct() || selected === null || hoverCell === null) return null;
+    const f = R.frames[fi], piece = f.byId.get(selected);
+    if (!piece) return null;
+    if (ctrlDown || ctrlPath) {
+      const base = ctrlPath ? ctrlPath.cells : [piece.cell];
+      const ext = shortestPath(f, piece, base[base.length - 1], hoverCell);
+      return ctrlDown && ext && ext.length > 1 ? base.concat(ext.slice(1)) : (ctrlPath ? ctrlPath.cells : null);
+    }
+    if (shiftDown) return shortestPath(f, piece, piece.cell, hoverCell);
+    return null;
+  }
+  function routeClick(cell, how) {
+    if (!canAct() || cell === null) return;
+    const f = R.frames[fi];
+    if (selected === null) { boardClick(cell); return; } // erst eine Figur waehlen
+    const piece = f.byId.get(selected);
+    if (!piece) return;
+    if (how === "auto") {
+      const path = shortestPath(f, piece, piece.cell, cell);
+      if (!path || path.length < 2) { routeNote = "Dorthin gibt es keinen freien Weg."; renderTurnBox(); return; }
+      commitRoute(piece, path);
+    } else {
+      const base = ctrlPath ? ctrlPath.cells : [piece.cell];
+      const ext = shortestPath(f, piece, base[base.length - 1], cell);
+      if (!ext || ext.length < 2) { routeNote = "Dorthin gibt es keinen freien Weg."; renderTurnBox(); return; }
+      ctrlPath = { piece: piece.id, cells: base.concat(ext.slice(1)) };
+      routeNote = "";
+      renderTurnBox();
+      requestAnimationFrame(draw);
+    }
+  }
+  function commitRoute(piece, cells) {
+    routes = routes.filter((r) => r.piece !== piece.id);
+    routes.push({ piece: piece.id, owner: piece.owner, cells });
+    selected = null; ctrlPath = null; routeNote = "";
+    runPremove();
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  function cancelRoutes(note) {
+    clearTimeout(premoveTimer);
+    routes = []; ctrlPath = null;
+    routeNote = note || "";
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  /** Spielt den naechsten Schritt der ersten Route, die gerade dran ist (ein Zug je Runde). */
+  function runPremove() {
+    clearTimeout(premoveTimer);
+    if (!canAct() || !routes.length) return;
+    const f = R.frames[fi];
+    for (const r of routes.slice()) {
+      if (r.owner !== f.current) continue;
+      const drop = (why) => { routes = routes.filter((x) => x !== r); routeNote = why; };
+      const piece = f.byId.get(r.piece);
+      const at = piece ? r.cells.indexOf(piece.cell) : -1;
+      if (!piece) { drop("Route beendet: die Figur ist nicht mehr da."); continue; }
+      if (at < 0) { drop("Route abgebrochen: die Figur steht nicht mehr auf dem Weg."); continue; }
+      if (at === r.cells.length - 1) { drop("Route beendet: Ziel erreicht."); continue; }
+      let best = -1, bestAction = -1;
+      live.legal.forEach((a, i) => {
+        if (a.type !== "move" || a.piece !== r.piece) return;
+        const j = r.cells.indexOf(a.to);
+        if (j <= at) return;
+        if (enemyAt(f, a.to, piece.owner) && j !== r.cells.length - 1) return; // unterwegs nie schlagen
+        if (j > best) { best = j; bestAction = i; }
+      });
+      if (bestAction < 0) { drop("Route abgebrochen: der Weg ist versperrt."); continue; }
+      if (best === r.cells.length - 1) {
+        routes = routes.filter((x) => x !== r);
+        routeNote = "Route beendet: Ziel erreicht.";
+      }
+      humanAct(bestAction);
+      return;
+    }
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  function schedulePremove() {
+    clearTimeout(premoveTimer);
+    if (mode !== "play" || !live || live.outcome || !live.humanToMove || !routes.length) return;
+    premoveTimer = setTimeout(runPremove, botDelay());
+  }
+  function drawRoute(cells, color, alpha, dashed) {
+    if (cells.length < 2) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(2, geo.W * 0.07);
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    if (dashed) ctx.setLineDash([geo.W * 0.16, geo.W * 0.14]);
+    ctx.beginPath();
+    cells.forEach((c, i) => {
+      const [sx, sy] = iso(...R.board.cells[c]);
+      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    cells.slice(1).forEach((c, i) => {
+      const [sx, sy] = iso(...R.board.cells[c]);
+      ctx.beginPath();
+      ctx.arc(sx, sy, geo.W * (i === cells.length - 2 ? 0.13 : 0.07), 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+  function drawRoutes(f) {
+    if (mode !== "play" || !live || R !== liveR || fi !== R.frames.length - 1) return;
+    const accent = cssVar("--accent") || "#2f55a4";
+    for (const r of routes) {
+      const piece = f.byId.get(r.piece);
+      const at = piece ? r.cells.indexOf(piece.cell) : -1;
+      if (at >= 0) drawRoute(r.cells.slice(at), PLAYER[r.owner].color, 0.85, false);
+    }
+    if (ctrlPath) drawRoute(ctrlPath.cells, accent, 0.8, false);
+    const prev = previewRoute();
+    if (prev) drawRoute(prev, accent, 0.72, true);
+  }
   function callWasm(name, ...args) {
     const code = wasm[name](...args);
     const ptr = wasm.sv_out_ptr(), len = wasm.sv_out_len();
@@ -1633,6 +1827,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     playing = watch; // Zuschauen laeuft sofort los
     R = liveR;
     selected = null; fi = 0; tween = null; hoverCell = null;
+    routes = []; ctrlPath = null; routeNote = ""; clearTimeout(premoveTimer);
     showPlayError("");
     layout();
     renderPanel();
@@ -1669,6 +1864,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function scheduleBots() {
     clearTimeout(botTimer);
     renderTurnBox();
+    schedulePremove();
     if (mode !== "play" || !live || live.outcome || live.humanToMove) return;
     if (live.watch && (!playing || R !== liveR)) return;
     botTimer = setTimeout(() => {
@@ -1720,17 +1916,27 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         hint = hotseat ? `Spieler ${playerName(w)} gewinnt!`
           : w === 0 ? "Gewonnen! Du hast den letzten gegnerischen König geschlagen."
           : `Verloren: Spieler ${playerName(w)} gewinnt.`;
+      } else if (live.outcome.type === "points") {
+        const w = live.outcome.player;
+        hint = hotseat ? `Spieler ${playerName(w)} gewinnt nach Wertung!`
+          : w === 0 ? "Gewonnen nach Wertung: Du hast die meisten Punkte."
+          : `Verloren nach Wertung: Spieler ${playerName(w)} hat mehr Punkte.`;
       } else {
-        hint = "Unentschieden: die Rundengrenze ist erreicht.";
+        hint = "Unentschieden: die Wertung steht gleich.";
       }
-      sub = "Starte rechts eine neue Partie oder spiele diese mit den Tasten noch einmal ab.";
+      const scored = now.events.find((e) => e.type === "scored");
+      sub = (scored ? `Wertung: ${scored.scores.map((n, p) => `${playerName(p)} ${n}`).join(", ")} (Figurenstufen + Fabriken + Farben). ` : "") +
+        "Starte rechts eine neue Partie oder spiele diese mit den Tasten noch einmal ab.";
     } else if (!live.humanToMove) {
       hint = `Spieler ${playerName(now.current)} (Bot) ist am Zug …`;
     } else {
       hint = hotseat ? `Spieler ${playerName(now.current)} ist am Zug.` : "Du bist am Zug (Spieler A, rot).";
       sub = selected !== null
-        ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur."
+        ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur. Shift zeigt den ganzen Weg, Shift+Klick läuft ihn automatisch; Strg+Klick wählt Kacheln einzeln (Strg loslassen = los)."
         : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
+      if (routes.length) sub = `Eine Route läuft von selbst weiter (Esc bricht ab). ${sub}`;
+      if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
+      if (routeNote) sub = `${routeNote} ${sub}`;
     }
     if (fi < last) sub = "Du siehst einen früheren Zug. " + sub;
     $("hint").innerHTML = escapeHtml(hint) + (sub ? `<small>${escapeHtml(sub)}</small>` : "");
@@ -1738,6 +1944,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const actions = $("actions");
     actions.innerHTML = "";
     if (canAct()) {
+      if (routes.length) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn";
+        b.textContent = "Route abbrechen (Esc)";
+        b.addEventListener("click", () => cancelRoutes("Route abgebrochen."));
+        actions.appendChild(b);
+      }
       live.legal.forEach((a, i) => {
         if (a.type === "move" || a.type === "buy") return;
         const b = document.createElement("button");
@@ -1767,6 +1981,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     clearTimeout(botTimer);
     playing = false; clearTimeout(timer);
     selected = null;
+    routes = []; ctrlPath = null; routeNote = ""; clearTimeout(premoveTimer);
     if (m === "play") {
       if (!liveR) {
         // Erste Partie mit den Voreinstellungen des Formulars (Gegner: stark).
@@ -1896,6 +2111,33 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   $("last").addEventListener("click", () => { setPlaying(false); goTo(R.frames.length - 1, false); });
   $("play").addEventListener("click", () => setPlaying(!playing));
   $("scrub").addEventListener("input", (e) => { setPlaying(false); goTo(Number(e.target.value), false); });
+  function modifiersChanged(shift, ctrl) {
+    if (shift === shiftDown && ctrl === ctrlDown) return;
+    const released = ctrlDown && !ctrl;
+    shiftDown = shift; ctrlDown = ctrl;
+    if (released && ctrlPath && ctrlPath.cells.length > 1 && canAct()) {
+      const piece = R.frames[fi].byId.get(ctrlPath.piece);
+      if (piece) commitRoute(piece, ctrlPath.cells);
+      else ctrlPath = null;
+    }
+    requestAnimationFrame(draw);
+  }
+  document.addEventListener("keydown", (e) => {
+    if (!R) return;
+    if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
+    if (e.key === "Escape" && mode === "play" && (routes.length || ctrlPath || selected !== null)) {
+      selected = null;
+      cancelRoutes(routes.length || ctrlPath ? "Route abgebrochen." : "");
+    }
+    if (e.key === "Enter" && ctrlPath && ctrlPath.cells.length > 1 && canAct()) {
+      const piece = R.frames[fi].byId.get(ctrlPath.piece);
+      if (piece) commitRoute(piece, ctrlPath.cells);
+    }
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
+  });
+  window.addEventListener("blur", () => modifiersChanged(false, false));
   document.addEventListener("keydown", (e) => {
     if (!R || e.target.closest && e.target.closest("select, input")) return;
     if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
@@ -1927,6 +2169,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     goTo, select: selectGame, click: boardClick, act: humanAct, start: startLive, setMode,
     get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; },
     get live() { return live; }, get mode() { return mode; }, get selected() { return selected; },
+    get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
     get ready() { return wasm !== null; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },

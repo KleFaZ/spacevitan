@@ -50,6 +50,7 @@ fn outcome_json(outcome: Option<Outcome>) -> String {
     match outcome {
         None => "null".into(),
         Some(Outcome::Winner(p)) => format!(r#"{{"type":"winner","player":{}}}"#, p.0),
+        Some(Outcome::Points(p)) => format!(r#"{{"type":"points","player":{}}}"#, p.0),
         Some(Outcome::Draw) => r#"{"type":"draw"}"#.into(),
     }
 }

@@ -26,6 +26,9 @@ pub struct Config {
     pub max_resources_per_cell: usize,
     /// Spiel endet unentschieden nach so vielen Runden (jeder Spieler war einmal dran).
     pub max_rounds: u32,
+    /// Ohne Sieger entscheidet nach so vielen Runden die Wertung (Figurenstufen, Fabriken,
+    /// Farben). 0 = aus, dann gilt nur `max_rounds`.
+    pub score_after: u32,
     /// Fairnesspruefung: Radius (in Schritten) um die Startecke.
     pub fairness_radius: u32,
     /// Fairnesspruefung: erlaubter Unterschied der Rohstoffzahl im Radius zwischen Ecken.
@@ -106,6 +109,7 @@ impl Config {
             stray_chance: 0.15,
             max_resources_per_cell: 2,
             max_rounds: 300,
+            score_after: 100,
             fairness_radius: 4,
             fairness_tolerance: 2,
             max_generator_attempts: 500,
@@ -114,7 +118,7 @@ impl Config {
             center_radius: 2,
             upgrade_step: 10,
             upgrade_region_min: 3,
-            regrow_rounds: [0, 5, 3, 2],
+            regrow_rounds: [20, 5, 3, 2],
             veins_per_type: [1, 2, 3, 3],
             center_mix: 1,
             max_upgrades: 2,
@@ -157,6 +161,7 @@ impl Config {
             "deposit_stock" => self.deposit_stock = as_u32(value)?,
             "min_factory_distance" => self.min_factory_distance = as_u32(value)?,
             "max_rounds" => self.max_rounds = as_u32(value)?,
+            "score_after" => self.score_after = as_u32(value)?,
             "side" => self.side = as_u32(value)?,
             "cat1_cells" => self.cells_per_type[0] = as_u32(value)?,
             "market_size" => self.market_size = as_u32(value)?,
@@ -426,10 +431,12 @@ mod tests {
         c.set_all("upgrade_step=6, regrow_cat2=7,center_colors=3")
             .unwrap();
         assert_eq!(c.upgrade_step, 6);
-        assert_eq!(c.regrow_rounds, [0, 7, 3, 2]);
+        assert_eq!(c.regrow_rounds, [20, 7, 3, 2]);
         assert_eq!(c.center_colors, 3);
         assert!(c.set("upgrade_step", -1).is_err());
         assert!(c.set("schach", 1).is_err());
+        c.set("score_after", 0).unwrap();
+        assert_eq!(c.score_after, 0);
         assert!(c.set_all("upgrade_step").is_err());
         assert!(c.set_all("upgrade_step=x").is_err());
     }

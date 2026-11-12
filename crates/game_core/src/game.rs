@@ -1133,12 +1133,80 @@ impl Game {
             }
         }
         self.state.current = PlayerId(i as u8);
-        if self.state.round > self.config.max_rounds && self.state.outcome.is_none() {
-            self.state.outcome = Some(Outcome::Draw);
-            events.push(Event::GameOver {
-                outcome: Outcome::Draw,
-            });
+        if self.state.outcome.is_none() {
+            let after = self.config.score_after;
+            if after > 0 && self.state.round > after {
+                self.decide_by_points(events);
+            } else if self.state.round > self.config.max_rounds {
+                self.state.outcome = Some(Outcome::Draw);
+                events.push(Event::GameOver {
+                    outcome: Outcome::Draw,
+                });
+            }
         }
+    }
+
+    /// Wertung eines Spielers: Summe der Figurenstufen (der Koenig zaehlt nicht), dazu eine
+    /// Einheit je Fabrik und je Farbe (Region oder Zentrumsfarbe), von der er etwas besitzt,
+    /// im Gepaeck des Koenigs oder in einem Fabriklager.
+    pub fn score(&self, player: PlayerId) -> u32 {
+        if !self.state.alive[player.idx()] {
+            return 0;
+        }
+        let levels: u32 = self
+            .pieces_of(player)
+            .map(|p| match &p.kind {
+                PieceKind::Unit { level, .. } => u32::from(*level),
+                PieceKind::King => 0,
+            })
+            .sum();
+        let factories = self.factories_of(player).count() as u32;
+        let mut colours = BTreeSet::new();
+        let mut note = |inv: &Inventory| {
+            for (res, _) in inv.iter() {
+                let ty = self.map.resource_type(res);
+                colours.insert(ty.home_corner.unwrap_or(1000 + res.0 as usize));
+            }
+        };
+        note(&self.state.carried[player.idx()]);
+        for f in self.factories_of(player) {
+            note(&f.storage);
+        }
+        levels + factories + colours.len() as u32
+    }
+
+    /// Wertung aller Spieler (ausgeschiedene haben 0).
+    pub fn scores(&self) -> Vec<u32> {
+        (0..self.config.players)
+            .map(|i| self.score(PlayerId(i)))
+            .collect()
+    }
+
+    /// Rohstoffe, die ein Spieler besitzt (Gepaeck und Fabriklager). Entscheidet bei gleicher
+    /// Wertung.
+    fn stock_total(&self, player: PlayerId) -> u64 {
+        self.state.carried[player.idx()].total()
+            + self
+                .factories_of(player)
+                .map(|f| f.storage.total())
+                .sum::<u64>()
+    }
+
+    /// Ende ohne Sieger: wer die hoechste Wertung hat gewinnt, bei Gleichstand entscheiden die
+    /// meisten Rohstoffe, und erst wenn auch die gleich sind, ist es Remis.
+    fn decide_by_points(&mut self, events: &mut Vec<Event>) {
+        let scores = self.scores();
+        let key = |i: usize| (scores[i], self.stock_total(PlayerId(i as u8)));
+        let best = (0..scores.len()).map(key).max().unwrap_or((0, 0));
+        let leaders: Vec<usize> = (0..scores.len()).filter(|&i| key(i) == best).collect();
+        let outcome = if leaders.len() == 1 {
+            Outcome::Points(PlayerId(leaders[0] as u8))
+        } else {
+            Outcome::Draw
+        };
+        self.state.outcome = Some(outcome);
+        events.push(Event::Scored { scores });
+        events.push(Event::GameOver { outcome });
     }
 
     // ----- Aufbau von Szenarien (Tests, spaeter Raetsel/Tutorial) ----------------------------

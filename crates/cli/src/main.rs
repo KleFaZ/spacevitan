@@ -28,7 +28,8 @@ Optionen:
   --seed N       Startwert fuer Karte und Bots; gleicher Wert = gleiche Partie
                  (Standard: jedes Mal neu, der Wert wird angezeigt)
   --side N       Kantenlaenge der Karte (Standard 10)
-  --rounds N     Unentschieden nach N Runden (Standard 300)
+  --rounds N     Unentschieden nach N Runden (Standard 300; vorher entscheidet meist die
+                 Wertung nach score_after = 100 Runden)
   --stock N      Vorrat je Rohstoffvorkommen in Einheiten (Standard 0 = unerschoepflich)
   --kat1 N       eigene Kat-1-Vorkommen je Ecke, der Koenig erntet sie zum Bauen (Standard 1)
   --cards LISTE  Markt fest vorgeben, z. B. training,lance (leer = ohne Karten)
@@ -37,7 +38,7 @@ Optionen:
                  ersten Figur, units@fab:N mit der ersten Fabrik
   --rule LISTE   weitere Regeln, z. B. upgrade_step=6,regrow_cat2=4
                  (cat1_distance, center_colors, center_radius, center_cells, mid_cat1,
-                 regrow_cat1..4, center_mix, upgrade_region_min, upgrade_step, max_upgrades, market_size,
+                 regrow_cat1..4, center_mix, score_after, upgrade_region_min, upgrade_step, max_upgrades, market_size,
                  card_target_near, min_factory_distance)
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
                  z. B. stark,gierig
@@ -328,6 +329,8 @@ struct Stats {
     wins_by_bot: BTreeMap<String, u32>,
     clocks: BTreeMap<String, Rc<RefCell<Clock>>>,
     draws: u32,
+    /// Wie viele der Siege erst durch die Wertung nach `score_after` Runden fielen.
+    by_points: u32,
     rounds: u64,
     spawned: u64,
     factories: u64,
@@ -484,15 +487,23 @@ fn run() -> Result<(), String> {
         }
 
         match outcome {
-            Outcome::Winner(p) => {
+            Outcome::Winner(p) | Outcome::Points(p) => {
+                if matches!(outcome, Outcome::Points(_)) {
+                    stats.by_points += 1;
+                }
                 stats.wins[p.idx()] += 1;
                 *stats
                     .wins_by_bot
                     .entry(bot_names[p.idx()].clone())
                     .or_default() += 1;
                 if o.show || o.games == 1 {
+                    let how = if matches!(outcome, Outcome::Points(_)) {
+                        format!(" nach Wertung {:?}", game.scores())
+                    } else {
+                        String::new()
+                    };
                     println!(
-                        "Ergebnis: Spieler {} gewinnt in Runde {}. (Seed {seed}, gleiche Partie mit --seed {seed})",
+                        "Ergebnis: Spieler {} gewinnt in Runde {}{how}. (Seed {seed}, gleiche Partie mit --seed {seed})",
                         player_letter(p),
                         game.state.round
                     );
@@ -502,8 +513,9 @@ fn run() -> Result<(), String> {
                 stats.draws += 1;
                 if o.show || o.games == 1 {
                     println!(
-                        "Ergebnis: unentschieden nach {} Runden. (Seed {seed}, gleiche Partie mit --seed {seed})",
-                        o.rounds
+                        "Ergebnis: unentschieden nach {} Runden, Wertung {:?}. (Seed {seed}, gleiche Partie mit --seed {seed})",
+                        game.state.round,
+                        game.scores()
                     );
                 }
             }
@@ -531,6 +543,9 @@ fn run() -> Result<(), String> {
             stats.draws,
             stats.draws as f64 / n * 100.0
         );
+        if stats.by_points > 0 {
+            println!("  davon Siege erst nach Wertung: {}", stats.by_points);
+        }
         if stats.clocks.len() > 1 {
             let by_bot: Vec<String> = stats
                 .clocks
