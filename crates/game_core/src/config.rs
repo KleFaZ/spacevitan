@@ -66,6 +66,13 @@ pub struct Config {
     pub market_size: u32,
     /// Figurenkarten nur fuer eine Figur auf oder neben dem Zahlfeld (Fabrik oder Koenig).
     pub card_target_near: bool,
+    /// Rollen der Kategorien: Kat 1 baut Fabriken und gibt Stufen, Kat 2 kauft Bauern (Rekrut,
+    /// immer im Markt, die Fabrik bleibt stehen), Kat 3 kauft Spezialzuege (Lanze, Sprungfeder,
+    /// Pferd, Laeuferschlag, Lange Beine), auch fuer den Koenig. Aus = alte Preise und Koenig
+    /// ohne Karten.
+    pub kat_roles: bool,
+    /// Mit `kat_roles`: Kat-2-Einheiten (eine Farbe) fuer einen Bauern.
+    pub pawn_cost: u32,
     /// Felder je Zentrumsfarbe in der Mitte.
     pub center_cells: u32,
     /// Kat-1-Vorkommen je Spieler im Zwischenring (halber Weg zur Mitte, Zentrumsfarben).
@@ -124,6 +131,8 @@ impl Config {
             max_upgrades: 2,
             market_size: Config::default_market_size(players),
             card_target_near: false,
+            kat_roles: false,
+            pawn_cost: 4,
             center_cells: 3,
             mid_cat1: 1,
         }
@@ -166,6 +175,8 @@ impl Config {
             "cat1_cells" => self.cells_per_type[0] = as_u32(value)?,
             "market_size" => self.market_size = as_u32(value)?,
             "card_target_near" => self.card_target_near = value != 0,
+            "kat_roles" => self.kat_roles = value != 0,
+            "pawn_cost" => self.pawn_cost = as_u32(value)?,
             "center_cells" => self.center_cells = as_u32(value)?,
             "mid_cat1" => self.mid_cat1 = as_u32(value)?,
             other => return Err(format!("unbekannte Regel '{other}'")),
@@ -277,6 +288,11 @@ impl Config {
         if self.cat1_distance == 0 || self.cat1_distance > self.side / 2 {
             return Err(ConfigError::Invalid(
                 "cat1_distance muss zwischen 1 und der halben Seitenlaenge liegen",
+            ));
+        }
+        if self.pawn_cost == 0 || self.pawn_cost > 30 {
+            return Err(ConfigError::Invalid(
+                "pawn_cost muss zwischen 1 und 30 liegen",
             ));
         }
         if self.center_colors > 8 {

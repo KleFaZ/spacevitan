@@ -146,6 +146,8 @@ cargo test --workspace
 | `max_upgrades` | 2 | hoechstens so viele Stufen durch Ausbau |
 | `market_size` | 2 je Spieler (ab 5 Spielern 1) | Karten im Markt, jede Partie zufaellig gezogen; 0 = ohne Karten |
 | `card_target_near` | 0 | 1 = Figurenkarten nur fuer eine Figur auf oder neben dem Zahlfeld |
+| `kat_roles` | 0 | 1 = Rollen der Kategorien: Rekrut immer im Markt und nur mit Kat 2, Bewegungskarten nur mit Kat 3, auch auf den Koenig (siehe unten) |
+| `pawn_cost` | 4 | mit `kat_roles`: so viele Kat-2-Einheiten einer Farbe kostet ein Bauer |
 
 Kat 1 wird also zur Mitte hin dichter: in jeder Ecke ein Feld der eigenen Farbe, im
 Zwischenring eins je Spieler, in der Mitte drei je Zentrumsfarbe.
@@ -178,6 +180,22 @@ Warum: Kat 1 ist begrenzt. Ohne Nachwachsen und ohne Wertung endeten mit `gierig
 24 %, bei 5 Spielern 52 % der Partien remis (nur noch Koenige, die sich nicht fangen). Jetzt
 sind es 0 bis 1 %. Mit `stark` bei 3 Spielern: 0 Remis in 24 Partien, 11 davon fielen erst durch
 die Wertung (Runde 101), im Schnitt 82 Runden.
+
+### Rollen der Kategorien (`kat_roles=1`)
+
+Jede Kategorie bekommt eine feste Aufgabe, damit Kat 2 und Kat 3 nicht nur Kartengeld sind:
+
+- **Kat 1:** Fabriken bauen und die Stufe von Figuren (wie bisher: Farben im Lager).
+- **Kat 2:** Bauern. Die Karte *Rekrut* liegt immer im Markt (zusaetzlich zu den gezogenen Karten),
+  kostet nur `pawn_cost` (4) Kat-2-Einheiten einer Farbe und laesst die Fabrik stehen. Der Bauer
+  traegt die eigene Farbe. Aufloesen der Fabrik bleibt der Weg zu hoeheren Stufen.
+- **Kat 3:** Spezialzuege. Lanze, Sprungfeder, Pferd, Laeuferschlag und Lange Beine kosten
+  die Summe ihres alten Preises, aber nur in Kat 3 (Pferd 4, Lanze 4, Sprungfeder 3 ...).
+- **Der Koenig** darf Lanze, Sprungfeder, Pferd und Laeuferschlag bekommen. Mit Laeuferschlag
+  geht er auch auf freie Diagonalfelder ("ueber die Ecke"); bei Figuren schlaegt er nur.
+  Ausbildung und Lange Beine gehen nicht auf den Koenig.
+
+Ohne die Regel aendert sich nichts. `market_size=0` liefert mit der Regel nur den Rekruten.
 
 ### Vorlage "Brettspiel" (nichts waechst nach)
 

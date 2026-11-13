@@ -40,8 +40,18 @@ impl Game {
             let player = PlayerId(p);
             state.insert_piece(player, map.start_cell(player), PieceKind::King);
         }
-        state.market =
-            cards::draw_market(config.seed, config.market_size as usize, map.board.kind());
+        // Mit `kat_roles` liegt Rekrut immer aus: Bauern gehoeren dann zu den Grundregeln.
+        let always: &[Card] = if config.kat_roles {
+            &[Card::Recruit]
+        } else {
+            &[]
+        };
+        state.market = cards::draw_market_with(
+            config.seed,
+            config.market_size as usize,
+            map.board.kind(),
+            always,
+        );
         Game {
             config,
             map: Arc::new(map),
@@ -207,7 +217,8 @@ impl Game {
             }
         }
         let enemy_at = |cell: CellId| self.state.piece_at(cell).is_some_and(|o| o.owner != owner);
-        if !piece.is_king() {
+        // Der Koenig hat Karten nur mit der Regel `kat_roles`.
+        if !piece.is_king() || self.config.kat_roles {
             let pk = piece.perks;
             for dir in 0..board.dir_count() {
                 let line = board.line(piece.cell, dir, 2);
@@ -238,12 +249,16 @@ impl Game {
                 }
             }
         }
-        // Laeuferschlag: eine Figur schlaegt zusaetzlich diagonal (nur im Quadratgitter).
-        if piece.perks.diagonal && !piece.is_king() && board.kind() == GridKind::Square {
+        // Laeuferschlag: eine Figur schlaegt zusaetzlich diagonal (nur im Quadratgitter). Der
+        // Koenig mit Laeuferschlag geht auch auf freie Diagonalfelder ("ueber die Ecke").
+        if piece.perks.diagonal
+            && (!piece.is_king() || self.config.kat_roles)
+            && board.kind() == GridKind::Square
+        {
             let (x, y) = board.coord(piece.cell);
             for (dx, dy) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
                 if let Some(cell) = board.cell_at(x + dx, y + dy) {
-                    if enemy_at(cell) {
+                    if enemy_at(cell) || (piece.is_king() && !self.own_piece_at(cell, owner)) {
                         out.push(cell);
                     }
                 }
@@ -485,8 +500,15 @@ impl Game {
             &self.map,
             self.map.own_color(me),
             stock,
-            &card.cost_for(range),
+            &card.cost_with(range, self.roles_pawn_cost()),
         )
+    }
+
+    /// Mit der Regel `kat_roles`: was ein Bauer (Rekrut) in Kat 2 kostet, sonst `None`.
+    pub fn roles_pawn_cost(&self) -> Option<u8> {
+        self.config
+            .kat_roles
+            .then(|| self.config.pawn_cost.min(u8::MAX as u32) as u8)
     }
 
     /// Moegliche Ziele einer Karte, bezahlt an Feld `at`. `None` im Ergebnis = kein Ziel noetig.
@@ -504,9 +526,10 @@ impl Game {
             |cell: CellId| !only_near || cell == at || board.neighbors(at).any(|n| n == cell);
         let cap = self.config.corner_count() as u8;
         let perks = self.state.player_perks[me.idx()];
+        let king_ok = self.config.kat_roles && card.works_on_king();
         let units = || {
             self.pieces_of(me)
-                .filter(|p| !p.is_king() && near(p.cell))
+                .filter(|p| (!p.is_king() || king_ok) && near(p.cell))
                 .map(|p| (p.id, self.unit_level(p), p.perks))
         };
         match card.target() {
@@ -930,7 +953,8 @@ impl Game {
                     unreachable!("Rekrut wird aus einer Fabrik bezahlt")
                 };
                 let cell = self.recruit_cell(fid).expect("freies Nachbarfeld");
-                let color = color.expect("Rekrut kostet eine Farbe");
+                // Mit `kat_roles` kostet der Bauer keine Farbe; er traegt dann die eigene.
+                let color = color.unwrap_or_else(|| self.map.own_color(actor));
                 let piece = self.state.insert_piece(
                     actor,
                     cell,
@@ -1329,7 +1353,11 @@ impl Game {
                 {
                     return Err(format!("{:?}: Farben passen nicht zur Stufe", piece.id));
                 }
-            } else if piece.perks.any() {
+            } else if piece.perks.any()
+                && (!self.config.kat_roles
+                    || piece.perks.extra_range != 0
+                    || piece.perks.card_levels != 0)
+            {
                 return Err(format!("{:?}: Koenig mit Figurenkarte", piece.id));
             }
         }

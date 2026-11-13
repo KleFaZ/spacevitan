@@ -230,7 +230,15 @@ impl Card {
     /// heben braucht also zwei Regionen, genau wie der Ausbau der Fabrik. Alle anderen Karten
     /// kosten immer `cost()`.
     pub fn cost_for(self, range: u8) -> Cost {
-        let base = self.cost();
+        self.cost_with(range, None)
+    }
+
+    /// Wie `cost_for`; `pawn_cost = Some(n)` gilt mit der Regel `kat_roles` (siehe `role_cost`).
+    pub fn cost_with(self, range: u8, pawn_cost: Option<u8>) -> Cost {
+        let base = match pawn_cost {
+            Some(pawn) => self.role_cost(pawn),
+            None => self.cost(),
+        };
         if !self.priced_by_range() {
             return base;
         }
@@ -244,6 +252,27 @@ impl Card {
             k3_kinds: kinds(k3, base.k3_kinds),
             ..base
         }
+    }
+
+    /// Preise mit der Regel `kat_roles`: Rekrut kostet nur Kat 2 (`pawn` Einheiten einer Farbe),
+    /// Bewegungskarten nur Kat 3 (die Summe des alten Preises), alle anderen wie gehabt.
+    pub fn role_cost(self, pawn: u8) -> Cost {
+        let old = self.cost();
+        match self {
+            Card::Recruit => cost(0, pawn, 1, 0, 0),
+            Card::DiagonalStrike | Card::Lance | Card::Spring | Card::Horse | Card::LongLegs => {
+                cost(0, 0, 0, old.k2 + old.k3, old.k3_kinds)
+            }
+            _ => old,
+        }
+    }
+
+    /// Bewegungskarten, die mit `kat_roles` auch auf den Koenig wirken duerfen.
+    pub fn works_on_king(self) -> bool {
+        matches!(
+            self,
+            Card::DiagonalStrike | Card::Lance | Card::Spring | Card::Horse
+        )
     }
 
     pub fn target(self) -> CardTarget {
@@ -280,13 +309,20 @@ impl Card {
 /// Zieht die Karten, die in dieser Partie ausliegen: `size` verschiedene, sortiert. Gleicher
 /// Seed, gleicher Markt.
 pub fn draw_market(seed: u64, size: usize, grid: GridKind) -> Vec<Card> {
+    draw_market_with(seed, size, grid, &[])
+}
+
+/// Wie `draw_market`, aber die Karten in `always` liegen immer aus (zusaetzlich zu den `size`
+/// gezogenen). Mit `always` leer ist das Ergebnis dasselbe wie bei `draw_market`.
+pub fn draw_market_with(seed: u64, size: usize, grid: GridKind, always: &[Card]) -> Vec<Card> {
     let mut deck: Vec<Card> = Card::ALL
         .into_iter()
-        .filter(|c| c.available_on(grid))
+        .filter(|c| c.available_on(grid) && !always.contains(c))
         .collect();
     let mut rng = Rng::new(seed ^ 0x6b61_7274_656e_0001);
     rng.shuffle(&mut deck);
     deck.truncate(size);
+    deck.extend(always.iter().copied().filter(|c| c.available_on(grid)));
     deck.sort();
     deck
 }

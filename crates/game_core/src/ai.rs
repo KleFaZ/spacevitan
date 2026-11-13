@@ -1034,6 +1034,12 @@ impl SearchBot {
                         guards += 1;
                         v += w.guard;
                     }
+                } else {
+                    // Koenig mit Bewegungskarten (Regel kat_roles): dieselben Werte wie bei Figuren.
+                    v += if pk.diagonal { w.diagonal } else { 0 };
+                    v += if pk.lance { w.lance } else { 0 };
+                    v += if pk.spring { w.spring } else { 0 };
+                    v += if pk.horse { w.horse } else { 0 };
                 }
             } else {
                 let (level, reach) = match &piece.kind {

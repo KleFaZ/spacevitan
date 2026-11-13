@@ -63,8 +63,8 @@ fn opt_piece(p: &Option<crate::ids::PieceId>) -> String {
 }
 
 /// Karte im Markt: Kurzname, Name, Wirkung, Kosten, Ziel.
-fn card_json(card: &Card) -> String {
-    let c = card.cost();
+fn card_json(card: &Card, pawn_cost: Option<u8>) -> String {
+    let c = card.cost_with(1, pawn_cost);
     let target = match card.target() {
         crate::cards::CardTarget::Player => "player",
         crate::cards::CardTarget::Unit => "unit",
@@ -346,7 +346,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -358,7 +358,9 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.upgrade_region_min,
         c.upgrade_step,
         c.max_upgrades,
-        c.market_size
+        c.market_size,
+        c.kat_roles,
+        c.pawn_cost
     );
     format!(
         r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{}"#,
@@ -374,7 +376,10 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         list(m.territories.iter(), |t| t
             .map_or("-1".to_string(), |i| i.to_string())),
         list(m.player_corners.iter(), |i| i.to_string()),
-        list(game.state.market.iter(), card_json)
+        list(game.state.market.iter(), |c| card_json(
+            c,
+            game.roles_pawn_cost()
+        ))
     )
 }
 

@@ -39,7 +39,7 @@ Optionen:
   --rule LISTE   weitere Regeln, z. B. upgrade_step=6,regrow_cat2=4
                  (cat1_distance, center_colors, center_radius, center_cells, mid_cat1,
                  regrow_cat1..4, center_mix, score_after, upgrade_region_min, upgrade_step, max_upgrades, market_size,
-                 card_target_near, min_factory_distance)
+                 card_target_near, min_factory_distance, kat_roles, pawn_cost)
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
                  z. B. stark,gierig
                  (Standard: gierig)

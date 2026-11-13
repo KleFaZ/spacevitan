@@ -227,6 +227,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <div class="presets" role="group" aria-label="Regelvorlage">
         <button type="button" class="preset" data-preset="pc" aria-pressed="true">Computerspiel</button>
         <button type="button" class="preset" data-preset="board" aria-pressed="false">Brettspiel</button>
+        <button type="button" class="preset" data-preset="roles" aria-pressed="false">Rollen (neu)</button>
         <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
       </div>
       <p class="note" id="presetNote"></p>
@@ -486,8 +487,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Was eine Figur kann, in Worten (fuer Tooltip und Lager). */
   function abilityText(p) {
-    if (!p || p.king) return "zieht 1 Feld (nicht diagonal), sammelt und baut";
+    if (!p) return "";
     const pk = p.perks || {};
+    if (p.king) {
+      const out = [pk.diagonal ? "zieht 1 Feld, auch diagonal" : "zieht 1 Feld (nicht diagonal)"];
+      if (pk.lance) out.push("schlägt 2 Felder geradeaus");
+      if (pk.spring) out.push("springt über Nachbarfiguren");
+      if (pk.horse) out.push("springt auf Felder im Abstand 2");
+      out.push("sammelt und baut");
+      return out.join(", ");
+    }
     const out = [p.level === 1
       ? `zieht und schlägt geradeaus bis ${p.range} ${p.range === 1 ? "Feld" : "Felder"}`
       : `zieht frei bis ${p.range} Felder (um Ecken, nicht durch Figuren)`];
@@ -497,8 +506,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (pk.horse) out.push("springt auf Felder im Abstand 2");
     return out.join(", ");
   }
-  function perkText(pk, king) {
-    if (!pk || king) return "";
+  function perkText(pk) {
+    if (!pk) return "";
     const out = [];
     if (pk.diagonal) out.push("Läuferschlag");
     if (pk.lance) out.push("Lanze");
@@ -752,10 +761,44 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.beginPath(); ctx.ellipse(cx, cy + rx * 0.1, rx * 1.15, rx * 0.55, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0,0,0,0.22)"; ctx.fill();
   }
-  function drawKing(cx, cy, color) {
+  function drawKing(cx, cy, color, pk) {
+    pk = pk || {};
     const W = geo.W, rx = W * 0.2, h = W * 0.6;
     shadow(cx, cy, rx);
+    if (pk.spring) {
+      // Sprungfeder: Zickzack unter dem Sockel (nur mit der Regel "Rollen der Kategorien").
+      ctx.beginPath();
+      const sy = cy + W * 0.02;
+      for (let i = 0; i <= 6; i++) {
+        const xx = cx - rx * 0.7 + (i / 6) * rx * 1.4, yy = sy + (i % 2 ? W * 0.05 : 0);
+        i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+      }
+      ctx.strokeStyle = "#555"; ctx.lineWidth = Math.max(1.5, W * 0.022); ctx.stroke();
+    }
     cylinder(cx, cy, rx, h, color);
+    if (pk.diagonal) {
+      // Laeuferschlag: weisse Schaerpe ueber Kreuz.
+      ctx.beginPath();
+      ctx.moveTo(cx - rx * 0.85, cy - h * 0.12); ctx.lineTo(cx + rx * 0.85, cy - h * 0.75);
+      ctx.moveTo(cx + rx * 0.85, cy - h * 0.12); ctx.lineTo(cx - rx * 0.85, cy - h * 0.75);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1.5, W * 0.03); ctx.stroke();
+    }
+    if (pk.lance) {
+      const lx = cx + rx * 1.15, ly0 = cy - W * 0.04, ly1 = cy - h - W * 0.1;
+      ctx.beginPath(); ctx.moveTo(lx, ly0); ctx.lineTo(lx, ly1);
+      ctx.strokeStyle = "#6b4a2b"; ctx.lineWidth = Math.max(1.5, W * 0.025); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx - W * 0.035, ly1 + W * 0.02); ctx.lineTo(lx, ly1 - W * 0.09); ctx.lineTo(lx + W * 0.035, ly1 + W * 0.02); ctx.closePath();
+      ctx.fillStyle = "#c9ced6"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    if (pk.horse) {
+      const hx = cx - rx * 1.4, hb = cy - W * 0.08, s = W * 0.0042;
+      ctx.beginPath();
+      ctx.moveTo(hx + 6 * s, hb); ctx.lineTo(hx + 8 * s, hb - 18 * s); ctx.lineTo(hx + 5 * s, hb - 30 * s);
+      ctx.lineTo(hx + 7 * s, hb - 36 * s); ctx.lineTo(hx + 2 * s, hb - 33 * s); ctx.lineTo(hx - 12 * s, hb - 24 * s);
+      ctx.lineTo(hx - 13 * s, hb - 18 * s); ctx.lineTo(hx - 4 * s, hb - 19 * s); ctx.lineTo(hx - 6 * s, hb);
+      ctx.closePath();
+      ctx.fillStyle = "#7a5230"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
     // Krone
     const ty = cy - h, cw = rx * 0.95;
     ctx.beginPath();
@@ -1129,7 +1172,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const [cx, cy] = iso(x, y);
     const color = PLAYER[p.owner].color;
     if (p.king) {
-      drawKing(cx, cy + geo.W * 0.02, color);
+      drawKing(cx, cy + geo.W * 0.02, color, p.perks);
       // Was der Koenig traegt, als Leiste ueber der Krone.
       const carried = (R.frames[fi].carried || [])[p.owner] || [];
       if (carried.length) drawStockPill(cx, cy - geo.W * 1.08, carried, 0);
@@ -1368,7 +1411,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       : `Nachwachsen (Kat ${rg.map((_, i) => i + 1).join("/")}) nach ${rg.map((n) => (n === 0 ? "nie" : n)).join("/")} Runden`;
     const score = c.score_after ? `Wertung nach Runde ${c.score_after}` : "keine Wertung";
     const cards = c.market_size ? `${c.market_size} Karten` : "ohne Karten";
-    return `${regrow} · ${score} · ${cards}`;
+    const roles = c.kat_roles ? " · Rollen: Kat 2 = Bauern, Kat 3 = Spezialzüge" : "";
+    return `${regrow} · ${score} · ${cards}${roles}`;
   }
   function renderPanel() {
     const f = R.frames[fi];
@@ -1543,7 +1587,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const loot = f.loot.find((l) => l.cell === cell);
     const rows = [];
     if (piece) {
-      const extra = perkText(piece.perks, piece.king);
+      const extra = perkText(piece.perks);
       rows.push(piece.king
         ? `König von ${playerName(piece.owner)}: ${abilityText(piece)}`
         : `${unitTitle(piece.level)} von ${playerName(piece.owner)} (Stufe ${piece.level}, Reichweite ${piece.range}${extra ? `; ${extra}` : ""}): ${abilityText(piece)}`);
@@ -1892,6 +1936,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
       { key: "card_target_near", label: "Figurenkarten nur nahe am Zahlfeld", check: true },
     ] },
+    { title: "Rollen der Kategorien (neu)", note: "Kat 1 baut Fabriken und gibt Stufen. Kat 2 kauft Bauern: Rekrut liegt immer im Markt, kostet nur Kat 2, die Fabrik bleibt stehen. Kat 3 kauft Spezialzüge (Lanze, Sprungfeder, Pferd, Läuferschlag, Lange Beine); Lanze, Sprungfeder, Pferd und Läuferschlag gehen auch auf den König. Die Karten im Markt kommen zum Rekruten dazu.", fields: [
+      { key: "kat_roles", label: "Rollen einschalten", check: true },
+      { key: "pawn_cost", label: "Kat 2 für einen Bauern", ph: () => "4", hint: () => "Einheiten einer Region, nur mit den Rollen." },
+    ] },
     { title: "Stufen der Fabriken", fields: [
       { key: "upgrade_step", label: "Einheiten je Stufe", ph: () => "10", hint: () => "Je so viele Einheiten ab Kat 2 im Lager steigt die Stufe der kommenden Figur." },
       { key: "upgrade_region_min", label: "Einheiten je Region", ph: () => "3", hint: () => "So viele einer Regionsfarbe müssen im Lager liegen, damit die Region zählt." },
@@ -1913,6 +1961,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     pc: {
       note: "Wie bisher: Rohstoffe wachsen nach (Kat 1 nach 20, Kat 2 nach 5, Kat 3 nach 3 Runden), nach Runde 100 entscheidet die Wertung.",
       rules: {},
+    },
+    roles: {
+      note: "Wie Computerspiel, aber mit den Rollen der Kategorien: Rekrut (Kat 2) liegt immer im Markt, Spezialzüge kosten nur Kat 3, Lanze, Sprungfeder, Pferd und Läuferschlag gehen auch auf den König.",
+      rules: { kat_roles: 1 },
     },
     board: {
       note: "Nichts wächst nach: jedes Vorkommen wird genau einmal abgebaut. So ließe sich das Spiel auf einem echten Brett mit Plättchen spielen; es endet, wenn keiner mehr gewinnen kann, spätestens mit der Wertung.",
@@ -2015,7 +2067,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     clearRuleFields();
     for (const [key, value] of Object.entries(PRESETS[name].rules)) {
       const input = $(`rule_${key}`);
-      if (input) input.value = String(value);
+      if (!input) continue;
+      if (input.type === "checkbox") input.checked = Boolean(value);
+      else input.value = String(value);
     }
     preset = name;
     syncPresetButtons();
@@ -2078,7 +2132,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (input.type === "checkbox") input.checked = true;
         else input.value = String(v);
       }
-      preset = saved.preset === "pc" || saved.preset === "board" || saved.preset === "custom" ? saved.preset : "pc";
+      preset = ["pc", "board", "roles", "custom"].includes(saved.preset) ? saved.preset : "pc";
     } catch (err) { /* kaputter Eintrag: Voreinstellungen */ }
   }
   function openMenu(canGoBack) {

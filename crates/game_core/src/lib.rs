@@ -25,6 +25,8 @@ mod cards_tests;
 mod game_tests;
 #[cfg(test)]
 mod json_check;
+#[cfg(test)]
+mod roles_tests;
 pub mod session;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
