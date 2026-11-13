@@ -77,6 +77,25 @@ pub struct Config {
     pub center_cells: u32,
     /// Kat-1-Vorkommen je Spieler im Zwischenring (halber Weg zur Mitte, Zentrumsfarben).
     pub mid_cat1: u32,
+    /// Gebietsmodus: Felder sind neutral, nur die Startecke gehoert dem Spieler und hat die
+    /// einzige Fabrik. Jede Figur faerbt beim Ziehen den Weg in ihrer Farbe; die Fabrik sammelt
+    /// jede Runde die zusammenhaengenden Felder ein (siehe `territory.rs`).
+    pub territory: bool,
+    /// Gebiet: Flaeche, die ein Bauer (Stufe 1) kostet.
+    pub terr_pawn: u32,
+    /// Gebiet: Flaeche, die jede hoehere Stufe zusaetzlich zu den Rohstoffen kostet.
+    pub terr_area: u32,
+    /// Gebiet: Kat 1 fuer Stufe 2 und mehr, Kat 2 ab Stufe 3, Kat 3 fuer Stufe 4 (verbraucht,
+    /// die Preise der Stufen sind kumulativ).
+    pub terr_k1: u32,
+    pub terr_k2: u32,
+    pub terr_k3: u32,
+    /// Gebiet: Einheiten je Vorkommen auf zusammenhaengenden Feldern und Runde.
+    pub terr_yield: u32,
+    /// Gebiet: Abgetrenntes Land geht an den, der durchtrennt hat (`true`), sonst wird es neutral.
+    pub terr_cut_flips: bool,
+    /// Gebiet: Kartenpreise sind die alten Kat-2/3-Preise mal diese Zahl (nur nach Kategorie).
+    pub terr_card_mult: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,6 +154,15 @@ impl Config {
             pawn_cost: 4,
             center_cells: 3,
             mid_cat1: 1,
+            territory: false,
+            terr_pawn: 50,
+            terr_area: 100,
+            terr_k1: 20,
+            terr_k2: 40,
+            terr_k3: 60,
+            terr_yield: 1,
+            terr_cut_flips: true,
+            terr_card_mult: 3,
         }
     }
 
@@ -179,6 +207,15 @@ impl Config {
             "pawn_cost" => self.pawn_cost = as_u32(value)?,
             "center_cells" => self.center_cells = as_u32(value)?,
             "mid_cat1" => self.mid_cat1 = as_u32(value)?,
+            "territory" => self.territory = value != 0,
+            "terr_pawn" => self.terr_pawn = as_u32(value)?,
+            "terr_area" => self.terr_area = as_u32(value)?,
+            "terr_k1" => self.terr_k1 = as_u32(value)?,
+            "terr_k2" => self.terr_k2 = as_u32(value)?,
+            "terr_k3" => self.terr_k3 = as_u32(value)?,
+            "terr_yield" => self.terr_yield = as_u32(value)?,
+            "terr_cut_flips" => self.terr_cut_flips = value != 0,
+            "terr_card_mult" => self.terr_card_mult = as_u32(value)?,
             other => return Err(format!("unbekannte Regel '{other}'")),
         }
         Ok(())
@@ -293,6 +330,16 @@ impl Config {
         if self.pawn_cost == 0 || self.pawn_cost > 30 {
             return Err(ConfigError::Invalid(
                 "pawn_cost muss zwischen 1 und 30 liegen",
+            ));
+        }
+        if self.territory
+            && (self.terr_pawn == 0
+                || self.terr_area == 0
+                || self.terr_yield == 0
+                || self.terr_card_mult == 0)
+        {
+            return Err(ConfigError::Invalid(
+                "terr_pawn, terr_area, terr_yield und terr_card_mult muessen mindestens 1 sein",
             ));
         }
         if self.center_colors > 8 {

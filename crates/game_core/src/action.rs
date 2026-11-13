@@ -23,6 +23,9 @@ pub enum Action {
     BuildFactory { pay: ResourceId },
     /// Fabrik aufloesen und daraus eine Figur machen.
     SpawnPiece { factory: FactoryId },
+    /// Gebietsmodus: an der Fabrik eine Figur der Stufe `level` bauen. Sie erscheint auf dem
+    /// Fabrikfeld (das dafuer frei sein muss), die Fabrik bleibt stehen.
+    BuildUnit { factory: FactoryId, level: u8 },
     /// Eine Karte aus dem Markt kaufen (hoechstens einmal pro Zug, zusaetzlich zur Aktion).
     /// `target`: die Figur oder der Koenig, auf die die Karte wirkt.
     BuyCard {
@@ -113,6 +116,24 @@ pub enum Event {
         cell: CellId,
         resource: ResourceId,
     },
+    /// Gebiet: diese Felder haben beim Zug die Farbe von `player` bekommen.
+    Painted {
+        player: PlayerId,
+        cells: Vec<CellId>,
+    },
+    /// Gebiet: Land von `from` war nicht mehr mit der Fabrik verbunden und gehoert jetzt `to`
+    /// (`None` = neutral).
+    CutOff {
+        from: PlayerId,
+        to: Option<PlayerId>,
+        cells: Vec<CellId>,
+    },
+    /// Gebiet: die Fabrik hat Flaeche und Rohstoffe der zusammenhaengenden Felder eingesammelt.
+    Income {
+        player: PlayerId,
+        area: u32,
+        gained: Inventory,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,6 +157,10 @@ pub enum IllegalReason {
     AlreadyBoughtThisTurn,
     CannotPayCard,
     InvalidCardTarget,
+    /// Gebiet: Flaeche oder Rohstoffe reichen fuer diese Stufe nicht.
+    CannotAffordUnit,
+    /// Gebiet: neben der Fabrik liegt schon eine Karte.
+    CardSlotFull,
     /// Sollte nie vorkommen: die Aktion ist unzulaessig, aber keine Einzelregel erklaert es.
     Unspecified,
 }
@@ -166,6 +191,10 @@ impl std::fmt::Display for IllegalReason {
             IllegalReason::InvalidCardTarget => {
                 "die Karte kann so nicht wirken (Figur nicht am Zahlfeld oder schon verbessert)"
             }
+            IllegalReason::CannotAffordUnit => {
+                "Flaeche oder Rohstoffe reichen fuer diese Stufe nicht"
+            }
+            IllegalReason::CardSlotFull => "neben der Fabrik liegt schon eine Karte",
             IllegalReason::Unspecified => "unzulaessige Aktion",
         };
         write!(f, "{text}")

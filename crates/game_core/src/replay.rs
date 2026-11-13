@@ -63,8 +63,19 @@ fn opt_piece(p: &Option<crate::ids::PieceId>) -> String {
 }
 
 /// Karte im Markt: Kurzname, Name, Wirkung, Kosten, Ziel.
-fn card_json(card: &Card, pawn_cost: Option<u8>) -> String {
-    let c = card.cost_with(1, pawn_cost);
+fn card_json(card: &Card, pawn_cost: Option<u8>, territory: Option<[u32; 3]>) -> String {
+    let mut c = card.cost_with(1, pawn_cost);
+    if let Some([k1, k2, k3]) = territory {
+        // Gebietsmodus: bezahlt wird nur nach Kategorie, ohne Mindestzahl an Farben.
+        c = crate::cards::Cost {
+            color: k1.min(255) as u8,
+            foreign_color: 0,
+            k2: k2.min(255) as u8,
+            k2_kinds: 0,
+            k3: k3.min(255) as u8,
+            k3_kinds: 0,
+        };
+    }
     let target = match card.target() {
         crate::cards::CardTarget::Player => "player",
         crate::cards::CardTarget::Unit => "unit",
@@ -76,7 +87,7 @@ fn card_json(card: &Card, pawn_cost: Option<u8>) -> String {
         esc(card.text()),
         esc(target),
         card.is_set_piece(),
-        card.priced_by_range(),
+        card.priced_by_range() && territory.is_none(),
         c.color,
         c.foreign_color,
         c.k2,
@@ -99,6 +110,12 @@ pub fn action_json(action: &Action) -> String {
         Action::BuildFactory { pay } => format!(r#"{{"type":"build","pay":{}}}"#, pay.0),
         Action::SpawnPiece { factory } => {
             format!(r#"{{"type":"spawn","factory":{}}}"#, factory.0)
+        }
+        Action::BuildUnit { factory, level } => {
+            format!(
+                r#"{{"type":"build_unit","factory":{},"level":{}}}"#,
+                factory.0, level
+            )
         }
         Action::Pass => r#"{"type":"pass"}"#.to_string(),
         Action::BuyCard { card, from, target } => format!(
@@ -230,6 +247,27 @@ pub fn event_json(event: &Event) -> String {
             r#"{{"type":"deposit_created","cell":{},"resource":{}}}"#,
             cell.0, resource.0
         ),
+        Event::Painted { player, cells } => format!(
+            r#"{{"type":"painted","player":{},"cells":{}}}"#,
+            player.0,
+            list(cells.iter(), |c| c.0.to_string())
+        ),
+        Event::CutOff { from, to, cells } => format!(
+            r#"{{"type":"cut_off","from":{},"to":{},"cells":{}}}"#,
+            from.0,
+            to.map_or("null".to_string(), |p| p.0.to_string()),
+            list(cells.iter(), |c| c.0.to_string())
+        ),
+        Event::Income {
+            player,
+            area,
+            gained,
+        } => format!(
+            r#"{{"type":"income","player":{},"area":{},"gained":{}}}"#,
+            player.0,
+            area,
+            inv_json(gained)
+        ),
     }
 }
 
@@ -291,8 +329,22 @@ pub fn state_json(game: &Game) -> String {
     let loot = list(st.loot.iter(), |(cell, inv)| {
         format!(r#"{{"cell":{},"items":{}}}"#, cell.0, inv_json(inv))
     });
+    let territory = if game.config.territory {
+        let connected = (0..game.config.players).map(|p| game.connected_count(PlayerId(p)));
+        format!(
+            r#","land":{},"area":{},"stored_card":{},"connected":{}"#,
+            list(st.land.iter(), |o| o
+                .map_or("-1".to_string(), |p| p.0.to_string())),
+            list(st.area.iter(), |n| n.to_string()),
+            list(st.stored_card.iter(), |c| c
+                .map_or("null".to_string(), |c| esc(c.key()))),
+            list(connected, |n| n.to_string())
+        )
+    } else {
+        String::new()
+    };
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"charge":{},"extra_deposits":{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"charge":{},"extra_deposits":{}{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
@@ -317,7 +369,8 @@ pub fn state_json(game: &Game) -> String {
             "[{},{}]",
             c.0,
             list(rs.iter(), |r| r.0.to_string())
-        ))
+        )),
+        territory
     )
 }
 
@@ -346,7 +399,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_card_mult":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -360,7 +413,16 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.max_upgrades,
         c.market_size,
         c.kat_roles,
-        c.pawn_cost
+        c.pawn_cost,
+        c.territory,
+        c.terr_pawn,
+        c.terr_area,
+        c.terr_k1,
+        c.terr_k2,
+        c.terr_k3,
+        c.terr_yield,
+        c.terr_cut_flips,
+        c.terr_card_mult
     );
     format!(
         r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{}"#,
@@ -378,7 +440,8 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         list(m.player_corners.iter(), |i| i.to_string()),
         list(game.state.market.iter(), |c| card_json(
             c,
-            game.roles_pawn_cost()
+            game.roles_pawn_cost(),
+            game.config.territory.then(|| game.territory_card_price(*c))
         ))
     )
 }

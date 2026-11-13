@@ -190,6 +190,12 @@ pub struct State {
     pub charge: bool,
     /// Vorkommen, die waehrend der Partie entstanden sind (Sternsplitter).
     pub extra_deposits: BTreeMap<CellId, Vec<ResourceId>>,
+    /// Gebietsmodus: wem ein Feld gehoert (`None` = neutral). Sonst immer leer gefuellt.
+    pub land: Vec<Option<PlayerId>>,
+    /// Gebietsmodus: gesammelte Flaeche je Spieler (wird fuer Figuren ausgegeben).
+    pub area: Vec<u32>,
+    /// Gebietsmodus: die Karte neben der Fabrik, die auf die naechste Figur wirkt.
+    pub stored_card: Vec<Option<Card>>,
     pub(crate) occupant: Vec<Option<PieceId>>,
     pub(crate) factory_at: Vec<Option<FactoryId>>,
     next_piece: u32,
@@ -218,6 +224,9 @@ impl State {
             extra_actions: 0,
             charge: false,
             extra_deposits: BTreeMap::new(),
+            land: vec![None; cells],
+            area: vec![0; players],
+            stored_card: vec![None; players],
             occupant: vec![None; cells],
             factory_at: vec![None; cells],
             next_piece: 0,

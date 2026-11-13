@@ -39,6 +39,12 @@ impl Game {
         for p in 0..config.players {
             let player = PlayerId(p);
             state.insert_piece(player, map.start_cell(player), PieceKind::King);
+            if config.territory {
+                // Gebietsmodus: die Startecke gehoert dem Spieler und traegt seine einzige Fabrik.
+                let cell = map.start_cell(player);
+                state.land[cell.idx()] = Some(player);
+                state.insert_factory(player, cell);
+            }
         }
         // Mit `kat_roles` liegt Rekrut immer aus: Bauern gehoeren dann zu den Grundregeln.
         let always: &[Card] = if config.kat_roles {
@@ -46,12 +52,16 @@ impl Game {
         } else {
             &[]
         };
-        state.market = cards::draw_market_with(
-            config.seed,
-            config.market_size as usize,
-            map.board.kind(),
-            always,
-        );
+        state.market = if config.territory {
+            cards::draw_market_territory(config.seed, config.market_size as usize, map.board.kind())
+        } else {
+            cards::draw_market_with(
+                config.seed,
+                config.market_size as usize,
+                map.board.kind(),
+                always,
+            )
+        };
         Game {
             config,
             map: Arc::new(map),
@@ -264,13 +274,16 @@ impl Game {
                 }
             }
         }
+        if self.config.territory {
+            self.territory_filter(piece, &mut out);
+        }
         out.sort();
         out.dedup();
         out
     }
 
     /// Sturmangriff: Reichweite +1 fuer die Figuren des Spielers am Zug, nur in diesem Zug.
-    fn charge_bonus(&self, owner: PlayerId) -> u8 {
+    pub(crate) fn charge_bonus(&self, owner: PlayerId) -> u8 {
         (self.state.charge && owner == self.state.current) as u8
     }
 
@@ -406,6 +419,15 @@ impl Game {
             }
         }
 
+        if self.config.territory {
+            actions.extend(self.territory_build_actions(me));
+            if actions.is_empty() {
+                actions.push(Action::Pass);
+            }
+            actions.extend(self.buy_actions(me));
+            return actions;
+        }
+
         if let Some(king) = self.king(me) {
             // Gebaut wird mit Kat 1 aus dem Gepaeck des Koenigs, auf jedem freien Feld.
             let cat1: Vec<ResourceId> = self.state.carried[me.idx()]
@@ -440,6 +462,9 @@ impl Game {
 
     /// Alle erlaubten Kartenkaeufe von `me` (leer, wenn in diesem Zug schon gekauft wurde).
     pub fn buy_actions(&self, me: PlayerId) -> Vec<Action> {
+        if self.config.territory {
+            return self.territory_buy_actions(me);
+        }
         let mut out = Vec::new();
         if self.state.bought_this_turn || self.state.market.is_empty() {
             return out;
@@ -662,6 +687,23 @@ impl Game {
                     return IllegalReason::SpawnCellOccupied;
                 }
             }
+            Action::BuildUnit { factory, level } => {
+                let Some(f) = self.state.factories.get(&factory) else {
+                    return IllegalReason::NoSuchFactory;
+                };
+                if f.owner != me {
+                    return IllegalReason::NotYourFactory;
+                }
+                if !self.config.territory || level == 0 || level > self.max_unit_level() {
+                    return IllegalReason::Unspecified;
+                }
+                if self.state.piece_at(f.cell).is_some() {
+                    return IllegalReason::SpawnCellOccupied;
+                }
+                if !self.can_afford_unit(me, level) {
+                    return IllegalReason::CannotAffordUnit;
+                }
+            }
             Action::Pass => return IllegalReason::PassNotAllowed,
             Action::BuyCard { card, from, target } => {
                 if !self.state.market.contains(&card) {
@@ -669,6 +711,15 @@ impl Game {
                 }
                 if self.state.bought_this_turn {
                     return IllegalReason::AlreadyBoughtThisTurn;
+                }
+                if self.config.territory {
+                    if self.state.stored_card[me.idx()].is_some() {
+                        return IllegalReason::CardSlotFull;
+                    }
+                    if self.territory_card_payment(me, card).is_none() {
+                        return IllegalReason::CannotPayCard;
+                    }
+                    return IllegalReason::Unspecified;
                 }
                 if self.payment(me, from, card, target).is_none() {
                     return IllegalReason::CannotPayCard;
@@ -702,10 +753,17 @@ impl Game {
             Action::Move { piece, to } => self.do_move(actor, piece, to, &mut events),
             Action::BuildFactory { pay } => self.do_build(actor, pay, &mut events),
             Action::SpawnPiece { factory } => self.do_spawn(actor, factory, &mut events),
+            Action::BuildUnit { factory, level } => {
+                self.do_build_unit(actor, factory, level, &mut events)
+            }
             Action::Pass => events.push(Event::Passed { player: actor }),
             Action::BuyCard { card, from, target } => {
                 // Ein Kauf ist keine Aktion: der Spieler bleibt am Zug.
-                self.do_buy(actor, card, from, target, &mut events);
+                if self.config.territory {
+                    self.do_buy_territory(actor, card, from, &mut events);
+                } else {
+                    self.do_buy(actor, card, from, target, &mut events);
+                }
                 self.state.turns_played += 1;
                 return events;
             }
@@ -733,6 +791,8 @@ impl Game {
 
     fn do_move(&mut self, actor: PlayerId, id: PieceId, to: CellId, events: &mut Vec<Event>) {
         let from = self.state.pieces[&id].cell;
+        // Gebietsmodus: Weg und Zusammenhang gelten vor dem Zug.
+        let plan = self.config.territory.then(|| self.territory_plan(id, to));
 
         if let Some(victim_id) = self.state.occupant[to.idx()] {
             let victim = self.state.remove_piece(victim_id).expect("Opfer existiert");
@@ -760,8 +820,12 @@ impl Game {
             to,
         });
 
+        if let Some(plan) = &plan {
+            self.territory_apply_move(actor, plan, events);
+        }
+
         // Eine feindliche Fabrik auf dem Zielfeld wird eingenommen: zerstoert, Lager wird Beute.
-        if let Some(fid) = self.state.factory_at[to.idx()] {
+        if let Some(fid) = self.state.factory_at[to.idx()].filter(|_| plan.is_none()) {
             if self.state.factories[&fid].owner != actor {
                 let factory = self.state.remove_factory(fid).expect("Fabrik existiert");
                 let mut storage = factory.storage.clone();
@@ -902,7 +966,7 @@ impl Game {
     }
 
     /// Wirkung einer Karte (nach der Bezahlung). `color`: die bezahlte Farbe (Rekrut).
-    fn apply_card(
+    pub(crate) fn apply_card(
         &mut self,
         actor: PlayerId,
         card: Card,
@@ -1037,6 +1101,9 @@ impl Game {
             let factory = self.state.remove_factory(id).expect("Fabrik existiert");
             self.state.ledger.vanished += factory.storage.total();
         }
+        if self.config.territory {
+            self.territory_forget(player);
+        }
         let carried = std::mem::take(&mut self.state.carried[player.idx()]);
         self.state.ledger.vanished += carried.total();
         self.state.alive[player.idx()] = false;
@@ -1055,6 +1122,10 @@ impl Game {
     /// Automatisch am Ende des eigenen Zuges (keine Aktion): Koenig sammelt und laedt ab,
     /// dann erzeugen die Fabriken des Spielers ihren Ertrag.
     fn end_of_turn(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
+        if self.config.territory {
+            self.territory_income(actor, events);
+            return;
+        }
         let yield_n = self.config.yield_per_round;
 
         if let Some(king_cell) = self.king(actor).map(|k| k.cell) {
@@ -1177,6 +1248,9 @@ impl Game {
         if !self.state.alive[player.idx()] {
             return 0;
         }
+        if self.config.territory {
+            return self.territory_score(player);
+        }
         let levels: u32 = self
             .pieces_of(player)
             .map(|p| match &p.kind {
@@ -1209,7 +1283,8 @@ impl Game {
     /// Rohstoffe, die ein Spieler besitzt (Gepaeck und Fabriklager). Entscheidet bei gleicher
     /// Wertung.
     fn stock_total(&self, player: PlayerId) -> u64 {
-        self.state.carried[player.idx()].total()
+        self.state.area[player.idx()] as u64
+            + self.state.carried[player.idx()].total()
             + self
                 .factories_of(player)
                 .map(|f| f.storage.total())
@@ -1342,14 +1417,16 @@ impl Game {
                 }
                 // Stufe = Farben + Ausbau + Karten (gedeckelt): nie weniger als die Farben
                 // (ausser am Deckel), nie mehr als Farben plus hoechster Ausbau plus Karten.
+                // Im Gebietsmodus wird die Stufe gekauft, die Farben sagen nichts darueber.
                 let colors_n = colors.len();
                 let cap = self.config.corner_count();
-                if colors_n == 0
-                    || (*level as usize) < colors_n.min(cap)
-                    || (*level as usize)
-                        > colors_n
-                            + self.config.max_upgrades as usize
-                            + piece.perks.card_levels as usize
+                if !self.config.territory
+                    && (colors_n == 0
+                        || (*level as usize) < colors_n.min(cap)
+                        || (*level as usize)
+                            > colors_n
+                                + self.config.max_upgrades as usize
+                                + piece.perks.card_levels as usize)
                 {
                     return Err(format!("{:?}: Farben passen nicht zur Stufe", piece.id));
                 }
@@ -1397,7 +1474,7 @@ impl Game {
             }
         }
         let list: Vec<&Factory> = st.factories.values().collect();
-        for (i, a) in list.iter().enumerate() {
+        for (i, a) in list.iter().enumerate().filter(|_| !self.config.territory) {
             let dist = self.map.board.distances_from(a.cell);
             for b in &list[i + 1..] {
                 if dist[b.cell.idx()] < self.config.min_factory_distance {
@@ -1461,6 +1538,9 @@ impl Game {
 
         if st.loot.values().any(|pile| pile.is_empty()) {
             return Err("leere Beute-Haufen".into());
+        }
+        if self.config.territory {
+            self.territory_check_invariants()?;
         }
 
         if st.outcome.is_none() && !st.alive[st.current.idx()] {

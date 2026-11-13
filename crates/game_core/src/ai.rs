@@ -853,6 +853,7 @@ impl SearchBot {
             }
             Action::BuildFactory { .. } => 60_000,
             Action::SpawnPiece { .. } => 50_000,
+            Action::BuildUnit { level, .. } => 50_000 + level as i32,
             Action::BuyCard { .. } => 45_000,
             Action::Pass => -100_000,
         }

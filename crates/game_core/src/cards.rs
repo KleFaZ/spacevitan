@@ -327,6 +327,28 @@ pub fn draw_market_with(seed: u64, size: usize, grid: GridKind, always: &[Card])
     deck
 }
 
+/// Karten im Gebietsmodus: nur Figurenfaehigkeiten, die die naechste gebaute Figur bekommt.
+pub const TERRITORY_POOL: [Card; 5] = [
+    Card::DiagonalStrike,
+    Card::LongLegs,
+    Card::Lance,
+    Card::Spring,
+    Card::Horse,
+];
+
+/// Markt im Gebietsmodus: `size` verschiedene Karten aus `TERRITORY_POOL`, sortiert.
+pub fn draw_market_territory(seed: u64, size: usize, grid: GridKind) -> Vec<Card> {
+    let mut deck: Vec<Card> = TERRITORY_POOL
+        .into_iter()
+        .filter(|c| c.available_on(grid))
+        .collect();
+    let mut rng = Rng::new(seed ^ 0x6b61_7274_656e_0002);
+    rng.shuffle(&mut deck);
+    deck.truncate(size);
+    deck.sort();
+    deck
+}
+
 /// Waehlt aus `stock` die Einheiten, mit denen `cost` bezahlt wird, oder `None`, wenn es nicht
 /// reicht. `own` ist die eigene Farbe (fuer "fremde Farbe").
 pub fn plan_payment(

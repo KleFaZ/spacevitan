@@ -16,6 +16,7 @@ pub mod render;
 pub mod replay;
 pub mod rng;
 pub mod state;
+mod territory;
 
 #[cfg(test)]
 mod ai_tests;
@@ -28,5 +29,7 @@ mod json_check;
 #[cfg(test)]
 mod roles_tests;
 pub mod session;
+#[cfg(test)]
+mod territory_tests;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
