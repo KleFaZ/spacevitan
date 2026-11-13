@@ -166,10 +166,31 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .tabs button:disabled { opacity: 0.45; cursor: not-allowed; }
 .brand { flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .notice { max-width: 1280px; margin: 0 auto 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 0.88rem; }
-.setup { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.setup label { display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; color: var(--muted); min-width: 0; }
-.setup select, .setup input { font: inherit; font-size: 0.9rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; max-width: none; }
-.setup .wide { grid-column: 1 / -1; }
+.menu { max-width: 1280px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px 18px; }
+.menu h2 { font-size: 1.2rem; font-weight: 800; font-stretch: 112%; text-transform: none; letter-spacing: 0; color: var(--ink); margin: 0; }
+.menuhead { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.menuhead .note { margin: 0; max-width: 78ch; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.preset { padding: 7px 14px; cursor: pointer; font-weight: 650; }
+.preset[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 12px; align-items: start; }
+.group { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 12px; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.group legend, .group > summary { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 0 6px; }
+.group > summary { cursor: pointer; padding: 0; }
+.group > .note { margin: 0; }
+.group.wide { grid-column: 1 / -1; }
+.group .inner { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 10px 14px; margin-top: 8px; }
+.group label { display: flex; flex-direction: column; gap: 2px; font-size: 0.84rem; min-width: 0; }
+.group label > span { font-weight: 600; }
+.group label small { color: var(--muted); font-size: 0.74rem; line-height: 1.3; }
+.group select, .group input[type=number] { font: inherit; font-size: 0.92rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; max-width: none; }
+.group input::placeholder { color: var(--muted); opacity: 0.8; }
+.group input.set { border-color: var(--accent); }
+.group label.check { flex-direction: row; align-items: flex-start; gap: 8px; }
+.group label.check input { margin-top: 3px; }
+.group label.check span { font-weight: 600; }
+.menufoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; }
+.menufoot .note { margin: 0; }
 .btn { padding: 8px 12px; cursor: pointer; font-weight: 650; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
 .turnbox { margin-top: 10px; border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -198,6 +219,51 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   </div>
 </header>
 <p class="notice" id="notice" hidden></p>
+
+<section class="menu" id="menu" hidden aria-label="Neue Partie einrichten">
+  <form id="setup" novalidate>
+    <div class="menuhead">
+      <h2>Neue Partie</h2>
+      <div class="presets" role="group" aria-label="Regelvorlage">
+        <button type="button" class="preset" data-preset="pc" aria-pressed="true">Computerspiel</button>
+        <button type="button" class="preset" data-preset="board" aria-pressed="false">Brettspiel</button>
+        <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
+      </div>
+      <p class="note" id="presetNote"></p>
+    </div>
+    <div class="groups" id="menuGroups">
+      <fieldset class="group">
+        <legend>Spiel</legend>
+        <label for="setPlayers"><span>Spieler</span>
+          <select id="setPlayers">
+            <option value="2" selected>2 (Quadrat, gegenüber)</option>
+            <option value="3">3 (Dreieck)</option>
+            <option value="4">4 (Quadrat)</option>
+            <option value="5">5 (Fünfeck)</option>
+            <option value="6">6 (Sechseck)</option>
+            <option value="7">7 (Siebeneck)</option>
+            <option value="8">8 (Achteck)</option>
+          </select>
+        </label>
+        <label for="setSelf"><span>Spieler A</span>
+          <select id="setSelf"><option value="2" selected>Du</option><option value="3">Bot „stark“</option><option value="0">Bot „gierig“</option></select>
+        </label>
+        <label for="setOpp"><span>Gegner (alle anderen)</span>
+          <select id="setOpp"><option value="3" selected>Bot „stark“</option><option value="0">Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
+        </label>
+        <label for="setSeed"><span>Seed (leer = zufällig)</span>
+          <input id="setSeed" type="number" min="0" step="1" inputmode="numeric" placeholder="zufällig">
+        </label>
+      </fieldset>
+    </div>
+    <p class="error" id="menuError" hidden></p>
+    <div class="menufoot">
+      <button class="btn primary" type="submit" id="menuStart">Partie starten</button>
+      <button class="btn" type="button" id="menuBack" hidden>Zurück zur Partie</button>
+      <span class="note">Leere Felder gelten als Standard (grau angezeigt). Alle Einstellungen gelten nur für die nächste Partie.</span>
+    </div>
+  </form>
+</section>
 
 <main class="layout">
   <section class="stage" aria-label="Spielbrett">
@@ -242,30 +308,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
   <aside class="panel">
     <div id="playBox" hidden>
-      <h2>Neue Partie</h2>
-      <form id="setup" class="setup" novalidate>
-        <label for="setPlayers">Spieler
-          <select id="setPlayers">
-            <option value="2" selected>2 (Quadrat, gegenüber)</option>
-            <option value="3">3 (Dreieck)</option>
-            <option value="4">4 (Quadrat)</option>
-            <option value="5">5 (Fünfeck)</option>
-            <option value="6">6 (Sechseck)</option>
-            <option value="7">7 (Siebeneck)</option>
-            <option value="8">8 (Achteck)</option>
-          </select>
-        </label>
-        <label for="setSelf">Spieler A
-          <select id="setSelf"><option value="2" selected>Du</option><option value="3">Bot „stark“</option><option value="0">Bot „gierig“</option></select>
-        </label>
-        <label class="wide" for="setOpp">Gegner (alle anderen)
-          <select id="setOpp"><option value="3" selected>Bot „stark“</option><option value="0">Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
-        </label>
-        <label class="wide" for="setSeed">Seed (leer = zufällig)
-          <input id="setSeed" type="number" min="0" step="1" inputmode="numeric" placeholder="zufällig">
-        </label>
-        <button class="btn primary wide" type="submit">Partie starten</button>
-      </form>
+      <h2>Spielen</h2>
+      <button class="btn primary" id="openMenu" type="button" style="width:100%">Neue Partie / Einstellungen …</button>
       <p class="error" id="playError" hidden></p>
       <p class="note">Wege vorplanen: Figur anklicken, dann <b>Shift</b> halten (zeigt den Weg bis zum Feld unter der Maus), <b>Shift+Klick</b> geht ihn von selbst Zug um Zug. Mit <b>Strg+Klick</b> wählst du Kacheln einzeln, Strg loslassen startet. <b>Esc</b> bricht ab.</p>
     </div>
@@ -1314,12 +1358,25 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ul.appendChild(li);
     }
   }
+  /** Kurzfassung der Regeln einer Partie fuer die Zusammenfassung (leer bei alten Dateien). */
+  function rulesText(c) {
+    if (!c || !Array.isArray(c.regrow_rounds)) return "";
+    const cats = R.players >= 6 ? 4 : 3;
+    const rg = c.regrow_rounds.slice(0, cats);
+    const regrow = rg.every((n) => n === 0)
+      ? "nichts wächst nach"
+      : `Nachwachsen (Kat ${rg.map((_, i) => i + 1).join("/")}) nach ${rg.map((n) => (n === 0 ? "nie" : n)).join("/")} Runden`;
+    const score = c.score_after ? `Wertung nach Runde ${c.score_after}` : "keine Wertung";
+    const cards = c.market_size ? `${c.market_size} Karten` : "ohne Karten";
+    return `${regrow} · ${score} · ${cards}`;
+  }
   function renderPanel() {
     const f = R.frames[fi];
     const last = R.frames.length - 1;
     $("summary").innerHTML =
       `<strong>Seed <span class="mono">${R.seed}</span></strong> · ${boardText()} · ` +
-      `${R.players} Spieler · ${R.frames.length - 1} ${R.frames.length === 2 ? "Zug" : "Züge"}<br>Ergebnis: <strong>${outcomeText(R)}</strong>`;
+      `${R.players} Spieler · ${R.frames.length - 1} ${R.frames.length === 2 ? "Zug" : "Züge"}<br>Ergebnis: <strong>${outcomeText(R)}</strong>` +
+      (rulesText(R.config) ? `<br><span title="Die Regeln dieser Partie">Regeln: ${escapeHtml(rulesText(R.config))}</span>` : "");
 
     const players = $("players");
     players.innerHTML = "";
@@ -1804,6 +1861,242 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     el.textContent = msg;
     el.hidden = !msg;
   }
+  function showMenuError(msg) {
+    const el = $("menuError");
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+
+  // ----- Startmenue: alle Regeln einstellbar ---------------------------------------------------
+  // Die Vorgaben (ph) spiegeln Config::new im Spielkern; sie erscheinen nur grau als Platzhalter.
+  // Gesendet wird nur, was jemand eintippt: leere Felder lassen dem Spielkern seinen Standard.
+  const menuPlayers = () => Number($("setPlayers").value) || 2;
+  const marketDefault = (p) => (p <= 4 ? 2 * p : p);
+  const sideRange = (p) => (p === 3 ? [6, 40] : p >= 5 ? [8, 30] : [6, 64]);
+  const RULE_GROUPS = [
+    { title: "Brett", fields: [
+      { key: "side", label: "Seitenlänge", ph: () => "10", hint: () => { const [a, b] = sideRange(menuPlayers()); return `Felder je Kante, bei ${menuPlayers()} Spielern ${a} bis ${b}.`; } },
+      { key: "min_factory_distance", label: "Mindestabstand zwischen Fabriken", ph: () => "3", hint: () => "in Schritten, 2 oder 3" },
+    ] },
+    { title: "Nachwachsen der Rohstoffe", note: "Ein abgebautes Vorkommen ist weg. Die Zahl sagt, nach wie vielen Runden es wieder da ist; 0 = nie.", fields: [
+      { key: "regrow_cat1", label: "Kat 1 (Kristalle der Farben)", ph: () => "20" },
+      { key: "regrow_cat2", label: "Kat 2", ph: () => "5" },
+      { key: "regrow_cat3", label: "Kat 3", ph: () => "3" },
+      { key: "regrow_cat4", label: "Kat 4 (nur ab 6 Spielern)", ph: () => "2" },
+    ] },
+    { title: "Ende und Wertung", fields: [
+      { key: "score_after", label: "Wertung nach Runde", ph: () => "100", hint: () => "Hat bis dahin niemand gewonnen, zählen Figurenstufen + Fabriken + Farben. 0 = keine Wertung." },
+      { key: "max_rounds", label: "Unentschieden nach Runde", ph: () => "300", hint: () => "Nur wichtig, wenn die Wertung ausgeschaltet ist." },
+    ] },
+    { title: "Karten", fields: [
+      { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
+      { key: "card_target_near", label: "Figurenkarten nur nahe am Zahlfeld", check: true },
+    ] },
+    { title: "Stufen der Fabriken", fields: [
+      { key: "upgrade_step", label: "Einheiten je Stufe", ph: () => "10", hint: () => "Je so viele Einheiten ab Kat 2 im Lager steigt die Stufe der kommenden Figur." },
+      { key: "upgrade_region_min", label: "Einheiten je Region", ph: () => "3", hint: () => "So viele einer Regionsfarbe müssen im Lager liegen, damit die Region zählt." },
+      { key: "max_upgrades", label: "Höchste Ausbaustufe", ph: () => "2" },
+    ] },
+    { title: "Erweitert: Rohstoffe auf der Karte", details: true, wide: true, fields: [
+      { key: "yield_per_round", label: "Ertrag je Vorkommen und Runde", ph: () => "1" },
+      { key: "deposit_stock", label: "Vorrat je Vorkommen", ph: () => "0", hint: () => "0 = unerschöpflich" },
+      { key: "cat1_cells", label: "Kat-1-Felder je Ecke", ph: () => "1" },
+      { key: "cat1_distance", label: "Abstand der eigenen Kat-1-Felder zum Start", ph: () => "2" },
+      { key: "center_colors", label: "Zentrumsfarben", ph: () => String(Math.ceil(menuPlayers() / 2)), hint: () => "Neutrale Kat-1-Farben um die Mitte, höchstens 8" },
+      { key: "center_radius", label: "Radius der Mitte", ph: () => "2" },
+      { key: "center_cells", label: "Felder je Zentrumsfarbe", ph: () => "3" },
+      { key: "center_mix", label: "Mischfelder in der Mitte", ph: () => "1" },
+      { key: "mid_cat1", label: "Kat-1-Felder je Spieler im Zwischenring", ph: () => "1" },
+    ] },
+  ];
+  const PRESETS = {
+    pc: {
+      note: "Wie bisher: Rohstoffe wachsen nach (Kat 1 nach 20, Kat 2 nach 5, Kat 3 nach 3 Runden), nach Runde 100 entscheidet die Wertung.",
+      rules: {},
+    },
+    board: {
+      note: "Nichts wächst nach: jedes Vorkommen wird genau einmal abgebaut. So ließe sich das Spiel auf einem echten Brett mit Plättchen spielen; es endet, wenn keiner mehr gewinnen kann, spätestens mit der Wertung.",
+      rules: { regrow_cat1: 0, regrow_cat2: 0, regrow_cat3: 0, regrow_cat4: 0 },
+    },
+  };
+  const MENU_KEY = "spacevitan-menu-v1";
+  let preset = "pc";
+  let menuOpen = false;
+  const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
+  function buildMenu() {
+    const host = $("menuGroups");
+    for (const g of RULE_GROUPS) {
+      const box = document.createElement(g.details ? "details" : "fieldset");
+      box.className = "group" + (g.wide ? " wide" : "");
+      const head = document.createElement(g.details ? "summary" : "legend");
+      head.textContent = g.title;
+      box.appendChild(head);
+      if (g.note) {
+        const p = document.createElement("p");
+        p.className = "note";
+        p.textContent = g.note;
+        box.appendChild(p);
+      }
+      let inner = box;
+      if (g.details) {
+        inner = document.createElement("div");
+        inner.className = "inner";
+        box.appendChild(inner);
+      }
+      for (const f of g.fields) {
+        const label = document.createElement("label");
+        const name = document.createElement("span");
+        name.textContent = f.label;
+        const input = document.createElement("input");
+        input.dataset.rule = f.key;
+        if (f.check) {
+          label.className = "check";
+          input.type = "checkbox";
+          label.append(input, name);
+        } else {
+          input.type = "number";
+          input.min = "0";
+          input.step = "1";
+          input.inputMode = "numeric";
+          label.append(name, input);
+          if (f.hint) {
+            const small = document.createElement("small");
+            small.dataset.hintFor = f.key;
+            label.appendChild(small);
+          }
+        }
+        input.id = `rule_${f.key}`;
+        label.htmlFor = input.id;
+        input.addEventListener("input", () => { markCustom(); refreshMenu(); });
+        input.addEventListener("change", () => { markCustom(); refreshMenu(); });
+        inner.appendChild(label);
+      }
+      host.appendChild(box);
+    }
+    refreshMenu();
+  }
+  /** Platzhalter und Hinweise folgen der Spielerzahl; belegte Felder bekommen einen Rand. */
+  function refreshMenu() {
+    const fields = new Map();
+    for (const g of RULE_GROUPS) for (const f of g.fields) fields.set(f.key, f);
+    for (const input of ruleInputs()) {
+      const f = fields.get(input.dataset.rule);
+      if (!f) continue;
+      if (!f.check) {
+        input.placeholder = f.ph();
+        input.classList.toggle("set", input.value.trim() !== "");
+        const small = document.querySelector(`[data-hint-for="${f.key}"]`);
+        if (small) small.textContent = f.hint ? f.hint() : "";
+      }
+    }
+    const kat4 = $("rule_regrow_cat4");
+    if (kat4) kat4.disabled = menuPlayers() < 6;
+  }
+  function markCustom() {
+    if (preset === "custom") return;
+    preset = "custom";
+    syncPresetButtons();
+  }
+  function syncPresetButtons() {
+    for (const b of document.querySelectorAll(".preset[data-preset]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.preset === preset));
+    }
+    $("presetNote").textContent = preset === "custom"
+      ? "Eigene Einstellungen. Die Vorlagen oben setzen die Regelfelder zurück und füllen sie neu."
+      : PRESETS[preset].note;
+  }
+  function clearRuleFields() {
+    for (const input of ruleInputs()) {
+      if (input.type === "checkbox") input.checked = false;
+      else input.value = "";
+    }
+  }
+  function applyPreset(name) {
+    clearRuleFields();
+    for (const [key, value] of Object.entries(PRESETS[name].rules)) {
+      const input = $(`rule_${key}`);
+      if (input) input.value = String(value);
+    }
+    preset = name;
+    syncPresetButtons();
+    refreshMenu();
+  }
+  /** Text `name=wert,...` fuer den Spielkern aus den belegten Feldern. */
+  function ruleText() {
+    const parts = [];
+    for (const input of ruleInputs()) {
+      if (input.disabled) continue;
+      const key = input.dataset.rule;
+      if (input.type === "checkbox") {
+        if (input.checked) parts.push(`${key}=1`);
+        continue;
+      }
+      const raw = input.value.trim();
+      if (raw === "") continue;
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 0) {
+        const label = input.closest("label").querySelector("span").textContent;
+        throw new Error(`„${label}“: bitte eine ganze Zahl ab 0 eintragen.`);
+      }
+      parts.push(`${key}=${n}`);
+    }
+    return parts.join(",");
+  }
+  function sendRules(text) {
+    if (typeof wasm.sv_set_rules !== "function" || typeof wasm.sv_in_reserve !== "function") {
+      if (text) throw new Error("Dieser Spielkern kennt noch keine Regeleinstellungen. Bitte die neueste Seite laden.");
+      return;
+    }
+    const bytes = new TextEncoder().encode(text);
+    const ptr = wasm.sv_in_reserve(bytes.length);
+    if (bytes.length) new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
+    callWasm("sv_set_rules", bytes.length);
+  }
+  function saveMenu() {
+    try {
+      const rules = {};
+      for (const input of ruleInputs()) {
+        if (input.type === "checkbox") { if (input.checked) rules[input.dataset.rule] = 1; }
+        else if (input.value.trim() !== "") rules[input.dataset.rule] = input.value.trim();
+      }
+      localStorage.setItem(MENU_KEY, JSON.stringify({
+        players: $("setPlayers").value, self: $("setSelf").value, opp: $("setOpp").value, preset, rules,
+      }));
+    } catch (err) { /* Speicher gesperrt: dann eben ohne Merken */ }
+  }
+  function loadMenu() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(MENU_KEY) || "null");
+      if (!saved || typeof saved !== "object") return;
+      for (const [id, key] of [["setPlayers", "players"], ["setSelf", "self"], ["setOpp", "opp"]]) {
+        const sel = $(id);
+        if (saved[key] !== undefined && [...sel.options].some((o) => o.value === String(saved[key]))) sel.value = String(saved[key]);
+      }
+      for (const input of ruleInputs()) {
+        const v = saved.rules && saved.rules[input.dataset.rule];
+        if (v === undefined) continue;
+        if (input.type === "checkbox") input.checked = true;
+        else input.value = String(v);
+      }
+      preset = saved.preset === "pc" || saved.preset === "board" || saved.preset === "custom" ? saved.preset : "pc";
+    } catch (err) { /* kaputter Eintrag: Voreinstellungen */ }
+  }
+  function openMenu(canGoBack) {
+    menuOpen = true;
+    clearTimeout(botTimer);
+    $("menu").hidden = false;
+    document.querySelector("main.layout").hidden = true;
+    $("menuBack").hidden = !canGoBack;
+    $("menuStart").textContent = canGoBack ? "Neue Partie starten" : "Partie starten";
+    showMenuError("");
+    refreshMenu();
+    syncPresetButtons();
+  }
+  function closeMenu() {
+    menuOpen = false;
+    $("menu").hidden = true;
+    document.querySelector("main.layout").hidden = false;
+  }
   function randomSeed() {
     const a = new Uint32Array(1);
     (window.crypto || window.msCrypto).getRandomValues(a);
@@ -1984,10 +2277,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     routes = []; ctrlPath = null; routeNote = ""; clearTimeout(premoveTimer);
     if (m === "play") {
       if (!liveR) {
-        // Erste Partie mit den Voreinstellungen des Formulars (Gegner: stark).
-        startLive(Number($("setPlayers").value) || 2, Number($("setOpp").value), null, Number($("setSelf").value));
+        // Noch keine Partie: erst das Startmenue, gestartet wird mit "Partie starten".
+        openMenu(false);
         return;
       }
+      closeMenu();
       R = liveR;
       fi = liveR.frames.length - 1;
       tween = null;
@@ -1996,6 +2290,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       requestAnimationFrame(draw);
       scheduleBots();
     } else {
+      closeMenu();
       if (games.length) selectGame(Number($("game").value) || 0, undefined);
       else renderTurnBox();
     }
@@ -2059,6 +2354,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   $("modePlay").addEventListener("click", () => setMode("play"));
   $("modeView").addEventListener("click", () => setMode("view"));
   $("toNow").addEventListener("click", () => { setPlaying(false); goTo(R.frames.length - 1, false); });
+  const hadGame = () => Boolean(liveR && mode === "play");
   $("setup").addEventListener("submit", (e) => {
     e.preventDefault();
     const raw = $("setSeed").value.trim();
@@ -2066,15 +2362,34 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (raw !== "") {
       seed = Number.parseInt(raw, 10);
       if (!Number.isSafeInteger(seed) || seed < 0) {
-        showPlayError("Der Seed muss eine ganze Zahl ab 0 sein.");
+        showMenuError("Der Seed muss eine ganze Zahl ab 0 sein.");
         return;
       }
     }
     try {
+      sendRules(ruleText());
+      closeMenu();
       startLive(Number($("setPlayers").value), Number($("setOpp").value), seed, Number($("setSelf").value));
+      saveMenu();
     } catch (err) {
-      showPlayError(err.message);
+      // Die alte Partie (falls es eine gibt) bleibt unberuehrt; das Menue bleibt offen.
+      openMenu(hadGame());
+      showMenuError(err.message);
     }
+  });
+  $("setPlayers").addEventListener("change", refreshMenu);
+  $("openMenu").addEventListener("click", () => openMenu(true));
+  $("menuBack").addEventListener("click", () => {
+    closeMenu();
+    if (R) { layout(); renderPanel(); requestAnimationFrame(draw); }
+    scheduleBots();
+  });
+  for (const b of document.querySelectorAll(".preset[data-preset]")) {
+    b.addEventListener("click", () => applyPreset(b.dataset.preset));
+  }
+  $("menuReset").addEventListener("click", () => {
+    $("setPlayers").value = "2"; $("setSelf").value = "2"; $("setOpp").value = "3"; $("setSeed").value = "";
+    applyPreset("pc");
   });
   $("file").addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
@@ -2139,7 +2454,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   });
   window.addEventListener("blur", () => modifiersChanged(false, false));
   document.addEventListener("keydown", (e) => {
-    if (!R || e.target.closest && e.target.closest("select, input")) return;
+    if (!R || menuOpen || e.target.closest && e.target.closest("select, input")) return;
     if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
     else if (e.key === "ArrowRight") stepForward();
     else if (e.key === "ArrowLeft") { setPlaying(false); goTo(fi - 1, false); }
@@ -2159,6 +2474,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     try { addGame(s.replay || s, s.label); } catch (err) { showError(err.message); }
   }
   legend();
+  buildMenu();
+  loadMenu();
+  refreshMenu();
+  syncPresetButtons();
   $("viewPick").hidden = false;
   if (games.length) {
     selectGame(0, busiestFrame(games[0].replay));

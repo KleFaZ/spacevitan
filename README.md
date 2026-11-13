@@ -80,6 +80,14 @@ python3 viewer/build.py spacevitan.html --wasm spacevitan.wasm --standalone
 
 Die entstandene `spacevitan.html` laesst sich per Doppelklick im Browser oeffnen.
 
+**Startmenue:** *Spielen* oeffnet zuerst ein Menue; eine Partie beginnt erst mit *Partie
+starten*. Dort stehen Spielerzahl, Bots, Seed und alle Regeln aus der Tabelle unten (Brettgroesse,
+Nachwachsen je Kategorie, Wertung, Kartenzahl, Stufen, Rohstoffe auf der Karte). Leere Felder
+gelten als Standard. Zwei Vorlagen fuellen die Felder: *Computerspiel* (wie bisher) und
+*Brettspiel* (nichts waechst nach). Die Einstellungen merkt sich der Browser. Technisch schickt
+die Seite sie als Text `name=wert,...` an `sv_set_rules` (`crates/web`); die Namen sind dieselben
+wie bei `--rule`. Die Regeln der laufenden Partie stehen in der Zusammenfassung.
+
 **Wege vorplanen (Premoves):** Eigene Figur anklicken, dann mit der Maus ueber das Zielfeld
 fahren und **Shift** halten: der kuerzeste freie Weg wird gestrichelt gezeigt. **Shift+Klick**
 laeuft ihn Zug um Zug von selbst (so weit es die Figur je Zug schafft, der Koenig ein Feld),

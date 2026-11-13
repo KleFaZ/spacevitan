@@ -8,6 +8,10 @@
 //! `sv_new_game`: Spieler A ist ein Mensch, alle anderen haben die Art `opponent`
 //! (2 = alle Spieler an einem Geraet). `sv_new_game_seats`: auch Spieler A frei waehlbar,
 //! z. B. lauter Bots zum Zuschauen.
+//!
+//! Regeln (Nachwachsen, Wertung, Kartenzahl ...): `sv_in_reserve` + `sv_set_rules` stellen sie
+//! als Text `name=wert,name=wert` fuer alle folgenden Partien ein (Namen wie bei `--rule` der
+//! Kommandozeile, siehe `Config::set`).
 
 use game_core::config::Config;
 use game_core::session::{SeatKind, Session};
@@ -19,6 +23,11 @@ pub const API_VERSION: u32 = 1;
 thread_local! {
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
     static OUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    /// Eingabepuffer fuer Text (Regeln): JavaScript holt sich mit `sv_in_reserve` Platz,
+    /// schreibt die Bytes hinein und ruft dann die Funktion auf, die den Text liest.
+    static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    /// Regeln fuer die naechsten Partien, als `name=wert,name=wert` (siehe `Config::set_all`).
+    static RULES: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
 fn quote(s: &str) -> String {
@@ -74,6 +83,7 @@ fn new_game(
         return Err("Mindestens ein Spieler".into());
     }
     let mut config = Config::new(players, seed);
+    RULES.with(|r| config.set_all(&r.borrow()))?;
     if side != 0 {
         config.side = side;
     }
@@ -89,6 +99,39 @@ fn new_game(
 #[no_mangle]
 pub extern "C" fn sv_api_version() -> u32 {
     API_VERSION
+}
+
+/// Reserviert `len` Bytes im Eingabepuffer und gibt deren Adresse zurueck. JavaScript schreibt
+/// den Text dorthin (UTF-8) und ruft danach z. B. `sv_set_rules(len)` auf.
+#[no_mangle]
+pub extern "C" fn sv_in_reserve(len: u32) -> *mut u8 {
+    INPUT.with(|i| {
+        let mut buf = i.borrow_mut();
+        buf.clear();
+        buf.resize(len as usize, 0);
+        buf.as_mut_ptr()
+    })
+}
+
+/// Stellt die Regeln fuer alle folgenden Partien ein: der Text im Eingabepuffer lautet
+/// `name=wert,name=wert` (z. B. `regrow_cat1=0,market_size=6`). Leer = alle Voreinstellungen.
+/// Namen und Zahlen werden gleich geprueft; ob die Werte zusammenpassen, zeigt erst die Partie.
+#[no_mangle]
+pub extern "C" fn sv_set_rules(len: u32) -> i32 {
+    let result = INPUT.with(|i| {
+        let buf = i.borrow();
+        let bytes = buf
+            .get(..len as usize)
+            .ok_or_else(|| "Regeltext fehlt im Eingabepuffer".to_string())?;
+        let text =
+            std::str::from_utf8(bytes).map_err(|_| "Regeltext ist kein UTF-8".to_string())?;
+        // Probelauf auf einer Wegwerf-Einstellung: so schlaegt ein Tippfehler hier fehl und
+        // nicht erst beim Start.
+        Config::new(2, 0).set_all(text)?;
+        RULES.with(|r| *r.borrow_mut() = text.trim().to_string());
+        Ok(format!("{{\"rules\":{}}}", quote(text.trim())))
+    });
+    finish(result)
 }
 
 /// Neue Partie. Der Seed wird in zwei 32-Bit-Haelften uebergeben; `side` 0 = Standard.
@@ -259,6 +302,59 @@ mod tests {
             "B ist auch ein Mensch"
         );
         assert_eq!(sv_bot_step(), 1, "kein Bot am Tisch");
+    }
+
+    fn set_rules(text: &str) -> i32 {
+        let ptr = sv_in_reserve(text.len() as u32);
+        // Wie im Browser: erst Platz holen, dann die Bytes hineinschreiben.
+        unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), ptr, text.len()) };
+        sv_set_rules(text.len() as u32)
+    }
+
+    #[test]
+    fn rules_reach_the_next_game() {
+        assert_eq!(set_rules("regrow_cat1=0, market_size=6,score_after=40"), 0);
+        assert!(out().starts_with("{\"rules\":\"regrow_cat1=0"), "{}", out());
+        assert_eq!(sv_new_game(2, 7, 0, 0, 0), 0, "{}", out());
+        let json = out();
+        assert!(json.contains("\"regrow_rounds\":[0,5,3,2]"), "{json}");
+        assert!(json.contains("\"market_size\":6"));
+        assert!(json.contains("\"score_after\":40"));
+        // Die Regeln gelten weiter, bis sie ersetzt werden.
+        assert_eq!(sv_new_game(2, 8, 0, 0, 0), 0);
+        assert!(out().contains("\"market_size\":6"));
+        assert_eq!(set_rules(""), 0);
+        assert_eq!(sv_new_game(2, 7, 0, 0, 0), 0);
+        let json = out();
+        assert!(json.contains("\"regrow_rounds\":[20,5,3,2]"));
+        assert!(json.contains("\"market_size\":4"));
+        assert!(json.contains("\"score_after\":100"));
+    }
+
+    #[test]
+    fn rule_cards_can_be_switched_off() {
+        assert_eq!(set_rules("market_size=0"), 0);
+        assert_eq!(sv_new_game(2, 7, 0, 0, 0), 0, "{}", out());
+        assert!(out().contains("\"market\":[]"), "{}", out());
+        assert_eq!(set_rules(""), 0);
+    }
+
+    #[test]
+    fn wrong_rules_are_reported_and_keep_the_old_ones() {
+        assert_eq!(set_rules("market_size=6"), 0);
+        assert_eq!(set_rules("schach=1"), 1);
+        assert!(out().contains("schach"));
+        assert_eq!(set_rules("market_size=x"), 1);
+        assert_eq!(set_rules("market_size=-2"), 1);
+        assert_eq!(sv_new_game(2, 7, 0, 0, 0), 0);
+        assert!(
+            out().contains("\"market_size\":6"),
+            "die alten Regeln bleiben"
+        );
+        // Unpassende Werte meldet erst der Start der Partie.
+        assert_eq!(set_rules("side=3"), 0);
+        assert_eq!(sv_new_game(2, 7, 0, 0, 0), 1);
+        assert_eq!(set_rules(""), 0);
     }
 
     #[test]
