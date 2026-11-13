@@ -197,6 +197,39 @@ Jede Kategorie bekommt eine feste Aufgabe, damit Kat 2 und Kat 3 nicht nur Karte
 
 Ohne die Regel aendert sich nichts. `market_size=0` liefert mit der Regel nur den Rekruten.
 
+Gemessen mit `stark` gegen `stark` (Seeds ab 7000, sonst Standard, je ohne und mit `kat_roles=1`):
+
+| Einstellung | Partien | Runden | Karten je Partie | Geschlagen je Partie | Stufe 3 erreicht |
+|---|---|---|---|---|---|
+| 2 Spieler, ohne Rollen | 24 | 32,2 | 2,7 | 2,0 | 13 von 24 |
+| 2 Spieler, Rollen | 24 | 37,8 | 10,0 | 3,5 | 9 von 24 |
+| 3 Spieler, ohne Rollen | 16 | 84,6 | 6,7 | 5,6 | 3 von 16 |
+| 3 Spieler, Rollen | 16 | 82,1 | 19,4 | 7,8 | 2 von 16 |
+| 2 Spieler, Rollen, `pawn_cost=8` | 24 | 35,9 | 6,5 | 2,5 | 11 von 24 |
+| 3 Spieler, Rollen, `pawn_cost=8` | 16 | 73,9 | 9,9 | 5,6 | 2 von 16 |
+| 2 Spieler, Rollen + nichts waechst nach | 24 | 56,9 | 1,6 | 1,6 | 2 von 24 |
+| 3 Spieler, Rollen + nichts waechst nach | 16 | 99,7 | 1,9 | 2,2 | 0 von 16 |
+
+Was daraus folgt:
+
+- Mit Nachwachsen machen Kat 2 und Kat 3 jetzt etwas: Die KI kauft 3- bis 4-mal so viele Karten,
+  allein der Rekrut kommt auf 3 (2 Spieler) bis 4,6 (3 Spieler) Kaeufe je Partie, und es wird mehr
+  geschlagen.
+- Die Rollen verdraengen die hohen Stufen: Stufe 3 wird seltener und spaeter erreicht, vermutlich weil
+  die KI ihre Einheiten lieber in Bauern und Bewegungskarten steckt (nicht eigens geprueft).
+- Ein Bauernpreis von 8 statt 4 bremst den Rekruten (0,5 statt 3 Kaeufe je Partie bei 2 Spielern),
+  die hohen Stufen kommen fast wieder so oft vor wie ohne Rollen (11 statt 13 von 24; die Stichproben sind klein), und es
+  werden noch 1,5- bis 2,5-mal so viele Karten gekauft wie ohne Rollen. Der Preis ist also der
+  Hebel, um die Rollen auszubalancieren.
+- Das Pferd (4 Kat 3) und die Lanze sind mit Abstand die meistgekauften Karten (Pferd 81 Kaeufe
+  in 16 Dreierpartien, Lanze 39 in 24 Zweierpartien mit `pawn_cost=8`); die Karten sind also noch
+  nicht ausgewogen.
+- Ohne Nachwachsen fallen die Karten auf weniger als 2 je Partie (vermutlich, weil Kat 2 und
+  Kat 3 schnell abgebaut sind; nicht eigens geprueft), und mit drei Spielern gibt es wieder Remis (2 von 16). Rollen und
+  "nichts waechst nach" vertragen sich in dieser Form nicht.
+- Der Koenig bekommt Karten: In 8 Zweierpartien gingen 12 von 73 Kaeufen (16 %) an den Koenig,
+  vor allem Sprungfeder, Lanze und Pferd.
+
 ### Vorlage "Brettspiel" (nichts waechst nach)
 
 Im Startmenue setzt sie `regrow_cat1..4=0`: jedes Vorkommen wird einmal abgebaut, so liesse sich
