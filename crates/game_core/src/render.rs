@@ -3,6 +3,7 @@
 //! Jedes Feld ist 3 Zeichen breit:
 //! - `A*` Koenig von Spieler A, `a2` Figur von Spieler A mit Stufe 2
 //! - `#A` Fabrik von Spieler A (ohne Figur darauf)
+//! - `_A` Land von Spieler A (nur im Gebietsmodus)
 //! - `$` Beute
 //! - Ziffern: Kategorien der Rohstoffe auf dem Feld, `.` leer
 
@@ -93,6 +94,8 @@ pub fn render_game(game: &Game) -> String {
             format!("#{}", player_letter(f.owner))
         } else if game.state.loot.contains_key(&cell) {
             "$".to_string()
+        } else if let Some(owner) = game.state.land[cell.idx()] {
+            format!("_{}", player_letter(owner))
         } else if game.available_deposits(cell).is_empty() {
             ".".to_string()
         } else {

@@ -136,6 +136,21 @@ pub struct Weights {
     /// 0: jede Figur jagt den naechsten gegnerischen Koenig, eingekesselt wird jeder (Standard,
     /// in 60 Viererpartien 49 statt 27 Siege); 1: alle jagen denselben Zielkoenig.
     pub focus: i32,
+    /// Gebietsmodus: je Feld eigenen Landes, das an der Fabrik haengt (es bringt jede Runde
+    /// Flaeche und Rohstoffe) und je Feld, das nicht (oder ohne Fabrik) haengt.
+    pub land: i32,
+    pub land_loose: i32,
+    /// Gebietsmodus: je zehn Einheiten gesammelter Flaeche bzw. Rohstoffe im Lager der Fabrik.
+    pub area_unit: i32,
+    pub stock_unit: i32,
+    /// Gebietsmodus: die Fabrik lebt; Abzug, wenn ein Gegner sie im naechsten Zug erreicht;
+    /// Abzug, wenn die eigene Figur auf der Fabrik steht, obwohl man bauen koennte.
+    pub terr_factory: i32,
+    pub terr_factory_hit: i32,
+    pub terr_blocked: i32,
+    /// Gebietsmodus: Prozent vom Wert einer Figur, die verloren gehen, solange sie nicht auf
+    /// verbundenem Land steht (wehrlos).
+    pub helpless: i32,
 }
 
 impl Weights {
@@ -166,6 +181,14 @@ impl Weights {
                 "trap" => &mut self.trap,
                 "king_hunt" => &mut self.king_hunt,
                 "focus" => &mut self.focus,
+                "land" => &mut self.land,
+                "land_loose" => &mut self.land_loose,
+                "area_unit" => &mut self.area_unit,
+                "stock_unit" => &mut self.stock_unit,
+                "terr_factory" => &mut self.terr_factory,
+                "terr_factory_hit" => &mut self.terr_factory_hit,
+                "terr_blocked" => &mut self.terr_blocked,
+                "helpless" => &mut self.helpless,
                 "diagonal" => &mut self.diagonal,
                 "extra_range" => &mut self.extra_range,
                 "lance" => &mut self.lance,
@@ -215,6 +238,14 @@ impl Weights {
         set_piece: 50,
         extra_action: 60,
         buy_margin: 10,
+        land: 6,
+        land_loose: 2,
+        area_unit: 15,
+        stock_unit: 8,
+        terr_factory: 300,
+        terr_factory_hit: 250,
+        terr_blocked: 30,
+        helpless: 70,
     };
 }
 
@@ -849,7 +880,12 @@ impl SearchBot {
                         best = best.min(self.dist.get(board, p.cell, to));
                     }
                 }
-                -(best.min(1000) as i32)
+                let toward = -(best.min(1000) as i32);
+                if g.config.territory {
+                    // Im Gebietsmodus zaehlt zuerst, wie viele Felder der Zug umfaerbt.
+                    return toward + 20 * g.move_gain(piece, to) as i32;
+                }
+                toward
             }
             Action::BuildFactory { .. } => 60_000,
             Action::SpawnPiece { .. } => 50_000,
@@ -961,19 +997,18 @@ impl SearchBot {
         self.max_degree
     }
 
-    fn player_value(&mut self, g: &Game, p: PlayerId, kings: &[Option<CellId>]) -> i32 {
+    /// Figuren, Druck auf gegnerische Koenige, Gefahr fuer den eigenen und Einkesseln. Gilt
+    /// in beiden Spielarten.
+    fn military_value(
+        &mut self,
+        g: &Game,
+        p: PlayerId,
+        kc: CellId,
+        enemy_kings: Vec<CellId>,
+    ) -> i32 {
         let w = self.weights;
         let board = &g.map.board;
         let st = &g.state;
-        let Some(kc) = kings[p.idx()] else {
-            return 0;
-        };
-        let enemy_kings: Vec<CellId> = kings
-            .iter()
-            .enumerate()
-            .filter(|&(i, k)| i != p.idx() && k.is_some())
-            .map(|(_, k)| k.expect("gefiltert"))
-            .collect();
         let radius = w.pressure_radius;
         let mut v = 0;
         let mut guards = 0;
@@ -1085,6 +1120,83 @@ impl SearchBot {
                 v += w.king_hunt * (radius - d) as i32;
             }
         }
+        v
+    }
+
+    /// Bewertung im Gebietsmodus: Figuren wie sonst, dazu Land (verbunden zaehlt voll), die
+    /// Fabrik und ihr Lager, die gelagerte Karte; unverbundene Figuren sind fast wertlos.
+    fn territory_value(
+        &mut self,
+        g: &Game,
+        p: PlayerId,
+        kc: CellId,
+        enemy_kings: Vec<CellId>,
+    ) -> i32 {
+        let w = self.weights;
+        let st = &g.state;
+        let mut v = self.military_value(g, p, kc, enemy_kings);
+        let conn = g.connected_land(p);
+        let (mut linked, mut loose) = (0, 0);
+        for cell in g.map.board.cells() {
+            if st.land[cell.idx()] != Some(p) {
+                continue;
+            }
+            match &conn {
+                Some(c) if c[cell.idx()] => linked += 1,
+                _ => loose += 1,
+            }
+        }
+        v += w.land * linked + w.land_loose * loose;
+        if let Some(c) = &conn {
+            for piece in st.pieces.values().filter(|x| x.owner == p) {
+                if let PieceKind::Unit { level, .. } = piece.kind {
+                    if !c[piece.cell.idx()] {
+                        v -= unit_value(level as usize) * w.helpless / 100;
+                    }
+                }
+            }
+        }
+        if let Some(f) = g.home_factory(p) {
+            v += w.terr_factory;
+            if self.cell_attacked(g, f.cell, |q| q != p) {
+                v -= w.terr_factory_hit;
+            }
+            v += st.area[p.idx()] as i32 * w.area_unit / 10;
+            v += f.storage.total().min(100_000) as i32 * w.stock_unit / 10;
+            if let Some(card) = st.stored_card[p.idx()] {
+                v += match card {
+                    Card::Lance => w.lance,
+                    Card::Spring => w.spring,
+                    Card::Horse => w.horse,
+                    Card::DiagonalStrike => w.diagonal,
+                    Card::LongLegs => w.extra_range,
+                    _ => 0,
+                };
+            }
+            if st.piece_at(f.cell).is_some_and(|x| x.owner == p) && g.can_afford_unit(p, 1) {
+                v -= w.terr_blocked;
+            }
+        }
+        v
+    }
+
+    fn player_value(&mut self, g: &Game, p: PlayerId, kings: &[Option<CellId>]) -> i32 {
+        let w = self.weights;
+        let board = &g.map.board;
+        let st = &g.state;
+        let Some(kc) = kings[p.idx()] else {
+            return 0;
+        };
+        let enemy_kings: Vec<CellId> = kings
+            .iter()
+            .enumerate()
+            .filter(|&(i, k)| i != p.idx() && k.is_some())
+            .map(|(_, k)| k.expect("gefiltert"))
+            .collect();
+        if g.config.territory {
+            return self.territory_value(g, p, kc, enemy_kings);
+        }
+        let mut v = self.military_value(g, p, kc, enemy_kings);
 
         // Fabriken: kommende Figuren, bewertet nach der Stufe, die sie jetzt ergaeben, plus
         // Fortschritt zum naechsten Ausbau. Die mit dem hoechsten Wert (bei Gleichstand die

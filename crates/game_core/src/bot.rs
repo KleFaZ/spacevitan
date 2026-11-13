@@ -65,6 +65,115 @@ impl GreedyBot {
     }
 }
 
+impl GreedyBot {
+    /// Gebietsmodus: Koenig schlagen, Koenig retten, die teuerste Figur bauen, schlagen, sonst
+    /// den Zug mit dem meisten neuen Land, mit Zug auf die gegnerische Fabrik (oder den Koenig,
+    /// wenn es keine mehr gibt).
+    fn choose_territory(&mut self, game: &Game, legal: &[Action]) -> Action {
+        let me = game.current_player();
+        let board = &game.map.board;
+        let state = &game.state;
+        let king = game.king(me).expect("Koenig lebt").clone();
+        let threatened = game.threatened_cells(me);
+        let enemy_kings: Vec<CellId> = game
+            .alive_players()
+            .into_iter()
+            .filter(|&p| p != me)
+            .filter_map(|p| game.king(p).map(|k| k.cell))
+            .collect();
+        let enemy_factories: Vec<CellId> = state
+            .factories
+            .values()
+            .filter(|f| f.owner != me)
+            .map(|f| f.cell)
+            .collect();
+        let target = |a: &Action| match a {
+            Action::Move { to, .. } => Some(*to),
+            _ => None,
+        };
+
+        // 1. Gegnerischen Koenig schlagen.
+        if let Some(a) = legal
+            .iter()
+            .find(|a| target(a).is_some_and(|t| enemy_kings.contains(&t)))
+        {
+            return *a;
+        }
+        // 2. Eigener Koenig bedroht: auf ein sicheres Feld.
+        if threatened.contains(&king.cell) {
+            let safe: Vec<Action> = legal
+                .iter()
+                .copied()
+                .filter(|a| {
+                    matches!(a, Action::Move { piece, .. } if *piece == king.id)
+                        && !threatened.contains(&target(a).unwrap())
+                })
+                .collect();
+            if let Some(a) = self.rng.pick(&safe) {
+                return *a;
+            }
+        }
+        // 3. Die teuerste Figur bauen.
+        let best_build = legal
+            .iter()
+            .copied()
+            .filter_map(|a| match a {
+                Action::BuildUnit { level, .. } => Some((level, a)),
+                _ => None,
+            })
+            .max_by_key(|&(level, _)| level);
+        if let Some((_, a)) = best_build {
+            return a;
+        }
+        // 4. Zuege nach Gewinn an Land, Naehe zum Ziel und Sicherheit bewerten.
+        let goals: &[CellId] = if enemy_factories.is_empty() {
+            &enemy_kings
+        } else {
+            &enemy_factories
+        };
+        let moves: Vec<Action> = legal
+            .iter()
+            .copied()
+            .filter(|a| matches!(a, Action::Move { .. }))
+            .collect();
+        let score = |a: &Action| -> i64 {
+            let Action::Move { piece, to } = *a else {
+                return i64::MIN;
+            };
+            let is_king = state.pieces[&piece].is_king();
+            let mut s = game.move_gain(piece, to) as i64 * 10;
+            if state.piece_at(to).is_some_and(|p| p.owner != me) {
+                s += 60;
+            }
+            if state.factory_at(to).is_some_and(|f| f.owner != me) {
+                s += 200;
+            }
+            // Figuren ruecken auf das Ziel vor: zaehlt, wie viel naeher sie dem Ziel kommen.
+            if !is_king {
+                let here = nearest(&board.distances_from(state.pieces[&piece].cell), goals) as i64;
+                let there = nearest(&board.distances_from(to), goals) as i64;
+                s += (here - there) * 4;
+            }
+            if is_king && threatened.contains(&to) {
+                s -= 500;
+            }
+            // Das Fabrikfeld freimachen, wenn gebaut werden koennte.
+            if is_king
+                && state
+                    .piece_at(game.map.start_cell(me))
+                    .is_some_and(|p| p.id == king.id)
+            {
+                s += 15;
+            }
+            s
+        };
+        if let Some(a) = self.best_by(&moves, score) {
+            return a;
+        }
+        *self.rng.pick(legal).expect("mindestens eine Aktion")
+    }
+}
+
 fn nearest(dist: &[u32], targets: &[CellId]) -> u32 {
     targets
         .iter()
@@ -82,6 +191,9 @@ impl Bot for GreedyBot {
         let legal = game.legal_actions();
         if legal.len() == 1 {
             return legal[0];
+        }
+        if game.config.territory {
+            return self.choose_territory(game, &legal);
         }
         let me = game.current_player();
         let board = &game.map.board;

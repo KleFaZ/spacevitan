@@ -40,6 +40,9 @@ Optionen:
                  (cat1_distance, center_colors, center_radius, center_cells, mid_cat1,
                  regrow_cat1..4, center_mix, score_after, upgrade_region_min, upgrade_step, max_upgrades, market_size,
                  card_target_near, min_factory_distance, kat_roles, pawn_cost)
+                 Gebietsmodus: territory=1 (weisses Brett, Land faerben), terr_pawn,
+                 terr_area, terr_k1, terr_k2, terr_k3, terr_yield, terr_cut_flips,
+                 terr_card_mult
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
                  z. B. stark,gierig
                  (Standard: gierig)
@@ -49,7 +52,7 @@ Optionen:
   --export DATEI Partie als JSON speichern (fuer die Browser-Ansicht), nur mit einer Partie
   --help         diese Hilfe
 
-Legende: A* Koenig von A, a2 Figur von A mit Stufe 2, #A Fabrik von A,
+Legende: A* Koenig von A, a2 Figur von A mit Stufe 2, #A Fabrik von A, _A Land von A,
          $ Beute, Ziffern = Rohstoffkategorien auf dem Feld, . leer";
 
 struct Options {
@@ -340,6 +343,17 @@ struct Stats {
     /// Je Stufe 2 und 3: Summe der Runden, in denen die erste solche Figur stand, und in wie
     /// vielen Partien es ueberhaupt eine gab.
     first_level: [(u64, u32); 2],
+    /// Gebietsmodus: zerstoerte Fabriken, Abtrennungen und abgetrennte Felder, Runde der ersten
+    /// gebauten Figur, wer in Runde 20 mehr Land hatte und ob er gewann.
+    destroyed: u64,
+    cut_offs: u64,
+    cut_cells: u64,
+    first_spawn: (u64, u32),
+    leader20: (u32, u32),
+    /// Land (Summe) in Runde 20 und am Ende je Partie, fuer den Anteil des Fuehrenden.
+    land_share20: f64,
+    land_share_end: f64,
+    land_games: u32,
 }
 
 /// Hoechste Stufe einer Figur auf dem Brett.
@@ -429,6 +443,9 @@ fn run() -> Result<(), String> {
             .map(|_| ReplayWriter::new(&game, &bot_names));
         let mut gift = o.gift;
         let mut seen_level = [false; 2];
+        let mut seen_spawn = false;
+        let mut leader20: Option<Option<PlayerId>> = None;
+        let mut share20 = 0.0;
         let before = |g: &mut Game| {
             if let Some(gv) = gift {
                 if give_gift(g, gv) {
@@ -452,9 +469,32 @@ fn run() -> Result<(), String> {
                         stats.first_level[i].1 += 1;
                     }
                 }
+                if game.config.territory && leader20.is_none() && game.state.round >= 20 {
+                    let lands: Vec<u32> = (0..game.config.players)
+                        .map(|p| game.land_count(PlayerId(p)))
+                        .collect();
+                    let top = lands.iter().copied().max().unwrap_or(0);
+                    let leaders: Vec<usize> =
+                        (0..lands.len()).filter(|&i| lands[i] == top).collect();
+                    leader20 = Some((leaders.len() == 1).then(|| PlayerId(leaders[0] as u8)));
+                    let total: u32 = lands.iter().sum();
+                    share20 = top as f64 / total.max(1) as f64;
+                }
                 for e in events {
                     match e {
-                        Event::Spawned { .. } => stats.spawned += 1,
+                        Event::Spawned { .. } => {
+                            stats.spawned += 1;
+                            if !seen_spawn {
+                                seen_spawn = true;
+                                stats.first_spawn.0 += game.state.round as u64;
+                                stats.first_spawn.1 += 1;
+                            }
+                        }
+                        Event::FactoryDestroyed { .. } => stats.destroyed += 1,
+                        Event::CutOff { cells, .. } => {
+                            stats.cut_offs += 1;
+                            stats.cut_cells += cells.len() as u64;
+                        }
                         Event::FactoryBuilt { .. } => stats.factories += 1,
                         Event::Captured { .. } => stats.captures += 1,
                         Event::CardBought { card, .. } => {
@@ -479,6 +519,24 @@ fn run() -> Result<(), String> {
             println!("Endstand:\n{}", render_game(&game));
         }
         stats.rounds += game.state.round.min(o.rounds) as u64;
+        if game.config.territory {
+            if let Some(Some(leader)) = leader20 {
+                stats.leader20.1 += 1;
+                if matches!(outcome, Outcome::Winner(p) | Outcome::Points(p) if p == leader) {
+                    stats.leader20.0 += 1;
+                }
+            }
+            let lands: Vec<u32> = (0..game.config.players)
+                .map(|p| game.land_count(PlayerId(p)))
+                .collect();
+            let total: u32 = lands.iter().sum();
+            if leader20.is_some() && total > 0 {
+                stats.land_share20 += share20;
+                stats.land_share_end +=
+                    lands.iter().copied().max().unwrap_or(0) as f64 / total as f64;
+                stats.land_games += 1;
+            }
+        }
         if let (Some(path), Some(w)) = (o.export.as_ref(), writer) {
             let frames = w.frame_count();
             std::fs::write(path, w.finish(&game))
@@ -572,6 +630,31 @@ fn run() -> Result<(), String> {
             stats.captures as f64 / n,
             stats.cards as f64 / n
         );
+        if stats.destroyed > 0 || stats.cut_offs > 0 || stats.first_spawn.1 > 0 {
+            println!(
+                "  Gebiet: {:.2} Fabriken zerstoert, {:.1} Abtrennungen ({:.1} Felder) pro Partie",
+                stats.destroyed as f64 / n,
+                stats.cut_offs as f64 / n,
+                stats.cut_cells as f64 / n
+            );
+            if stats.first_spawn.1 > 0 {
+                println!(
+                    "  Erste gebaute Figur: Runde {:.1} (in {} von {} Partien)",
+                    stats.first_spawn.0 as f64 / stats.first_spawn.1 as f64,
+                    stats.first_spawn.1,
+                    o.games
+                );
+            }
+            if stats.leader20.1 > 0 {
+                println!(
+                    "  Wer in Runde 20 mehr Land hat, gewinnt: {} von {} Partien; Landanteil des Fuehrenden Runde 20: {:.0} %, am Ende: {:.0} %",
+                    stats.leader20.0,
+                    stats.leader20.1,
+                    stats.land_share20 / stats.land_games.max(1) as f64 * 100.0,
+                    stats.land_share_end / stats.land_games.max(1) as f64 * 100.0
+                );
+            }
+        }
         let first = |(sum, games): (u64, u32)| match games {
             0 => "nie".to_string(),
             g => format!(
