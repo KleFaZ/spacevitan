@@ -179,6 +179,23 @@ Warum: Kat 1 ist begrenzt. Ohne Nachwachsen und ohne Wertung endeten mit `gierig
 sind es 0 bis 1 %. Mit `stark` bei 3 Spielern: 0 Remis in 24 Partien, 11 davon fielen erst durch
 die Wertung (Runde 101), im Schnitt 82 Runden.
 
+### Vorlage "Brettspiel" (nichts waechst nach)
+
+Im Startmenue setzt sie `regrow_cat1..4=0`: jedes Vorkommen wird einmal abgebaut, so liesse sich
+das Spiel mit Plaettchen auf einem echten Brett spielen. Gemessen (Seeds ab 5000, sonst Standard):
+
+| Bots | Partien | Remis | erst durch Wertung | Runden im Schnitt |
+|---|---|---|---|---|
+| gierig, 2 Spieler | 100 | 0 | 10 | 35 |
+| gierig, 3 Spieler | 100 | 2 | 25 | 55 |
+| stark, 2 Spieler | 24 | 0 | 4 | 41 |
+| stark, 3 Spieler | 24 | 3 | 17 | 95 |
+
+Mit Nachwachsen waren es bei `stark` und 3 Spielern 0 Remis und 82 Runden. Ohne Nachwachsen
+erstarrt die starke KI also wieder oefter (Gleichstand in der Wertung, Stufe 3 kommt kaum vor).
+Naheliegende Abhilfe, noch nicht gebaut: das Spiel in die Wertung schicken, sobald mehrere Runden
+lang nichts geschlagen oder gebaut wurde, statt nach einer festen Rundenzahl.
+
 ## Karten
 
 Vor jeder Partie zieht der Seed `market_size` verschiedene Karten aus dem Deck (bei 2 Spielern
