@@ -127,6 +127,18 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .market li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; }
 .market b { font-size: 0.88rem; }
 .market .cost { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 1px; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin: 0 0 8px; color: var(--muted); font-size: 0.76rem; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .lg-note { flex-basis: 100%; }
+.slots { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 6px; color: var(--muted); }
+.slots .sg { display: inline-flex; align-items: center; gap: 2px; }
+.slots .sg small { margin-left: 4px; font-size: 0.74rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.slot { display: block; flex: none; }
+.slot.off { opacity: 0.8; }
+.market .where { color: var(--muted); font-size: 0.74rem; display: block; margin-top: 3px; }
+.market .where.ok { color: #2b7a3f; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .market .where.ok { color: #6fcf8a; } }
+:root[data-theme="dark"] .market .where.ok { color: #6fcf8a; }
 .perks { color: var(--muted); font-size: 0.76rem; }
 details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; margin: 2px 0 6px; }
 .player {
@@ -298,6 +310,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <div id="marketBox" class="panel" hidden>
         <h2>Kartenmarkt</h2>
         <p class="note" id="marketNote"></p>
+        <div class="legend" id="marketLegend"></div>
         <ul class="market" id="market"></ul>
       </div>
       <div id="stockBox" class="panel" hidden>
@@ -1347,6 +1360,70 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const t = R.resource_types.find((x) => x.category === 1 && x.home === corner);
     return t ? t.id : -1;
   }
+  // ----- Kartenkosten als Symbole ---------------------------------------------------------------
+  /** Ein Platz im Preis: Raute (Kat 1), Quadrat (Quader, Kat 2) oder Kreis (Ball, Kat 3).
+   *  Gefuellt in der Farbe der Einheit, die dort bezahlt wuerde; gestrichelt, wenn sie fehlt. */
+  function slotSvg(kind, color) {
+    const filled = color !== null && color !== undefined;
+    const fill = filled ? color : "none";
+    const stroke = filled ? "rgba(0,0,0,.6)" : "currentColor";
+    const attrs = `fill="${fill}" stroke="${stroke}" stroke-width="1.6"${filled ? "" : ' stroke-dasharray="2.6 2"'}`;
+    const shape = kind === 1 ? `<polygon points="9,1.6 16.4,9 9,16.4 1.6,9" ${attrs}/>`
+      : kind === 2 ? `<rect x="2.6" y="2.6" width="12.8" height="12.8" rx="1.2" ${attrs}/>`
+        : `<circle cx="9" cy="9" r="6.6" ${attrs}/>`;
+    return `<svg class="slot${filled ? " on" : " off"}" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">${shape}</svg>`;
+  }
+  /** Wie `plan_payment` im Spielkern: welche Einheit bezahlt welchen Platz? null = fehlt noch. */
+  function slotPlan(cost, inv, own) {
+    const left = new Map(inv.map(([r, n]) => [r, n]));
+    const take = (fits, n, kinds) => {
+      const out = [], used = [];
+      for (let i = 0; i < n; i++) {
+        const distinct = i < kinds;
+        let best = null;
+        for (const [r, c] of left) {
+          if (c <= 0 || !fits(r) || (distinct && used.includes(r))) continue;
+          if (best === null || c > left.get(best) || (c === left.get(best) && r < best)) best = r;
+        }
+        if (best === null) { out.push(null); continue; }
+        left.set(best, left.get(best) - 1);
+        used.push(best);
+        out.push(best);
+      }
+      return out.sort((a, b) => (a === null) - (b === null));
+    };
+    const c1 = (r) => category(r) === 1;
+    const groups = [
+      { kind: 1, label: "fremde Farbe", name: "fremde Farbe", slots: take((r) => c1(r) && r !== own, cost.foreign_color, 0) },
+      { kind: 1, label: "", name: "Farbe", slots: take(c1, cost.color, 0) },
+      { kind: 2, label: cost.k2_kinds > 1 ? `in ${cost.k2_kinds} Farben` : "", name: "Quader", slots: take((r) => category(r) === 2, cost.k2, cost.k2_kinds) },
+      { kind: 3, label: cost.k3_kinds > 1 ? `in ${cost.k3_kinds} Farben` : "", name: "Ball", slots: take((r) => category(r) === 3, cost.k3, cost.k3_kinds) },
+    ].filter((g) => g.slots.length);
+    const missing = groups.reduce((s, g) => s + g.slots.filter((x) => x === null).length, 0);
+    return { groups, missing };
+  }
+  /** Die Symbolzeile einer Karte. `plan` null: nur der Preis, ohne Vergleich mit einem Lager. */
+  function slotsHtml(cost, plan) {
+    const groups = plan ? plan.groups : slotPlan(cost, [], -1).groups;
+    const parts = groups.map((g) => {
+      const need = g.slots.length, have = g.slots.filter((x) => x !== null).length;
+      const svgs = g.slots.map((x) => slotSvg(g.kind, x === null ? null : crystalColor(x))).join("");
+      const count = plan ? `${have}/${need}` : `${need}×`;
+      const tip = plan ? `${g.name}: ${have} von ${need} vorhanden` : `${need}× ${g.name}`;
+      const kindsTxt = g.label ? ` ${g.label}` : "";
+      return `<span class="sg" title="${escapeHtml(tip + kindsTxt)}">${svgs}<small>${count}${escapeHtml(kindsTxt)}</small></span>`;
+    });
+    return parts.join("");
+  }
+  /** Der Ort, an dem am wenigsten zum Bezahlen fehlt: Gepaeck des Koenigs oder eine Fabrik. */
+  function bestPlace(cost, places, own) {
+    let best = null;
+    for (const [name, inv] of places) {
+      const plan = slotPlan(cost, inv, own);
+      if (!best || plan.missing < best.plan.missing) best = { name, inv, plan };
+    }
+    return best;
+  }
   function renderMarket(f) {
     const market = R.market || [];
     $("marketBox").hidden = market.length === 0;
@@ -1357,12 +1434,25 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     $("marketNote").textContent = acting
       ? "Eine Karte pro Zug, zusätzlich zu deinem Zug. Bezahlt wird aus einem Ort: dem Gepäck des Königs oder einer Fabrik."
       : "Eine Karte pro Zug, zusätzlich zum Zug. Bezahlt wird aus einem Ort: Gepäck des Königs oder eine Fabrik.";
+    $("marketLegend").innerHTML =
+      `<span>${slotSvg(1, null)} Farbe (Kat 1)</span><span>${slotSvg(2, null)} Quader (Kat 2)</span><span>${slotSvg(3, null)} Ball (Kat 3)</span>` +
+      `<span class="lg-note">${p === null || p === undefined ? "Preis der Karte." : "Gefüllt: hast du am besten Ort, gestrichelt: fehlt noch."}</span>`;
+    const places = p === null || p === undefined || !f.alive[p] ? [] : [["Gepäck des Königs", (f.carried || [])[p] || []]]
+      .concat(f.factories.filter((x) => x.owner === p).map((x) => [`Fabrik ${cellName(x.cell)}`, x.storage]));
+    // Preis nach Reichweite: die billigste eigene Figur zaehlt.
+    const ranges = p === null || p === undefined ? [] : f.pieces.filter((x) => x.owner === p && !x.king).map((x) => x.range);
+    const minRange = ranges.length ? Math.min(...ranges) : 1;
     const ul = $("market");
     ul.innerHTML = "";
     for (const c of market) {
       const li = document.createElement("li");
+      const cost = costFor(c, minRange);
+      const best = places.length ? bestPlace(cost, places, own) : null;
+      const ready = best && best.plan.missing === 0;
       li.innerHTML = `<b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(c.text)}` +
-        `<span class="cost">Kosten: ${escapeHtml(costText(c))}</span>`;
+        (c.per_range ? `<span class="cost">Kosten: ${escapeHtml(costText(c))}. Gezeigt: Reichweite ${minRange}.</span>` : "") +
+        `<div class="slots" role="group" aria-label="${escapeHtml("Kosten: " + costText(c))}">${slotsHtml(cost, best ? best.plan : null)}</div>` +
+        (best ? `<span class="where${ready ? " ok" : ""}">${ready ? "Reicht" : "Am nächsten dran"}: ${escapeHtml(best.name)}</span>` : "");
       if (acting) {
         const options = [];
         live.legal.forEach((a, i) => { if (a.type === "buy" && a.card === c.key) options.push([a, i]); });
@@ -1381,19 +1471,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         } else if (f.bought_this_turn) {
           li.insertAdjacentHTML("beforeend", `<span class="missing">In diesem Zug wurde schon eine Karte gekauft.</span>`);
         } else {
-          // Bester Ort: der, an dem am wenigsten fehlt.
-          const places = [["Gepäck des Königs", (f.carried || [])[p] || []]]
-            .concat(f.factories.filter((x) => x.owner === p).map((x) => [`Fabrik ${cellName(x.cell)}`, x.storage]));
-          let best = null;
-          for (const [name, inv] of places) {
-            // Preis nach Reichweite: die billigste eigene Figur zaehlt.
-            const ranges = f.pieces.filter((x) => x.owner === p && !x.king).map((x) => x.range);
-            const cost = costFor(c, ranges.length ? Math.min(...ranges) : 1);
-            const miss = shortfall(cost, inv, own);
-            if (!best || miss.length < best[1].length) best = [name, miss];
-          }
-          const text = best && best[1].length
-            ? `Noch nicht bezahlbar. Am nächsten dran: ${best[0]}, es fehlt ${best[1].join(", ")}.`
+          const miss = best ? shortfall(cost, best.inv, own) : [];
+          const text = best && miss.length
+            ? `Es fehlt noch: ${miss.join(", ")}.`
             : "Gerade nicht möglich (keine passende Figur oder Fabrik).";
           li.insertAdjacentHTML("beforeend", `<span class="missing">${escapeHtml(text)}</span>`);
         }
