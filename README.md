@@ -247,6 +247,57 @@ erstarrt die starke KI also wieder oefter (Gleichstand in der Wertung, Stufe 3 k
 Naheliegende Abhilfe, noch nicht gebaut: das Spiel in die Wertung schicken, sobald mehrere Runden
 lang nichts geschlagen oder gebaut wurde, statt nach einer festen Rundenzahl.
 
+### Gebietsmodus (`territory=1`, Vorlage "Gebiet (neu)")
+
+Ein eigener Regelsatz neben dem alten Spiel (nichts davon aendert sich, wenn `territory` aus ist).
+Gedacht als Vereinfachung: kein Abbauen, keine Fabrikbauten, keine Kartenmaerkte mit Farbzwang.
+
+- Das Brett ist neutral. Nur die Startecke jedes Koenigs hat seine Farbe und traegt die **einzige**
+  Fabrik des Spielers.
+- Jedes Feld, auf das eine Figur zieht (alle Figuren, der ganze Weg), bekommt ihre Farbe; betritt ein
+  Gegner es, kippt es. Zaehlt nur ueber Kanten (4 Nachbarn). Weil `Move` keinen Weg angibt, nimmt
+  die Engine unter den kuerzesten Wegen den mit den meisten neu gefaerbten Feldern. Springer/Sprungfeder
+  faerben ein Brueckenfeld und das Ziel.
+- Land muss an der Fabrik haengen. Schneidet ein Gegner eine Linie durch, faellt alles Abgetrennte an
+  ihn (`terr_cut_flips=0`: es wird neutral). Eine Figur, die nicht auf angebundenem Land steht, faerbt
+  nichts, schlaegt nichts und betritt keine Gegnerfabrik, bis sie wieder verbunden ist ("wehrlos").
+- Am Ende des eigenen Zugs sammelt die Fabrik alle verbundenen Landfelder als **Flaeche** ein, dazu
+  `terr_yield` je Vorkommen auf verbundenen Feldern. Rohstoffvorkommen werden nie leergebaut.
+- Figur bauen (Fabrik muss frei sein, die Figur erscheint genau darauf): Bauer `terr_pawn` Flaeche (50,
+  etwa Runde 9-10); Stufe 2: `terr_area` Flaeche (100) + `terr_k1` Kat 1 (20); Stufe 3: dazu `terr_k2`
+  Kat 2 (40); Stufe 4: dazu `terr_k3` Kat 3 (60). Stufe = Reichweite. Flaeche und Rohstoffe werden dabei
+  verbraucht. Hoechste Stufe = Zahl der Kat-1-Farben, hoechstens 4.
+- Eine Karte (nur Zusatzfaehigkeiten: Laeuferschlag, Lange Beine, Lanze, Sprungfeder, Pferd) liegt neben
+  der Fabrik und wirkt automatisch auf die naechste gebaute Figur. Preis nur nach Kategorie, mal
+  `terr_card_mult` (3).
+- Betritt (oder ueberquert) ein Gegner die Fabrik, wird sie sofort zerstoert: kein Spielende, aber keine
+  neuen Figuren; das Lager ist weg. Ohne Fabrik faerbt man frei, ohne abzutrennen und ohne Einkommen.
+  Das Spiel endet nur durch den Fall eines Koenigs (sonst Wertung: eigene Felder + Summe der Stufen).
+
+Bots: `stark` und `gierig` bewerten Land, Anbindung und Fabrik (`ai.rs`, `territory_value`).
+
+**Messung** (Zweierpartien, Seeds 300-359, 60 Partien, `stark` gegen `stark`):
+
+| Variante | Siege A | Runden | erste Figur | Stufe 2 / 3 ab Runde | Abtrennungen je Partie |
+|---|---|---|---|---|---|
+| Standard (Bauer 50, Abtrennen kippt) | 68 % | 32 | 10 | 20 / 21 | 2,0 (6,9 Felder) |
+| Bauer 100 | 58 % | 25 | 14 | 17 / 19 | 1,6 (5,0 Felder) |
+| Abgetrenntes Land wird neutral | 70 % | 32 | 10 | 21 / 22 | 1,9 (5,6 Felder) |
+| `gierig` gegen `stark` | `stark` gewinnt alle 60 | 21 | 10 | 18 / 19 | 0,6 (1,4 Felder) |
+
+Was daran auffaellt (Bots sind kein Spass-Test, nur ein Stresstest der Regeln):
+
+- **Anziehender Vorteil**: A gewinnt 68-70 % (41-42 von 60, ueber dem Zufall), bei Bauer 100 nur 58 %
+  (35 von 60, noch im Rauschen). Gegenmittel waeren ein Ausgleich fuer B oder ein spaeterer erster Bauer.
+- **Die Abtrennregel greift kaum**: im Schnitt nur etwa 2 Abtrennungen und rund 6 Felder je Partie; ob
+  das Abgetrennte dem Gegner oder niemandem zufaellt, aendert das Ergebnis nicht messbar (68 % gegen 70 %).
+- **Fabriken fallen fast nie** (0,02-0,05 je Partie): Die Bots rennen lieber mit dem Koenig.
+  Partien enden fast immer durch Koenigsfang, nicht durch Wertung (nur 1-3 von 60).
+- **Schneeball**: Wer in Runde 20 mehr Land hat, gewinnt in 72-75 % der Partien (Bauer 100: 33 von 48).
+- **Die Stufenleiter ist sehr schnell durchlaufen**: Stufe 2 und 3 kommen fast gleichzeitig um Runde 20,
+  weil Rohstoffe nie ausgehen und jede Runde nachfliessen.
+- Die Bots kaufen viele Karten (6-7 je Partie, meist Pferd).
+
 ## Karten
 
 Vor jeder Partie zieht der Seed `market_size` verschiedene Karten aus dem Deck (bei 2 Spielern

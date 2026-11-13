@@ -135,6 +135,11 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .slots .sg small { margin-left: 4px; font-size: 0.74rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .slot { display: block; flex: none; }
 .slot.off { opacity: 0.8; }
+.stock .req { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; color: var(--muted); font-family: var(--font-data); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.stock .req.ok { color: #2b7a3f; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stock .req.ok { color: #6fcf8a; } }
+:root[data-theme="dark"] .stock .req.ok { color: #6fcf8a; }
+.stock .ladder.ok { border-color: #2b7a3f; }
 .market .where { color: var(--muted); font-size: 0.74rem; display: block; margin-top: 3px; }
 .market .where.ok { color: #2b7a3f; font-weight: 600; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .market .where.ok { color: #6fcf8a; } }
@@ -240,6 +245,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         <button type="button" class="preset" data-preset="pc" aria-pressed="true">Computerspiel</button>
         <button type="button" class="preset" data-preset="board" aria-pressed="false">Brettspiel</button>
         <button type="button" class="preset" data-preset="roles" aria-pressed="false">Rollen (neu)</button>
+        <button type="button" class="preset" data-preset="territory" aria-pressed="false">Gebiet (neu)</button>
         <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
       </div>
       <p class="note" id="presetNote"></p>
@@ -436,15 +442,46 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const cornerPlayer = replay.board.corners.map((_, c) => replay.player_corners.indexOf(c));
     let free = 0;
     const cornerColor = cornerPlayer.map((p) => (p >= 0 ? PLAYER[p].color : FREE_CRYSTAL[free++ % FREE_CRYSTAL.length]));
-    const frames = replay.frames.map(prepFrame);
+    const frames = replay.frames.map((f) => prepFrame(f, replay.board));
     return { ...replay, frames, cornerPlayer, cornerColor, side: replay.board.side };
   }
-  function prepFrame(f) {
+  function prepFrame(f, board) {
     const byId = new Map();
     for (const p of f.pieces) byId.set(p.id, p);
     const fById = new Map();
     for (const x of f.factories) fById.set(x.id, x);
-    return { ...f, byId, fById };
+    const out = { ...f, byId, fById };
+    if (f.land && board) Object.assign(out, linkedInfo(f, board));
+    return out;
+  }
+  /** Gebietsmodus: welche Felder haengen ueber Nachbarfelder an der Fabrik ihres Besitzers?
+   *  Wie connected_land im Spielkern. anchored[p]: Spieler p hat noch eine Fabrik. */
+  function linkedInfo(f, board) {
+    const adj = boardAdj(board);
+    const linked = new Uint8Array(f.land.length);
+    const anchored = [];
+    for (let p = 0; p < f.alive.length; p++) {
+      const fac = f.factories.find((x) => x.owner === p);
+      anchored[p] = !!fac;
+      if (!fac || f.land[fac.cell] !== p) continue;
+      const queue = [fac.cell];
+      linked[fac.cell] = 1;
+      for (let i = 0; i < queue.length; i++) {
+        for (const n of adj[queue[i]]) {
+          if (!linked[n] && f.land[n] === p) { linked[n] = 1; queue.push(n); }
+        }
+      }
+    }
+    return { linked, anchored };
+  }
+  const isTerr = () => !!(R && R.config && R.config.territory);
+  /** Wehrlos: der Spieler hat eine Fabrik, die Figur steht aber nicht auf Land, das daran haengt. */
+  const helpless = (f, p) => !!f.land && f.anchored[p.owner] && !(f.land[p.cell] === p.owner && f.linked[p.cell]);
+  const TERR_WHITE = "#f3f1ea";
+  function mixHex(a, b, t) {
+    const x = hexToRgb(a), y = hexToRgb(b);
+    const h = (i) => Math.round(x[i] + (y[i] - x[i]) * t).toString(16).padStart(2, "0");
+    return `#${h(0)}${h(1)}${h(2)}`;
   }
 
   const cellName = (cell) => {
@@ -622,7 +659,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
   function drawTile(cell) {
     const t = R.territories[cell];
-    const base = t >= 0 ? TERRAIN[t % TERRAIN.length].top : NEUTRAL.top;
+    let base = t >= 0 ? TERRAIN[t % TERRAIN.length].top : NEUTRAL.top;
+    if (isTerr()) {
+      // Gebietsmodus: weisses Brett, Land in der Farbe des Spielers.
+      const f = R.frames[fi], owner = f.land[cell];
+      base = owner >= 0 ? mixHex(PLAYER[owner].color, "#ffffff", 0.5) : TERR_WHITE;
+    }
     // Sockel: derselbe Umriss etwas tiefer und dunkler; vordere Felder verdecken ihn spaeter
     ctx.save();
     ctx.translate(0, geo.thick);
@@ -1093,6 +1135,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     for (const e of f.events) {
       if (e.type === "factory_built" || e.type === "spawned") outlineCell(e.cell, PLAYER[e.owner].color, 0.25);
+      if (e.type === "painted") for (const c of e.cells) outlineCell(c, PLAYER[e.player].color, 0.16);
+      if (e.type === "cut_off" && e.to !== null) for (const c of e.cells) outlineCell(c, PLAYER[e.to].color, 0.32);
     }
     if (hoverCell !== null) outlineCell(hoverCell, cssVar("--ink") || "#000", 0);
     if (canAct()) {
@@ -1182,6 +1226,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
 
   function drawPiece(p, x, y) {
+    if (isTerr() && helpless(R.frames[fi], p)) {
+      ctx.save();
+      ctx.globalAlpha *= 0.5;
+      drawPieceBody(p, x, y);
+      ctx.restore();
+      return;
+    }
+    drawPieceBody(p, x, y);
+  }
+  function drawPieceBody(p, x, y) {
     const [cx, cy] = iso(x, y);
     const color = PLAYER[p.owner].color;
     if (p.king) {
@@ -1220,7 +1274,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         text += `, schlägt ${victim && victim.king ? "König" : "Figur"} von ${playerName(cap.owner)}`;
       }
       const fd = f.events.find((e) => e.type === "factory_destroyed");
-      if (fd) text += `, nimmt Fabrik von ${playerName(fd.owner)} ein`;
+      if (fd) text += isTerr() ? `, zerstört die Fabrik von ${playerName(fd.owner)}` : `, nimmt Fabrik von ${playerName(fd.owner)} ein`;
+      const pt = f.events.find((e) => e.type === "painted");
+      if (pt) text += `, färbt ${pt.cells.length} Feld${pt.cells.length === 1 ? "" : "er"}`;
+      const cut = f.events.find((e) => e.type === "cut_off");
+      if (cut) text += `, trennt ${cut.cells.length} Feld${cut.cells.length === 1 ? "" : "er"} von ${playerName(cut.from)} ab`;
+    } else if (a.type === "build_unit") {
+      text = `Fabrik baut eine Figur: ${unitTitle(a.level)} (Stufe ${a.level}), kostet ${terrPriceText(a.level)}`;
     } else if (a.type === "build") {
       const king = prev.pieces.find((p) => p.owner === who && p.king);
       text = `König baut Fabrik auf ${cellName(king.cell)}`;
@@ -1250,16 +1310,20 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       case "recruited": return `${playerName(e.owner)} bekommt einen Rekruten auf ${cellName(e.cell)}.`;
       case "deposit_created": return `Neues Kat-1-Vorkommen auf ${cellName(e.cell)} (${colorOwner(e.resource)}).`;
       case "moved": return null;
+      case "painted": return `${playerName(e.player)} färbt ${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}: ${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}.`;
+      case "cut_off": return `Land von ${playerName(e.from)} abgetrennt (${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}): ${e.to === null ? "wird neutral" : `geht an ${playerName(e.to)}`}.`;
+      case "income": return `Fabrik von ${playerName(e.player)} sammelt ${e.area} Fläche${e.gained.length ? ` und ${invText(e.gained)}` : ""}.`;
       case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
       case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
-      case "factory_destroyed": return `Fabrik von ${playerName(e.owner)} auf ${cellName(e.cell)} zerstört; Beute: ${invText(e.loot)}.`;
+      case "factory_destroyed": if (isTerr()) return `Fabrik von ${playerName(e.owner)} auf ${cellName(e.cell)} zerstört: Lager, Fläche und gelagerte Karte sind weg, es gibt keine neuen Figuren mehr.`;
+        return `Fabrik von ${playerName(e.owner)} auf ${cellName(e.cell)} zerstört; Beute: ${invText(e.loot)}.`;
       case "spawned": return `${playerName(e.owner)} erhält eine Figur Stufe ${e.level}, Reichweite ${e.range}.`;
       case "collected": return `König von ${playerName(e.player)} sammelt auf ${cellName(e.cell)}: ${invText(e.gained)}.`;
       case "unloaded": return `König von ${playerName(e.player)} lädt ab: ${invText(e.amount)}.`;
       case "factory_yield": return `Fabrik ${e.factory} sammelt ${invText(e.gained)}.`;
       case "eliminated": return `${playerName(e.player)} scheidet aus.`;
       case "passed": return `${playerName(e.player)} passt.`;
-      case "scored": return `Wertung nach ${(R.config || {}).score_after || ""} Runden: ${e.scores.map((n, p) => `${playerName(p)} ${n}`).join(", ")} (Figurenstufen + Fabriken + Farben).`;
+      case "scored": return `Wertung nach ${(R.config || {}).score_after || ""} Runden: ${e.scores.map((n, p) => `${playerName(p)} ${n}`).join(", ")} (${scoreNote()}).`;
       case "game_over":
         if (e.outcome.type === "winner") return `Spielende: ${playerName(e.outcome.player)} gewinnt.`;
         if (e.outcome.type === "points") return `Spielende: ${playerName(e.outcome.player)} gewinnt nach Wertung.`;
@@ -1307,6 +1371,57 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     return out.join("");
   }
+  // ----- Gebietsmodus: Preise und Lager -------------------------------------------------------
+  const catUnits = (inv, c) => inv.filter(([r]) => category(r) === c).reduce((a, [, n]) => a + n, 0);
+  /** Preis einer Figur im Gebietsmodus (wie unit_price im Spielkern). */
+  function terrPrice(level) {
+    const c = R.config;
+    if (level <= 1) return { area: c.terr_pawn, k1: 0, k2: 0, k3: 0 };
+    return { area: c.terr_area, k1: c.terr_k1, k2: level >= 3 ? c.terr_k2 : 0, k3: level >= 4 ? c.terr_k3 : 0 };
+  }
+  const terrMaxLevel = () => Math.min(R.board.corners.length, 4);
+  function terrPriceText(level) {
+    const p = terrPrice(level), parts = [`${p.area} Fläche`];
+    if (p.k1) parts.push(`${p.k1}× Kat 1`);
+    if (p.k2) parts.push(`${p.k2}× Kat 2`);
+    if (p.k3) parts.push(`${p.k3}× Kat 3`);
+    return parts.join(" + ");
+  }
+  const scoreNote = () => (isTerr() ? "Land + Figurenstufen" : "Figurenstufen + Fabriken + Farben");
+  function renderTerritoryStock(f, p) {
+    const fac = f.factories.find((x) => x.owner === p);
+    const rows = [];
+    if (!fac) {
+      rows.push(`<div class="loc"><b>Fabrik zerstört</b><span class="sub">Ohne Fabrik gibt es kein Einkommen und keine neuen Figuren. Nur der König entscheidet das Spiel noch.</span></div>`);
+      return rows;
+    }
+    const area = (f.area || [])[p] || 0;
+    rows.push(`<div class="loc"><b>Fabrik auf ${cellName(fac.cell)}</b><div class="res"><span>Fläche: <b style="display:inline">${area}</b></span>${resHtml(fac.storage)}</div>` +
+      `<span class="sub">Am Ende deines Zugs sammelt sie alle Felder ein, die an ihr hängen (je 1 Fläche), dazu die Rohstoffe auf diesen Feldern. Gebaut wird auf der Fabrik, sie muss frei sein.</span></div>`);
+    const color = PLAYER[p].color;
+    const req = (kind, have, need) => {
+      const ok = have >= need;
+      const mark = kind ? slotSvg(kind, ok ? color : null) : "<small>Fläche</small>";
+      const what = kind ? `Kat ${kind}` : "Fläche";
+      return `<span class="req${ok ? " ok" : ""}" title="${what}: ${have} von ${need}">${mark}${Math.min(have, need)}/${need}</span>`;
+    };
+    for (let level = 1; level <= terrMaxLevel(); level++) {
+      const pr = terrPrice(level);
+      const bits = [req(null, area, pr.area)];
+      let ok = area >= pr.area;
+      for (const c of [1, 2, 3]) {
+        const need = pr["k" + c];
+        if (!need) continue;
+        const have = catUnits(fac.storage, c);
+        bits.push(req(c, have, need));
+        ok = ok && have >= need;
+      }
+      rows.push(`<div class="loc ladder${ok ? " ok" : ""}"><b>Stufe ${level} · ${unitTitle(level)}${ok ? " – bezahlbar" : ""}</b><div class="res">${bits.join("")}</div></div>`);
+    }
+    const sc = (f.stored_card || [])[p];
+    rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – wirkt auf die nächste gebaute Figur.` : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit)."}</span></div>`);
+    return rows;
+  }
   function renderStock(f) {
     const p = focusPlayer(f);
     const box = $("stockBox");
@@ -1314,6 +1429,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     box.hidden = false;
     const me = mode === "play" && live && R === liveR && live.seats[p] === "mensch";
     $("stockTitle").textContent = `Lager von Spieler ${playerName(p)}${me ? " (du)" : ""}`;
+    if (isTerr()) { $("stock").innerHTML = renderTerritoryStock(f, p).join(""); return; }
     const rows = [];
     const carried = (f.carried || [])[p] || [];
     rows.push(`<div class="loc"><b>König trägt</b><div class="res">${resHtml(carried)}</div>` +
@@ -1431,7 +1547,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const p = focusPlayer(f);
     const acting = canAct();
     const own = p === null || p === undefined ? -1 : ownColorOf(p);
-    $("marketNote").textContent = acting
+    $("marketNote").textContent = isTerr()
+      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Sie liegt neben der Fabrik und wirkt auf die nächste gebaute Figur; es passt nur eine."
+      : acting
       ? "Eine Karte pro Zug, zusätzlich zu deinem Zug. Bezahlt wird aus einem Ort: dem Gepäck des Königs oder einer Fabrik."
       : "Eine Karte pro Zug, zusätzlich zum Zug. Bezahlt wird aus einem Ort: Gepäck des Königs oder eine Fabrik.";
     $("marketLegend").innerHTML =
@@ -1449,7 +1567,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const cost = costFor(c, minRange);
       const best = places.length ? bestPlace(cost, places, own) : null;
       const ready = best && best.plan.missing === 0;
-      li.innerHTML = `<b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(c.text)}` +
+      const cardText = isTerr() ? c.text.replace(/ Preis je Reichweite der Figur\./, "") : c.text;
+      li.innerHTML = `<b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(cardText)}` +
         (c.per_range ? `<span class="cost">Kosten: ${escapeHtml(costText(c))}. Gezeigt: Reichweite ${minRange}.</span>` : "") +
         `<div class="slots" role="group" aria-label="${escapeHtml("Kosten: " + costText(c))}">${slotsHtml(cost, best ? best.plan : null)}</div>` +
         (best ? `<span class="where${ready ? " ok" : ""}">${ready ? "Reicht" : "Am nächsten dran"}: ${escapeHtml(best.name)}</span>` : "");
@@ -1484,6 +1603,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Kurzfassung der Regeln einer Partie fuer die Zusammenfassung (leer bei alten Dateien). */
   function rulesText(c) {
     if (!c || !Array.isArray(c.regrow_rounds)) return "";
+    if (c.territory) {
+      const score = c.score_after ? `Wertung nach Runde ${c.score_after}` : "keine Wertung";
+      const cut = c.terr_cut_flips ? "Abgetrenntes Land fällt an den Gegner" : "Abgetrenntes Land wird neutral";
+      return `Gebietsmodus · Bauer ${c.terr_pawn} Fläche · Stufe 2: ${c.terr_area} Fläche + ${c.terr_k1} Kat 1, Stufe 3 + ${c.terr_k2} Kat 2, Stufe 4 + ${c.terr_k3} Kat 3 · ${cut} · ${score}`;
+    }
     const cats = R.players >= 6 ? 4 : 3;
     const rg = c.regrow_rounds.slice(0, cats);
     const regrow = rg.every((n) => n === 0)
@@ -1540,12 +1664,28 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const scoreAt = (R.config || {}).score_after || 0;
       const facLevels = facs.map((x) => x.level).filter((l) => l > 0);
       const facText = facLevels.length ? ` → St.${facLevels.join("/")}` : "";
+      let statsHtml;
+      if (isTerr()) {
+        const landN = f.land.filter((o) => o === p).length;
+        let linkedN = 0;
+        for (let c = 0; c < f.land.length; c++) if (f.land[c] === p && f.linked[c]) linkedN++;
+        const tscore = f.alive[p] ? landN + units.reduce((a, u) => a + u.level, 0) : 0;
+        statsHtml =
+          `<span>Figuren ${levelText}</span>` +
+          `<span title="Felder in der Farbe des Spielers; verbunden = hängt an der Fabrik und bringt Fläche.">Land ${landN}${f.anchored[p] ? ` (${linkedN} verbunden)` : ""}</span>` +
+          `<span title="Gesammelte Fläche: damit werden Figuren gebaut.">Fläche ${(f.area || [])[p] || 0}</span>` +
+          `<span>Fabrik ${facs.length ? `steht (Lager ${stock})` : "zerstört"}</span>` +
+          (scoreAt ? `<span title="Land + Figurenstufen. Nach Runde ${scoreAt} entscheidet sie, wenn niemand gewonnen hat (bei Gleichstand Fläche und Rohstoffe).">Wertung ${tscore}</span>` : "");
+      } else {
+        statsHtml =
+          `<span>Figuren ${levelText}</span><span>Fabriken ${facs.length}${facText} (Lager ${stock})</span>` +
+          `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span>` +
+          (scoreAt ? `<span title="Figurenstufen + Fabriken + Farben im Besitz. Nach Runde ${scoreAt} entscheidet sie, wenn niemand gewonnen hat (bei Gleichstand die meisten Rohstoffe).">Wertung ${score}</span>` : "");
+      }
       div.innerHTML =
         `<span class="chip" style="background:${PLAYER[p].color}">${PLAYER[p].name}</span>` +
         `<div class="pname">Spieler ${PLAYER[p].name} <small>${seatLabel(p)}</small> ${tag}</div>` +
-        `<div class="pstats"><span>Figuren ${levelText}</span><span>Fabriken ${facs.length}${facText} (Lager ${stock})</span>` +
-        `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span>` +
-        (scoreAt ? `<span title="Figurenstufen + Fabriken + Farben im Besitz. Nach Runde ${scoreAt} entscheidet sie, wenn niemand gewonnen hat (bei Gleichstand die meisten Rohstoffe).">Wertung ${score}</span>` : "") + `</div>` +
+        `<div class="pstats">${statsHtml}</div>` +
         (cardBits.length ? `<div class="perks">${escapeHtml(cardBits.join(" · "))}</div>` : "");
       players.appendChild(div);
     }
@@ -1677,6 +1817,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       rows.push(`Fabrik von ${playerName(fac.owner)}, Lager: ${invText(fac.storage)}${lvl}`);
     }
     if (loot) rows.push(`Beute: ${invText(loot.items)}`);
+    if (isTerr()) {
+      const o = f.land[cell];
+      rows.unshift(o < 0 ? "Neutrales Land (weiß)"
+        : `Land von ${playerName(o)}${f.anchored[o] ? "" : " (seine Fabrik ist zerstört)"}`);
+      if (piece && helpless(f, piece)) rows.push("Wehrlos: nicht mit dem eigenen Land verbunden, färbt nichts und kann nicht schlagen.");
+    }
     tip.innerHTML =
       `<b>${cellName(cell)}</b> · ${region}` +
       `<ul>${(deps.length ? deps : ["keine Rohstoffe"]).map((d) => `<li>${d}</li>`).join("")}` +
@@ -1731,6 +1877,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["grain", "Ball (Kat 3) in der Farbe seiner Region. Nach 3 Runden wieder da."],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
       ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
+      ["land", "Gebietsmodus: Land in der Farbe des Spielers. Jedes Feld auf dem Weg einer Figur wird ihre Farbe, betritt ein Gegner es, kippt es um."],
+      ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt: sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist."],
     ];
     const dl = $("legend");
     dl.innerHTML = "";
@@ -1763,6 +1911,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (kind === "grain") drawGrain(20, 32, 24, PLAYER[1].color);
         if (kind === "barrel") drawBarrel(20, 34, 40);
         if (kind === "loot") drawLoot(20, 28);
+        if (kind === "land") {
+          lc.fillStyle = mixHex(PLAYER[0].color, "#ffffff", 0.5);
+          lc.fillRect(6, 10, 28, 20);
+          lc.strokeStyle = "rgba(0,0,0,0.25)";
+          lc.strokeRect(6.5, 10.5, 27, 19);
+        }
+        if (kind === "helpless") {
+          lc.globalAlpha = 0.5;
+          drawUnit(20, 33, PLAYER[1].color, { level: 1, range: 1, perks: {} });
+          lc.globalAlpha = 1;
+        }
       } finally {
         ctx = boardCtx;
       }
@@ -1806,8 +1965,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   // ----- Premoves -------------------------------------------------------------------------------
   /** Nachbarfelder (gemeinsame Kante), aus den Feldumrissen abgeleitet; gilt fuer jede Brettform. */
-  function boardAdj() {
-    const b = R.board;
+  function boardAdj(board) {
+    const b = board || R.board;
     if (b.adj) return b.adj;
     const key = ([x, y]) => `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
     const edges = new Map();
@@ -2020,6 +2179,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "kat_roles", label: "Rollen einschalten", check: true },
       { key: "pawn_cost", label: "Kat 2 für einen Bauern", ph: () => "4", hint: () => "Einheiten einer Region, nur mit den Rollen." },
     ] },
+    { title: "Gebietsmodus (neu)", note: "Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld: Bauer ab Fläche, Stufe 2 mit Fläche + Kat 1, Stufe 3 zusätzlich Kat 2, Stufe 4 zusätzlich Kat 3 (alles wird verbraucht). Karten liegen neben der Fabrik und wirken auf die nächste Figur. Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Nachwachsen, Ausbau und Rollen gelten hier nicht.", fields: [
+      { key: "territory", label: "Gebietsmodus einschalten", check: true },
+      { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
+      { key: "terr_area", label: "Fläche für Stufe 2 bis 4", ph: () => "100" },
+      { key: "terr_k1", label: "Kat 1 für Stufe 2 (und höher)", ph: () => "20" },
+      { key: "terr_k2", label: "Kat 2 zusätzlich für Stufe 3", ph: () => "40" },
+      { key: "terr_k3", label: "Kat 3 zusätzlich für Stufe 4", ph: () => "60" },
+      { key: "terr_yield", label: "Ertrag je Vorkommen und Runde", ph: () => "1" },
+      { key: "terr_cut_flips", label: "Abgetrenntes Land fällt an den Gegner", ph: () => "1", hint: () => "1 = an den, der durchtrennt hat; 0 = wird neutral" },
+      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "3", hint: () => "Preise der Karten (Kat 2 und 3) mal diese Zahl" },
+    ] },
     { title: "Stufen der Fabriken", fields: [
       { key: "upgrade_step", label: "Einheiten je Stufe", ph: () => "10", hint: () => "Je so viele Einheiten ab Kat 2 im Lager steigt die Stufe der kommenden Figur." },
       { key: "upgrade_region_min", label: "Einheiten je Region", ph: () => "3", hint: () => "So viele einer Regionsfarbe müssen im Lager liegen, damit die Region zählt." },
@@ -2045,6 +2215,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     roles: {
       note: "Wie Computerspiel, aber mit den Rollen der Kategorien: Rekrut (Kat 2) liegt immer im Markt, Spezialzüge kosten nur Kat 3, Lanze, Sprungfeder, Pferd und Läuferschlag gehen auch auf den König.",
       rules: { kat_roles: 1 },
+    },
+    territory: {
+      note: "Weißes Brett, eine Fabrik, Land färben und abtrennen, Figuren aus Fläche und Rohstoffen bauen. Nur der König entscheidet; zerstörte Fabrik = keine neuen Figuren.",
+      rules: { territory: 1 },
     },
     board: {
       note: "Nichts wächst nach: jedes Vorkommen wird genau einmal abgebaut. So ließe sich das Spiel auf einem echten Brett mit Plättchen spielen; es endet, wenn keiner mehr gewinnen kann, spätestens mit der Wertung.",
@@ -2212,7 +2386,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (input.type === "checkbox") input.checked = true;
         else input.value = String(v);
       }
-      preset = ["pc", "board", "roles", "custom"].includes(saved.preset) ? saved.preset : "pc";
+      preset = ["pc", "board", "roles", "territory", "custom"].includes(saved.preset) ? saved.preset : "pc";
     } catch (err) { /* kaputter Eintrag: Voreinstellungen */ }
   }
   function openMenu(canGoBack) {
@@ -2225,11 +2399,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     showMenuError("");
     refreshMenu();
     syncPresetButtons();
+    window.scrollTo(0, 0);
   }
   function closeMenu() {
     menuOpen = false;
     $("menu").hidden = true;
     document.querySelector("main.layout").hidden = false;
+    // Der Start-Knopf liegt weit unten im langen Menue; ohne das bliebe die Seite dort stehen
+    // und das Brett laege oberhalb des sichtbaren Bereichs.
+    window.scrollTo(0, 0);
   }
   function randomSeed() {
     const a = new Uint32Array(1);
@@ -2263,7 +2441,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   function pushStep(out) {
     const follow = R === liveR && fi === liveR.frames.length - 1;
-    liveR.frames.push(prepFrame(out.frame));
+    liveR.frames.push(prepFrame(out.frame, liveR.board));
     liveR.outcome = out.outcome;
     live.legal = out.legal;
     live.humanToMove = out.human_to_move;
@@ -2309,6 +2487,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return colorOwner(res);
   }
   function actionLabel(a, f) {
+    if (a.type === "build_unit") {
+      return `Figur bauen: ${unitTitle(a.level)} (Stufe ${a.level}) auf der Fabrik – kostet ${terrPriceText(a.level)}`;
+    }
     if (a.type === "build") {
       const king = f.pieces.find((p) => p.king && p.owner === f.current);
       return `Fabrik bauen auf ${cellName(king.cell)} (mit Kat 1 aus dem Gepäck, ${homeName(a.pay)})`;
@@ -2324,6 +2505,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     if (a.type === "pass") return "Passen";
     return a.type;
+  }
+  /** Hinweis im Gebietsmodus: was gerade wichtig ist. */
+  function territorySub(f) {
+    const me = f.current;
+    const fac = f.factories.find((x) => x.owner === me);
+    if (!fac) return "Deine Fabrik ist zerstört: keine neuen Figuren. Schütze den König und jage den gegnerischen.";
+    const blocked = f.pieces.some((x) => x.cell === fac.cell);
+    const afford = ((f.area || [])[me] || 0) >= terrPrice(1).area;
+    if (blocked && afford) return "Die Fabrik ist besetzt: zieh die Figur von der Fabrik, dann kannst du bauen.";
+    const stuck = f.pieces.filter((x) => x.owner === me && helpless(f, x)).length;
+    const note = stuck ? ` ${stuck} deiner Figuren ${stuck === 1 ? "ist" : "sind"} vom Land abgeschnitten (blass): sie färben nichts und können nicht schlagen.` : "";
+    return `Tippe eine Figur an: das Land färbt sich auf dem ganzen Weg. Was nicht mehr an der Fabrik hängt, ist nichts wert.${note}`;
   }
   function renderTurnBox() {
     const box = $("turnBox");
@@ -2352,7 +2545,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         hint = "Unentschieden: die Wertung steht gleich.";
       }
       const scored = now.events.find((e) => e.type === "scored");
-      sub = (scored ? `Wertung: ${scored.scores.map((n, p) => `${playerName(p)} ${n}`).join(", ")} (Figurenstufen + Fabriken + Farben). ` : "") +
+      sub = (scored ? `Wertung: ${scored.scores.map((n, p) => `${playerName(p)} ${n}`).join(", ")} (${scoreNote()}). ` : "") +
         "Starte rechts eine neue Partie oder spiele diese mit den Tasten noch einmal ab.";
     } else if (!live.humanToMove) {
       hint = `Spieler ${playerName(now.current)} (Bot) ist am Zug …`;
@@ -2360,7 +2553,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       hint = hotseat ? `Spieler ${playerName(now.current)} ist am Zug.` : "Du bist am Zug (Spieler A, rot).";
       sub = selected !== null
         ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur. Shift zeigt den ganzen Weg, Shift+Klick läuft ihn automatisch; Strg+Klick wählt Kacheln einzeln (Strg loslassen = los)."
-        : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
+        : isTerr() ? territorySub(now) : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
       if (routes.length) sub = `Eine Route läuft von selbst weiter (Esc bricht ab). ${sub}`;
       if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
