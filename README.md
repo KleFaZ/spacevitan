@@ -100,7 +100,10 @@ ein Zug je Runde.
 ### Browser-Ansicht
 
 `viewer/` spielt exportierte Partien isometrisch ab (Runde fuer Runde, mit Ereignissen und
-Feld-Details). Eine Partie exportieren und in der Ansicht mit *Eigene Partie laden* oeffnen:
+Feld-Details). Unter dem Brett schaltet **3D / 2D** die Ansicht um: 3D schraeg von oben mit
+Figuren, 2D flach von oben wie bei lichess (Koordinaten im Brett, Reihe 1 unten, Figuren als
+Marken mit Stufe, Punkten fuer die Reichweite und Abzeichen fuer Karten). Beides gilt auch beim
+Spielen; die Wahl wird im Browser gemerkt. Eine Partie exportieren und in der Ansicht mit *Eigene Partie laden* oeffnen:
 
 ```
 spacevitan.exe --seed 7 --export partie.json
