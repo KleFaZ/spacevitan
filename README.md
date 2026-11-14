@@ -340,8 +340,8 @@ das entspricht genau dem Stand davor):
   ganzes Quadrat (quadratischer Gewinn fuer linearen Aufwand). Deshalb ist der Standard "Rand keine Wand".
 - **Offene Reibung: Umschliessen bevorzugt den ersten Spieler.** Ohne die Regeln gewinnt A in allen drei
   Messreihen 45 %, mit Umschliessen 60 bis 70 % (rund 18 Punkte mehr bei +-6 Punkten Standardfehler). Wer die
-  Taschen zuerst schliesst, gewinnt. Moegliche Hebel (nicht gebaut): Fabrikfeld oder Gegenueberliegendes
-  zaehlt als Gegenfarbe, Mindestgroesse fuer Taschen, Ausgleich fuer den zweiten Spieler.
+  Taschen zuerst schliesst, gewinnt. Moegliche Hebel (nicht gebaut): Obergrenze oder Mindestgroesse fuer
+  Taschen, Ausgleich fuer den zweiten Spieler.
 - Rechenzeit der starken KI: etwa 60 ms je Zug ohne, 80 bis 90 ms mit den neuen Regeln.
 
 Was daran auffaellt:

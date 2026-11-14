@@ -1,0 +1,2872 @@
+<title>Spacevitan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: links das isometrische Brett mit Steuerleiste, rechts die Spieltafel; Kartenmarkt und Lager direkt unter dem Brett; unter 900px gestapelt. */
+:root {
+  --bg: #e9ece6;
+  --surface: #f8f9f5;
+  --ink: #1d2320;
+  --muted: #5b6660;
+  --line: #ccd3cb;
+  --accent: #2f55a4;
+  --board-bg: #dfe4dc;
+  --label: #6b766f;
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131715; --surface: #1b201d; --ink: #e4e9e5; --muted: #95a199; --line: #2f3632;
+    --accent: #8ea9ec; --board-bg: #181d1a; --label: #87928b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131715; --surface: #1b201d; --ink: #e4e9e5; --muted: #95a199; --line: #2f3632;
+  --accent: #8ea9ec; --board-bg: #181d1a; --label: #87928b; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 28px;
+}
+h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+
+.top {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px 24px; max-width: 1280px; margin: 0 auto 14px;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand h1 { font-size: 1.5rem; font-weight: 800; font-stretch: 118%; letter-spacing: -0.01em; }
+.brand h1 span { font-weight: 500; font-stretch: 100%; color: var(--muted); }
+.pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.pick label.lead {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+}
+select, button, .file {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+select { padding: 7px 10px; max-width: min(460px, 100%); min-width: 0; }
+.file { padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+.file:hover, button:hover { border-color: var(--accent); }
+#file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px;
+  max-width: 1280px; margin: 0 auto; align-items: start;
+}
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.stage {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px; min-width: 0;
+}
+.board-wrap { position: relative; }
+canvas { display: block; width: 100%; height: auto; touch-action: manipulation; border-radius: 6px; }
+.tip {
+  position: absolute; z-index: 2; pointer-events: none; max-width: 240px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 10px; font-size: 0.82rem; box-shadow: 0 6px 18px rgb(0 0 0 / 0.16);
+}
+.tip b { font-family: var(--font-data); font-weight: 500; }
+.tip ul { margin: 4px 0 0; padding-left: 16px; }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.controls .btns { display: flex; gap: 6px; }
+.controls button {
+  width: 40px; height: 36px; display: grid; place-items: center; cursor: pointer; padding: 0;
+}
+.controls button svg { width: 18px; height: 18px; fill: currentColor; }
+.controls button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); width: 48px; }
+.scrub { flex: 1 1 180px; min-width: 0; accent-color: var(--accent); }
+.speed { padding: 6px 8px; }
+.status { margin: 10px 2px 2px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+.status .when { font-family: var(--font-data); font-size: 0.85rem; color: var(--muted); }
+.status .what { font-weight: 600; }
+
+.panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.below { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; margin-top: 14px; align-items: start; }
+.below > [hidden] { display: none; }
+.below .panel { gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.panel h2 {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted); margin-bottom: 8px;
+}
+.summary { font-size: 0.9rem; color: var(--muted); }
+.summary strong { color: var(--ink); font-weight: 650; }
+.players { display: flex; flex-direction: column; gap: 6px; }
+.market { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.market .buy { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.market .buy .btn { font-size: 0.8rem; padding: 5px 8px; text-align: left; }
+.market .missing { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 3px; }
+.market li.can { border-color: var(--accent, #2d55a6); }
+.note { color: var(--muted); font-size: 0.78rem; margin: 0 0 6px; }
+.stock { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; }
+.stock .loc { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.stock .loc b { display: block; font-size: 0.84rem; margin-bottom: 2px; }
+.stock .res { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.stock .chip2, .stock .chip3, .stock .chip4 { display: inline-block; width: 10px; height: 10px; border: 1px solid rgba(0,0,0,.5); margin: 0 2px 0 4px; vertical-align: -1px; }
+.stock .chip3 { border-radius: 50%; }
+.stock .chip4 { border-radius: 3px 3px 50% 50%; }
+.stock .chip1 { display: inline-block; width: 10px; height: 10px; transform: rotate(45deg); border: 1px solid rgba(0,0,0,.5); margin-right: 3px; }
+.stock .sub { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 2px; }
+.market li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; }
+.market b { font-size: 0.88rem; }
+.market .cost { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 1px; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin: 0 0 8px; color: var(--muted); font-size: 0.76rem; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .lg-note { flex-basis: 100%; }
+.slots { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 6px; color: var(--muted); }
+.slots .sg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: 100%; }
+.slots .sg small { margin-left: 4px; font-size: 0.74rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.slot { display: block; flex: none; }
+.slot.off { opacity: 0.8; }
+.stock .req { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; color: var(--muted); font-family: var(--font-data); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.stock .req.ok { color: #2b7a3f; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stock .req.ok { color: #6fcf8a; } }
+:root[data-theme="dark"] .stock .req.ok { color: #6fcf8a; }
+.stock .ladder.ok { border-color: #2b7a3f; }
+.market .where { color: var(--muted); font-size: 0.74rem; display: block; margin-top: 3px; }
+.market .where.ok { color: #2b7a3f; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .market .where.ok { color: #6fcf8a; } }
+:root[data-theme="dark"] .market .where.ok { color: #6fcf8a; }
+.perks { color: var(--muted); font-size: 0.76rem; }
+details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; margin: 2px 0 6px; }
+.player {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 10px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+.player.turn { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.player.out { opacity: 0.5; }
+.chip {
+  grid-row: span 2; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-display); font-weight: 800; color: #fff; font-size: 0.95rem;
+  border: 2px solid rgb(0 0 0 / 0.25); text-shadow: 0 1px 1px rgb(0 0 0 / 0.35);
+}
+.pname { font-weight: 650; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.pname small { font-weight: 500; color: var(--muted); }
+.tag { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tag.win { border-color: #c99a06; color: #8b6a00; background: #f5e3a3; }
+:root[data-theme="dark"] .tag.win { color: #f5d777; background: #3a3112; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.win { color: #f5d777; background: #3a3112; } }
+.pstats { font-family: var(--font-data); font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.dots { display: inline-flex; gap: 3px; vertical-align: middle; }
+.dots i { width: 9px; height: 9px; border-radius: 2px; transform: rotate(45deg); border: 1px solid rgb(0 0 0 / 0.35); display: inline-block; }
+
+.events { margin: 0; padding-left: 18px; font-size: 0.86rem; display: flex; flex-direction: column; gap: 3px; }
+.events li::marker { color: var(--muted); }
+.events .none { list-style: none; margin-left: -18px; color: var(--muted); }
+
+.legend { font-size: 0.84rem; }
+.legend summary { cursor: pointer; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.legend dl { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 6px 10px; align-items: center; margin: 10px 0 0; }
+.legend dt canvas { width: 40px; height: 40px; }
+.legend dd { margin: 0; }
+.note { font-size: 0.82rem; color: var(--muted); margin: 0; }
+.tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.tabs button { border: 0; border-radius: 0; padding: 7px 14px; cursor: pointer; background: transparent; font-weight: 650; }
+.tabs button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.tabs button:disabled { opacity: 0.45; cursor: not-allowed; }
+.brand { flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.notice { max-width: 1280px; margin: 0 auto 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 0.88rem; }
+.menu { max-width: 1280px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px 18px; }
+.menu h2 { font-size: 1.2rem; font-weight: 800; font-stretch: 112%; text-transform: none; letter-spacing: 0; color: var(--ink); margin: 0; }
+.menuhead { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.menuhead .note { margin: 0; max-width: 78ch; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.preset { padding: 7px 14px; cursor: pointer; font-weight: 650; }
+.preset[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 12px; align-items: start; }
+.group { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 12px; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.group legend, .group > summary { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 0 6px; }
+.group > summary { cursor: pointer; padding: 0; }
+.group > .note { margin: 0; }
+.group.wide { grid-column: 1 / -1; }
+.group .inner { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 10px 14px; margin-top: 8px; }
+.group label { display: flex; flex-direction: column; gap: 2px; font-size: 0.84rem; min-width: 0; }
+.group label > span { font-weight: 600; }
+.group label small { color: var(--muted); font-size: 0.74rem; line-height: 1.3; }
+.group select, .group input[type=number] { font: inherit; font-size: 0.92rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; max-width: none; }
+.group input::placeholder { color: var(--muted); opacity: 0.8; }
+.group input.set { border-color: var(--accent); }
+.group label.check { flex-direction: row; align-items: flex-start; gap: 8px; }
+.group label.check input { margin-top: 3px; }
+.group label.check span { font-weight: 600; }
+.menufoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; }
+.menufoot .note { margin: 0; }
+.btn { padding: 8px 12px; cursor: pointer; font-weight: 650; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.turnbox { margin-top: 10px; border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.hint { margin: 0; font-weight: 650; }
+.hint small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.actions:empty { display: none; }
+.actions button { text-align: left; }
+.error { color: #b3261e; font-size: 0.85rem; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<header class="top">
+  <div class="brand">
+    <h1>Spacevitan</h1>
+    <div class="tabs" role="group" aria-label="Modus">
+      <button id="modePlay" type="button" aria-pressed="false">Spielen</button>
+      <button id="modeView" type="button" aria-pressed="true">Partien ansehen</button>
+    </div>
+  </div>
+  <div class="pick" id="viewPick">
+    <label class="lead" for="game">Partie</label>
+    <select id="game"></select>
+    <label class="file" for="file">Eigene Partie laden …</label>
+    <input id="file" type="file" accept=".json,application/json">
+  </div>
+</header>
+<p class="notice" id="notice" hidden></p>
+
+<section class="menu" id="menu" hidden aria-label="Neue Partie einrichten">
+  <form id="setup" novalidate>
+    <div class="menuhead">
+      <h2>Neue Partie</h2>
+      <div class="presets" role="group" aria-label="Regelvorlage">
+        <button type="button" class="preset" data-preset="pc" aria-pressed="true">Computerspiel</button>
+        <button type="button" class="preset" data-preset="board" aria-pressed="false">Brettspiel</button>
+        <button type="button" class="preset" data-preset="roles" aria-pressed="false">Rollen (neu)</button>
+        <button type="button" class="preset" data-preset="territory" aria-pressed="false">Gebiet (neu)</button>
+        <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
+      </div>
+      <p class="note" id="presetNote"></p>
+    </div>
+    <div class="groups" id="menuGroups">
+      <fieldset class="group">
+        <legend>Spiel</legend>
+        <label for="setPlayers"><span>Spieler</span>
+          <select id="setPlayers">
+            <option value="2" selected>2 (Quadrat, gegenüber)</option>
+            <option value="3">3 (Dreieck)</option>
+            <option value="4">4 (Quadrat)</option>
+            <option value="5">5 (Fünfeck)</option>
+            <option value="6">6 (Sechseck)</option>
+            <option value="7">7 (Siebeneck)</option>
+            <option value="8">8 (Achteck)</option>
+          </select>
+        </label>
+        <label for="setSelf"><span>Spieler A</span>
+          <select id="setSelf"><option value="2" selected>Du</option><option value="3">Bot „stark“</option><option value="0">Bot „gierig“</option></select>
+        </label>
+        <label for="setOpp"><span>Gegner (alle anderen)</span>
+          <select id="setOpp"><option value="3" selected>Bot „stark“</option><option value="0">Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
+        </label>
+        <label for="setSeed"><span>Seed (leer = zufällig)</span>
+          <input id="setSeed" type="number" min="0" step="1" inputmode="numeric" placeholder="zufällig">
+        </label>
+      </fieldset>
+    </div>
+    <p class="error" id="menuError" hidden></p>
+    <div class="menufoot">
+      <button class="btn primary" type="submit" id="menuStart">Partie starten</button>
+      <button class="btn" type="button" id="menuBack" hidden>Zurück zur Partie</button>
+      <span class="note">Leere Felder gelten als Standard (grau angezeigt). Alle Einstellungen gelten nur für die nächste Partie.</span>
+    </div>
+  </form>
+</section>
+
+<main class="layout">
+  <section class="stage" aria-label="Spielbrett">
+    <div class="board-wrap">
+      <canvas id="board" aria-label="Isometrisches Spielbrett"></canvas>
+      <div id="tip" class="tip" hidden></div>
+    </div>
+    <div class="controls">
+      <div class="btns">
+        <button id="first" type="button" aria-label="Zum Start"><svg viewBox="0 0 20 20"><path d="M4 4h2v12H4zM16 4v12L7 10z"/></svg></button>
+        <button id="prev" type="button" aria-label="Einen Zug zurück"><svg viewBox="0 0 20 20"><path d="M14 4v12L5 10z"/></svg></button>
+        <button id="play" class="primary" type="button" aria-label="Abspielen"><svg viewBox="0 0 20 20"><path id="playIcon" d="M6 4v12l10-6z"/></svg></button>
+        <button id="next" type="button" aria-label="Einen Zug vor"><svg viewBox="0 0 20 20"><path d="M6 4v12l9-6z"/></svg></button>
+        <button id="last" type="button" aria-label="Zum Ende"><svg viewBox="0 0 20 20"><path d="M14 4h2v12h-2zM4 4v12l9-6z"/></svg></button>
+      </div>
+      <input id="scrub" class="scrub" type="range" min="0" max="0" value="0" aria-label="Zug wählen">
+      <select id="speed" class="speed" aria-label="Tempo">
+        <option value="900">langsam</option>
+        <option value="450" selected>normal</option>
+        <option value="200">schnell</option>
+        <option value="70">sehr schnell</option>
+      </select>
+    </div>
+    <p class="status" id="status"></p>
+    <div id="turnBox" class="turnbox" hidden>
+      <p class="hint" id="hint"></p>
+      <div class="actions" id="actions"></div>
+      <div><button class="btn" id="toNow" type="button" hidden>Zur aktuellen Stellung</button></div>
+    </div>
+    <div class="below">
+      <div id="marketBox" class="panel" hidden>
+        <h2>Kartenmarkt</h2>
+        <p class="note" id="marketNote"></p>
+        <div class="legend" id="marketLegend"></div>
+        <ul class="market" id="market"></ul>
+      </div>
+      <div id="stockBox" class="panel" hidden>
+        <h2 id="stockTitle">Lager</h2>
+        <div class="stock" id="stock"></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div id="playBox" hidden>
+      <h2>Spielen</h2>
+      <button class="btn primary" id="openMenu" type="button" style="width:100%">Neue Partie / Einstellungen …</button>
+      <p class="error" id="playError" hidden></p>
+      <p class="note">Wege vorplanen: Figur anklicken, dann <b>Shift</b> halten (zeigt den Weg bis zum Feld unter der Maus), <b>Shift+Klick</b> geht ihn von selbst Zug um Zug. Mit <b>Strg+Klick</b> wählst du Kacheln einzeln, Strg loslassen startet. <b>Esc</b> bricht ab.</p>
+    </div>
+    <div>
+      <h2>Partie</h2>
+      <div class="summary" id="summary"></div>
+      <p class="error" id="error" hidden></p>
+    </div>
+    <div>
+      <h2>Spieler</h2>
+      <div class="players" id="players"></div>
+    </div>
+    <div>
+      <h2>Dieser Zug</h2>
+      <ol class="events" id="events"></ol>
+    </div>
+    <details class="legend" open>
+      <summary>Legende</summary>
+      <dl id="legend"></dl>
+      <p class="note" style="margin-top:10px">Auf dem Quadrat heißen Felder wie beim Schach: Buchstabe für die Spalte, Zahl für die Reihe. Gebiete (Wald, Himmel, Steppe, Fels und mehr) sind nur Farbe, ohne Spielwirkung. Tippe oder zeige auf ein Feld für Details. Tasten: Leertaste, ← →, Pos1, Ende.</p>
+    </details>
+  </aside>
+</main>
+
+<script type="application/json" id="samples">[]</script>
+<script type="application/octet-stream" id="wasm"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ----- Farben und Namen ---------------------------------------------------------------------
+  const PLAYER = [
+    { name: "A", color: "#d23c34" },
+    { name: "B", color: "#e9ad0c" },
+    { name: "C", color: "#7a4fd6" },
+    { name: "D", color: "#1d9e96" },
+    { name: "E", color: "#3a6fd8" },
+    { name: "F", color: "#e8762b" },
+    { name: "G", color: "#d64593" },
+    { name: "H", color: "#4f5866" },
+  ];
+  const FREE_CRYSTAL = ["#f3f2ec", "#3d3b45"]; // Kat-1-Farbe freier Ecken (bei 2 Spielern)
+  const CENTER_CRYSTAL = ["#a3e635", "#8d5b33", "#c0c7d1", "#5ce1e6"]; // Zentrumsfarben: Limette, Braun, Silber, Cyan (keine Spielerfarbe)
+  const TERRAIN = [
+    { name: "Wald", top: "#86a872" },
+    { name: "Himmel", top: "#a4c5df" },
+    { name: "Steppe", top: "#dcc58d" },
+    { name: "Fels", top: "#b9afbf" },
+    { name: "Schnee", top: "#dfe5ea" },
+    { name: "Moor", top: "#9ea888" },
+    { name: "Heide", top: "#d3acba" },
+    { name: "Lehm", top: "#c99a7e" },
+  ];
+  const NEUTRAL = { name: "Mitte", top: "#cfd4c8" };
+  const INGOT = "#9aa6b1";
+  const GRAIN = "#d9b257";
+  const GOLD = "#f2c94c";
+  const BARREL = "#9a6a3c";
+  const COLS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("board");
+  const boardCtx = canvas.getContext("2d");
+  let ctx = boardCtx; // die Legende lenkt die Zeichenfunktionen kurz auf eigene Bilder um
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function hexToRgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function shade(hex, f) {
+    // f > 0 heller, f < 0 dunkler
+    const [r, g, b] = hexToRgb(hex);
+    const mix = (c) => Math.round(f >= 0 ? c + (255 - c) * f : c * (1 + f));
+    return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+  }
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // ----- Zustand -----------------------------------------------------------------------------
+  let games = [];      // { label, replay }
+  let R = null;        // aktuelle Partie, vorbereitet
+  let fi = 0;          // aktueller Frame
+  let playing = false;
+  let tween = null;    // { from, to, start, dur }
+  let geo = null;      // Brett-Geometrie in CSS-Pixeln
+  let hoverCell = null;
+  let mode = "view";   // "play" oder "view"
+  let wasm = null;     // Exporte des Spielkerns
+  let live = null;     // laufende Partie: { legal, humanToMove, outcome, seats, opponent, watch }
+  let liveR = null;    // vorbereitete laufende Partie (waechst Zug fuer Zug)
+  let botTimer = null;
+  let selected = null; // ausgewaehlte eigene Figur
+  // Premoves: Wege, die eine Figur ueber mehrere eigene Zuege von selbst geht.
+  let routes = [];       // [{ piece, owner, cells: [Startfeld, ..., Ziel] }]
+  let ctrlPath = null;   // Strg gehalten: einzeln angeklickte Kacheln { piece, cells }
+  let shiftDown = false, ctrlDown = false;
+  let premoveTimer = null;
+  let routeNote = "";    // letzte Meldung zu Routen (z. B. warum eine abbrach)
+
+  function prepare(replay) {
+    if (!replay || replay.format !== "spacevitan-replay") throw new Error("Das ist keine Spacevitan-Partie (Feld \"format\" fehlt).");
+    if (replay.version !== 1) throw new Error(`Unbekannte Formatversion ${replay.version}; diese Ansicht kennt Version 1.`);
+    if (!["square", "triangle", "hex"].includes(replay.board.kind)) throw new Error(`Brettform "${replay.board.kind}" kennt diese Ansicht nicht.`);
+    if (!replay.board.shapes) {
+      // Aeltere Exporte (nur Quadrat) haben keine Feldumrisse.
+      replay.board.shapes = replay.board.cells.map(([x, y]) => [[x - 0.5, y - 0.5], [x + 0.5, y - 0.5], [x + 0.5, y + 0.5], [x - 0.5, y + 0.5]]);
+    }
+    const cornerPlayer = replay.board.corners.map((_, c) => replay.player_corners.indexOf(c));
+    let free = 0;
+    const cornerColor = cornerPlayer.map((p) => (p >= 0 ? PLAYER[p].color : FREE_CRYSTAL[free++ % FREE_CRYSTAL.length]));
+    const frames = replay.frames.map((f) => prepFrame(f, replay.board));
+    return { ...replay, frames, cornerPlayer, cornerColor, side: replay.board.side };
+  }
+  function prepFrame(f, board) {
+    const byId = new Map();
+    for (const p of f.pieces) byId.set(p.id, p);
+    const fById = new Map();
+    for (const x of f.factories) fById.set(x.id, x);
+    const out = { ...f, byId, fById };
+    if (f.land && board) Object.assign(out, linkedInfo(f, board));
+    return out;
+  }
+  /** Gebietsmodus: welche Felder haengen ueber Nachbarfelder an der Fabrik ihres Besitzers?
+   *  Wie connected_land im Spielkern. anchored[p]: Spieler p hat noch eine Fabrik. */
+  function linkedInfo(f, board) {
+    const adj = boardAdj(board);
+    const linked = new Uint8Array(f.land.length);
+    const anchored = [];
+    for (let p = 0; p < f.alive.length; p++) {
+      const fac = f.factories.find((x) => x.owner === p);
+      anchored[p] = !!fac;
+      if (!fac || f.land[fac.cell] !== p) continue;
+      const queue = [fac.cell];
+      linked[fac.cell] = 1;
+      for (let i = 0; i < queue.length; i++) {
+        for (const n of adj[queue[i]]) {
+          if (!linked[n] && f.land[n] === p) { linked[n] = 1; queue.push(n); }
+        }
+      }
+    }
+    return { linked, anchored };
+  }
+  const isTerr = () => !!(R && R.config && R.config.territory);
+  /** Wehrlos: der Spieler hat eine Fabrik, die Figur steht aber nicht auf Land, das daran haengt. */
+  const helpless = (f, p) => !!f.land && f.anchored[p.owner] && !(f.land[p.cell] === p.owner && f.linked[p.cell]);
+  const TERR_WHITE = "#f3f1ea";
+  function mixHex(a, b, t) {
+    const x = hexToRgb(a), y = hexToRgb(b);
+    const h = (i) => Math.round(x[i] + (y[i] - x[i]) * t).toString(16).padStart(2, "0");
+    return `#${h(0)}${h(1)}${h(2)}`;
+  }
+
+  const cellName = (cell) => {
+    if (R.board.kind !== "square") return `Feld ${cell + 1}`;
+    const [x, y] = R.board.cells[cell];
+    return `${COLS[x] || "?"}${y + 1}`;
+  };
+  const playerName = (p) => PLAYER[p] ? PLAYER[p].name : String(p);
+  const RES_NAME = ["", "Farbe", "Quader", "Ball", "Fass"];
+  const typeInfo = (res) => R.resource_types[res];
+  const category = (res) => typeInfo(res).category;
+  const total = (inv) => inv.reduce((s, [, n]) => s + n, 0);
+  const crystalColor = (res) => {
+    const home = typeInfo(res).home;
+    if (home === null || home === undefined) {
+      const k = R.resource_types.filter((t) => t.home === null).findIndex((t) => t.id === res);
+      return CENTER_CRYSTAL[Math.max(0, k) % CENTER_CRYSTAL.length];
+    }
+    return R.cornerColor[home];
+  };
+  /** Wem gehoert eine Farbe? Text fuer Tooltips und Knoepfe. */
+  const colorOwner = (res) => {
+    const home = typeInfo(res).home;
+    if (home === null || home === undefined) return "Zentrumsfarbe";
+    return R.cornerPlayer[home] >= 0 ? `Farbe ${playerName(R.cornerPlayer[home])}` : "Farbe einer freien Ecke";
+  };
+  const CARD = (key) => (R.market || []).find((c) => c.key === key) || { key, name: key, text: "" };
+  function costParts(k) {
+    const parts = [];
+    if (k.color) parts.push(`${k.color}× Farbe`);
+    if (k.foreign_color) parts.push(`${k.foreign_color}× fremde Farbe`);
+    if (k.k2) parts.push(`${k.k2}× Quader${k.k2_kinds > 1 ? ` in ${k.k2_kinds} Farben` : ""}`);
+    if (k.k3) parts.push(`${k.k3}× Ball${k.k3_kinds > 1 ? ` in ${k.k3_kinds} Farben` : ""}`);
+    return parts.join(" + ");
+  }
+  /** Preis fuer eine Zielfigur mit Reichweite `range`, wie Card::cost_for im Spielkern. */
+  function costFor(c, range) {
+    if (!c.per_range) return c.cost;
+    const r = Math.max(1, range || 1), k = c.cost;
+    const kinds = (n, base) => (n === 0 ? 0 : Math.min(n, Math.max(base, Math.min(r, 3))));
+    const k2 = k.k2 * r, k3 = k.k3 * r;
+    return { ...k, k2, k3, k2_kinds: kinds(k2, k.k2_kinds), k3_kinds: kinds(k3, k.k3_kinds) };
+  }
+  function costText(c) {
+    if (!c.per_range) return costParts(c.cost);
+    const r3 = costFor(c, 3);
+    return `${costParts(c.cost)} je Reichweite der Figur, in so vielen Farben wie die Reichweite ` +
+      `(Reichweite 3: ${r3.k2 + r3.k3} Einheiten)`;
+  }
+  /** Figurentyp nach Stufe: so sieht die Figur auch aus. */
+  function unitTitle(level) {
+    return ["", "Bauer", "Krieger", "Ritter", "Held"][Math.min(level, 4)] || "Held";
+  }
+  /** Was eine Figur kann, in Worten (fuer Tooltip und Lager). */
+  function abilityText(p) {
+    if (!p) return "";
+    const pk = p.perks || {};
+    if (p.king) {
+      const out = [pk.diagonal ? "zieht 1 Feld, auch diagonal" : "zieht 1 Feld (nicht diagonal)"];
+      if (pk.lance) out.push("schlägt 2 Felder geradeaus");
+      if (pk.spring) out.push("springt über Nachbarfiguren");
+      if (pk.horse) out.push("springt auf Felder im Abstand 2");
+      out.push("sammelt und baut");
+      return out.join(", ");
+    }
+    const out = [p.level === 1
+      ? `zieht und schlägt geradeaus bis ${p.range} ${p.range === 1 ? "Feld" : "Felder"}`
+      : `zieht frei bis ${p.range} Felder (um Ecken, nicht durch Figuren)`];
+    if (pk.diagonal) out.push("schlägt diagonal");
+    if (pk.lance) out.push("schlägt 2 Felder geradeaus");
+    if (pk.spring) out.push("springt über Nachbarfiguren");
+    if (pk.horse) out.push("springt auf Felder im Abstand 2");
+    return out.join(", ");
+  }
+  function perkText(pk) {
+    if (!pk) return "";
+    const out = [];
+    if (pk.diagonal) out.push("Läuferschlag");
+    if (pk.lance) out.push("Lanze");
+    if (pk.spring) out.push("Sprungfeder");
+    if (pk.horse) out.push("Pferd");
+    if (pk.extra_range) out.push(`Lange Beine ×${pk.extra_range}`);
+    if (pk.card_levels) out.push(`+${pk.card_levels} Stufe durch Karten`);
+    return out.join(", ");
+  }
+
+  function roundOf(i) {
+    // Runde, in der der Zug i gespielt wurde (Frame i-1 haelt den Zustand davor).
+    if (i === 0) return R.frames[0].round;
+    return R.frames[i - 1].round;
+  }
+
+  // ----- Geometrie ---------------------------------------------------------------------------
+  const TILT = 0.62; // Neigung der Draufsicht bei Dreieck und Hex
+  function layout() {
+    if (!R) return;
+    const wrap = canvas.parentElement;
+    const cssW = Math.max(240, wrap.clientWidth);
+    const square = R.board.kind === "square";
+    // Projektion bei Massstab 1: Quadrat isometrisch (Raute), sonst schraeg von oben.
+    const proj1 = square ? (x, y) => [(x - y) / 2, (x + y) / 4] : (x, y) => [x, y * TILT];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const shape of R.board.shapes) {
+      for (const [x, y] of shape) {
+        const [px, py] = proj1(x, y);
+        minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+        minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+      }
+    }
+    const pad = square ? 2.2 : 0.6;                 // Rand fuer Beschriftung (in Feldbreiten)
+    const U = Math.min(square ? 84 : 72, cssW / (maxX - minX + pad));
+    const W = U * (square ? 1 : R.board.kind === "hex" ? 0.9 : 0.72); // Figurengroesse
+    const thick = W * 0.12;
+    const top = W * 1.05 + (square ? U * 0.15 : 0); // Platz fuer hohe Figuren
+    const ox = cssW / 2 - ((minX + maxX) / 2) * U;
+    const oy = top - minY * U;
+    const cssH = Math.ceil(oy + maxY * U + thick + W * 0.35);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.height = cssH + "px";
+    geo = { U, W, thick, ox, oy, cssW, cssH, dpr, square };
+  }
+  function iso(x, y) {
+    return geo.square
+      ? [geo.ox + (x - y) * geo.U / 2, geo.oy + (x + y) * geo.U / 4]
+      : [geo.ox + x * geo.U, geo.oy + y * geo.U * TILT];
+  }
+  function depth(x, y) {
+    return iso(x, y)[1];
+  }
+  function cellAt(mx, my) {
+    if (geo.square) {
+      const dx = (mx - geo.ox) / (geo.U / 2);
+      const dy = (my - geo.oy) / (geo.U / 4);
+      const x = Math.round((dy + dx) / 2);
+      const y = Math.round((dy - dx) / 2);
+      if (x < 0 || y < 0 || x >= R.side || y >= R.side) return null;
+      return y * R.side + x;
+    }
+    let best = null, bestD = Infinity;
+    for (let c = 0; c < R.board.cells.length; c++) {
+      const [sx, sy] = iso(R.board.cells[c][0], R.board.cells[c][1]);
+      const d = (sx - mx) ** 2 + ((sy - my) / TILT) ** 2;
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    const limit = R.board.kind === "hex" ? 0.6 : 0.45;
+    return bestD <= (geo.U * limit) ** 2 ? best : null;
+  }
+
+  // ----- Zeichnen ----------------------------------------------------------------------------
+  /** Umriss eines Feldes als Pfad, um seinen Mittelpunkt skaliert. */
+  function cellPath(cell, scale) {
+    const [cx, cy] = R.board.cells[cell];
+    ctx.beginPath();
+    R.board.shapes[cell].forEach(([x, y], i) => {
+      const [sx, sy] = iso(cx + (x - cx) * scale, cy + (y - cy) * scale);
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    });
+    ctx.closePath();
+  }
+  /** Feine Musterung wie beim Schachbrett: abwechselnd hellere und dunklere Felder. */
+  function tileShade(cell) {
+    const [x, y] = R.board.cells[cell];
+    if (R.board.kind === "square") return (x + y) % 2 === 0 ? 0.1 : -0.02;
+    if (R.board.kind === "triangle") {
+      const above = R.board.shapes[cell].filter((p) => p[1] < y).length;
+      return above === 1 ? 0.08 : -0.03;
+    }
+    const r = Math.round(y / 0.8660254);
+    const q = Math.round(x - r / 2);
+    return [0.09, 0.0, -0.05][(((q - r) % 3) + 3) % 3];
+  }
+
+  function drawTile(cell) {
+    const t = R.territories[cell];
+    let base = t >= 0 ? TERRAIN[t % TERRAIN.length].top : NEUTRAL.top;
+    if (isTerr()) {
+      // Gebietsmodus: weisses Brett, Land in der Farbe des Spielers.
+      const f = R.frames[fi], owner = f.land[cell];
+      base = owner >= 0 ? mixHex(PLAYER[owner].color, "#ffffff", 0.5) : TERR_WHITE;
+    }
+    // Sockel: derselbe Umriss etwas tiefer und dunkler; vordere Felder verdecken ihn spaeter
+    ctx.save();
+    ctx.translate(0, geo.thick);
+    cellPath(cell, 1);
+    ctx.fillStyle = shade(base, -0.45);
+    ctx.fill();
+    ctx.restore();
+    cellPath(cell, 1);
+    ctx.fillStyle = shade(base, tileShade(cell));
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.14)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  function outlineCell(cell, color, fillAlpha) {
+    cellPath(cell, 0.86);
+    if (fillAlpha) {
+      ctx.globalAlpha = fillAlpha; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, geo.W * 0.045); ctx.stroke();
+  }
+
+  function markCell(cell, color) {
+    cellPath(cell, 0.42);
+    ctx.globalAlpha = 0.75; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  function drawCrystal(x, y, s, color) {
+    const h = s * 1.15, w = s * 0.42;
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - h * 0.45); ctx.lineTo(x, y); ctx.lineTo(x - w, y - h * 0.45); ctx.closePath();
+    ctx.fillStyle = color; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - h * 0.45); ctx.lineTo(x, y); ctx.closePath();
+    ctx.fillStyle = "rgba(0,0,0,0.22)"; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x - w * 0.55, y - h * 0.5); ctx.lineTo(x - w * 0.1, y - h * 0.55); ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.55)"; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - h * 0.45); ctx.lineTo(x, y); ctx.lineTo(x - w, y - h * 0.45); ctx.closePath();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  function drawIngot(x, y, s, color) {
+    const INGOT = color || "#9aa6b1";
+    const w = s * 0.55, d = s * 0.22, h = s * 0.32;
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.beginPath(); // Oberseite
+    ctx.moveTo(x - w, y - h); ctx.lineTo(x, y - h - d); ctx.lineTo(x + w, y - h); ctx.lineTo(x, y - h + d); ctx.closePath();
+    ctx.fillStyle = shade(INGOT, 0.35); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - w, y - h); ctx.lineTo(x, y - h + d); ctx.lineTo(x, y + d); ctx.lineTo(x - w, y); ctx.closePath();
+    ctx.fillStyle = INGOT; ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + w, y - h); ctx.lineTo(x, y - h + d); ctx.lineTo(x, y + d); ctx.lineTo(x + w, y); ctx.closePath();
+    ctx.fillStyle = shade(INGOT, -0.3); ctx.fill(); ctx.stroke();
+  }
+  function drawGrain(x, y, s, color) {
+    const GRAIN = color || "#d9b257";
+    const r = s * 0.26;
+    for (const [dx, dy] of [[-r * 0.9, 0], [r * 0.9, 0], [0, -r * 0.9]]) {
+      ctx.beginPath(); ctx.arc(x + dx, y + dy - r, r, 0, Math.PI * 2);
+      ctx.fillStyle = GRAIN; ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.45)"; ctx.lineWidth = 1; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + dx - r * 0.3, y + dy - r * 1.3, r * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.fill();
+    }
+  }
+  function drawBarrel(x, y, s, color) {
+    const BARREL = color || "#9a6a3c";
+    const w = s * 0.32, h = s * 0.62, ry = w * 0.45;
+    const g = ctx.createLinearGradient(x - w, 0, x + w, 0);
+    g.addColorStop(0, shade(BARREL, 0.25)); g.addColorStop(0.6, BARREL); g.addColorStop(1, shade(BARREL, -0.45));
+    ctx.beginPath();
+    ctx.moveTo(x - w, y - h);
+    ctx.lineTo(x - w, y);
+    ctx.ellipse(x, y, w, ry, 0, Math.PI, 0, true);
+    ctx.lineTo(x + w, y - h);
+    ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(x, y - h, w, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = shade(BARREL, 0.3); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(40,30,20,0.75)";
+    for (const f of [0.3, 0.7]) {
+      ctx.beginPath(); ctx.ellipse(x, y - h * f, w, ry, 0, 0, Math.PI); ctx.stroke();
+    }
+  }
+  /** In wie vielen Runden ein abgebautes Vorkommen wieder da ist (0 = ist da). */
+  function regrowLeft(f, cell, res) {
+    const map = f.regrowMap || (f.regrowMap = new Map((f.regrow || []).map(([c, r, back]) => [c + ":" + r, back])));
+    const back = map.get(cell + ":" + res);
+    return back === undefined ? 0 : Math.max(1, back - f.round);
+  }
+  /** Vorkommen des Feldes ohne verbaute und erschoepfte; abgebaute, die nachwachsen, sind dabei. */
+  function liveDeposits(f, cell) {
+    const gone = f.gone || (f.gone = new Set((f.depleted || []).map(([c, r]) => c + ":" + r)));
+    const extra = (f.extra_deposits || []).find(([c]) => c === cell);
+    const all = extra ? R.deposits[cell].concat(extra[1]) : R.deposits[cell];
+    return all.filter((res) => !gone.has(cell + ":" + res));
+  }
+  function drawDeposits(cell, dim) {
+    const f = R.frames[fi];
+    const list = liveDeposits(f, cell);
+    if (!list.length) return;
+    const [x, y] = R.board.cells[cell];
+    const [cx, cy] = iso(x, y);
+    const s = geo.W * (list.length > 1 && !geo.square ? 0.27 : 0.32);
+    list.forEach((res, k) => {
+      const off = list.length === 1 ? 0 : (k === 0 ? -1 : 1) * geo.W * 0.15;
+      const px = cx + off, py = cy + geo.W * 0.06 - (list.length > 1 && k === 1 ? geo.W * 0.03 : 0);
+      const cat = category(res), col = crystalColor(res);
+      // Abgebaut: blass, mit der Zahl der Runden bis es wieder da ist.
+      const wait = regrowLeft(f, cell, res);
+      ctx.globalAlpha = wait ? 0.22 : dim ? 0.35 : 1;
+      if (cat === 1) drawCrystal(px, py, s, col);
+      else if (cat === 2) drawIngot(px, py, s, col);
+      else if (cat === 3) drawGrain(px, py, s, col);
+      else drawBarrel(px, py, s, col);
+      if (wait) {
+        ctx.globalAlpha = dim ? 0.5 : 0.95;
+        const fs = Math.max(9, Math.round(geo.W * 0.2));
+        ctx.font = `700 ${fs}px ${cssVar("--font-data") || "monospace"}`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.strokeText(String(wait), px, py - s * 0.3);
+        ctx.fillStyle = "#1c2420"; ctx.fillText(String(wait), px, py - s * 0.3);
+      }
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function cylinder(cx, cy, rx, h, color) {
+    const ry = rx * 0.5;
+    const g = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0);
+    g.addColorStop(0, shade(color, 0.25)); g.addColorStop(0.55, color); g.addColorStop(1, shade(color, -0.45));
+    ctx.beginPath();
+    ctx.moveTo(cx - rx, cy - h);
+    ctx.lineTo(cx - rx, cy);
+    ctx.ellipse(cx, cy, rx, ry, 0, Math.PI, 0, true);
+    ctx.lineTo(cx + rx, cy - h);
+    ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy - h, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = shade(color, 0.3); ctx.fill(); ctx.stroke();
+  }
+  function shadow(cx, cy, rx) {
+    ctx.beginPath(); ctx.ellipse(cx, cy + rx * 0.1, rx * 1.15, rx * 0.55, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.22)"; ctx.fill();
+  }
+  function drawKing(cx, cy, color, pk) {
+    pk = pk || {};
+    const W = geo.W, rx = W * 0.2, h = W * 0.6;
+    shadow(cx, cy, rx);
+    if (pk.spring) {
+      // Sprungfeder: Zickzack unter dem Sockel (nur mit der Regel "Rollen der Kategorien").
+      ctx.beginPath();
+      const sy = cy + W * 0.02;
+      for (let i = 0; i <= 6; i++) {
+        const xx = cx - rx * 0.7 + (i / 6) * rx * 1.4, yy = sy + (i % 2 ? W * 0.05 : 0);
+        i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+      }
+      ctx.strokeStyle = "#555"; ctx.lineWidth = Math.max(1.5, W * 0.022); ctx.stroke();
+    }
+    cylinder(cx, cy, rx, h, color);
+    if (pk.diagonal) {
+      // Laeuferschlag: weisse Schaerpe ueber Kreuz.
+      ctx.beginPath();
+      ctx.moveTo(cx - rx * 0.85, cy - h * 0.12); ctx.lineTo(cx + rx * 0.85, cy - h * 0.75);
+      ctx.moveTo(cx + rx * 0.85, cy - h * 0.12); ctx.lineTo(cx - rx * 0.85, cy - h * 0.75);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1.5, W * 0.03); ctx.stroke();
+    }
+    if (pk.lance) {
+      const lx = cx + rx * 1.15, ly0 = cy - W * 0.04, ly1 = cy - h - W * 0.1;
+      ctx.beginPath(); ctx.moveTo(lx, ly0); ctx.lineTo(lx, ly1);
+      ctx.strokeStyle = "#6b4a2b"; ctx.lineWidth = Math.max(1.5, W * 0.025); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx - W * 0.035, ly1 + W * 0.02); ctx.lineTo(lx, ly1 - W * 0.09); ctx.lineTo(lx + W * 0.035, ly1 + W * 0.02); ctx.closePath();
+      ctx.fillStyle = "#c9ced6"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    if (pk.horse) {
+      const hx = cx - rx * 1.4, hb = cy - W * 0.08, s = W * 0.0042;
+      ctx.beginPath();
+      ctx.moveTo(hx + 6 * s, hb); ctx.lineTo(hx + 8 * s, hb - 18 * s); ctx.lineTo(hx + 5 * s, hb - 30 * s);
+      ctx.lineTo(hx + 7 * s, hb - 36 * s); ctx.lineTo(hx + 2 * s, hb - 33 * s); ctx.lineTo(hx - 12 * s, hb - 24 * s);
+      ctx.lineTo(hx - 13 * s, hb - 18 * s); ctx.lineTo(hx - 4 * s, hb - 19 * s); ctx.lineTo(hx - 6 * s, hb);
+      ctx.closePath();
+      ctx.fillStyle = "#7a5230"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    // Krone
+    const ty = cy - h, cw = rx * 0.95;
+    ctx.beginPath();
+    ctx.moveTo(cx - cw, ty);
+    ctx.lineTo(cx - cw, ty - W * 0.16);
+    ctx.lineTo(cx - cw * 0.5, ty - W * 0.07);
+    ctx.lineTo(cx, ty - W * 0.2);
+    ctx.lineTo(cx + cw * 0.5, ty - W * 0.07);
+    ctx.lineTo(cx + cw, ty - W * 0.16);
+    ctx.lineTo(cx + cw, ty);
+    ctx.closePath();
+    ctx.fillStyle = GOLD; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  /**
+   * Figur nach Stufe und Karten: Bauer (Stufe 1), Krieger (2, Helm und Schulterstuecke),
+   * Ritter (3, Helmbusch), Held (4+, Umhang). Karten haengen sichtbar an: Lanze, Schaerpe
+   * (Laeuferschlag), Feder unter dem Sockel (Sprungfeder), Pferdekopf, Fluegel am Sockel (Lange
+   * Beine), Sterne (Stufen durch Karten). Zahl = Stufe, Punkte = Reichweite.
+   */
+  function drawUnit(cx, cy, color, p) {
+    const W = geo.W, level = p.level, range = p.range, pk = p.perks || {};
+    const t = Math.min(level, 4);
+    const rx = W * [0, 0.14, 0.165, 0.185, 0.2][t];
+    const bodyH = W * [0, 0.26, 0.33, 0.39, 0.43][t];
+    shadow(cx, cy, rx);
+    if (pk.spring) {
+      // Sprungfeder: Zickzack unter dem Sockel.
+      ctx.beginPath();
+      const sy = cy + W * 0.02;
+      for (let i = 0; i <= 6; i++) {
+        const xx = cx - rx * 0.7 + (i / 6) * rx * 1.4, yy = sy + (i % 2 ? W * 0.05 : 0);
+        i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+      }
+      ctx.strokeStyle = "#555"; ctx.lineWidth = Math.max(1.5, W * 0.022); ctx.stroke();
+    }
+    if (t >= 4) {
+      // Held: Umhang hinter dem Koerper.
+      ctx.beginPath();
+      ctx.moveTo(cx - rx * 0.5, cy - bodyH * 0.95);
+      ctx.lineTo(cx - rx * 1.25, cy - W * 0.05);
+      ctx.lineTo(cx + rx * 1.25, cy - W * 0.05);
+      ctx.lineTo(cx + rx * 0.5, cy - bodyH * 0.95);
+      ctx.closePath(); ctx.fillStyle = shade(color, -0.55); ctx.fill();
+    }
+    cylinder(cx, cy, rx, W * 0.1, shade(color, -0.1)); // Sockel
+    if (pk.extra_range) {
+      // Lange Beine: kleine Fluegel links und rechts am Sockel, einer je Stufe.
+      for (let i = 0; i < pk.extra_range; i++) {
+        for (const side of [-1, 1]) {
+          const x0 = cx + side * (rx + W * 0.02 + i * W * 0.05), y0 = cy - W * 0.05;
+          ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + side * W * 0.07, y0 - W * 0.07); ctx.lineTo(x0 + side * W * 0.02, y0 + W * 0.01); ctx.closePath();
+          ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+        }
+      }
+    }
+    // Rumpf (Kegelstumpf)
+    const top = cy - bodyH, tr = rx * 0.5;
+    const g = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0);
+    g.addColorStop(0, shade(color, 0.25)); g.addColorStop(0.55, color); g.addColorStop(1, shade(color, -0.45));
+    ctx.beginPath();
+    ctx.moveTo(cx - rx * 0.8, cy - W * 0.1); ctx.lineTo(cx - tr, top); ctx.lineTo(cx + tr, top); ctx.lineTo(cx + rx * 0.8, cy - W * 0.1);
+    ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    if (pk.diagonal) {
+      // Laeuferschlag: weisse Schaerpe ueber Kreuz.
+      ctx.beginPath();
+      ctx.moveTo(cx - rx * 0.7, cy - W * 0.13); ctx.lineTo(cx + tr * 0.9, top + W * 0.03);
+      ctx.moveTo(cx + rx * 0.7, cy - W * 0.13); ctx.lineTo(cx - tr * 0.9, top + W * 0.03);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1.5, W * 0.03); ctx.stroke();
+    }
+    if (t >= 2) {
+      // Schulterstuecke ab dem Krieger.
+      for (const side of [-1, 1]) {
+        ctx.beginPath(); ctx.ellipse(cx + side * tr * 1.05, top + W * 0.02, rx * 0.32, rx * 0.2, 0, 0, Math.PI * 2);
+        ctx.fillStyle = shade(color, 0.15); ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+      }
+    }
+    for (let i = 0; i < (pk.card_levels || 0); i++) {
+      // Sterne: Stufen durch Karten.
+      star(cx - rx * 0.35 + i * rx * 0.4, cy - bodyH * 0.45, W * 0.035);
+    }
+    // Kopf mit Stufe
+    const hr = W * (t >= 3 ? 0.13 : 0.12), hy = top - hr * 0.7;
+    ctx.beginPath(); ctx.arc(cx, hy, hr, 0, Math.PI * 2);
+    const hg = ctx.createRadialGradient(cx - hr * 0.4, hy - hr * 0.4, hr * 0.1, cx, hy, hr);
+    hg.addColorStop(0, shade(color, 0.45)); hg.addColorStop(1, shade(color, -0.25));
+    ctx.fillStyle = hg; ctx.fill(); ctx.stroke();
+    if (t >= 2) {
+      // Helm: graue Haube ueber dem Kopf.
+      ctx.beginPath(); ctx.arc(cx, hy, hr * 1.06, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.lineTo(cx + hr * 0.15, hy - hr * 0.1); ctx.lineTo(cx - hr * 0.15, hy - hr * 0.1); ctx.closePath();
+      ctx.fillStyle = "#9aa3ad"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.stroke();
+    }
+    if (t >= 3) {
+      // Helmbusch beim Ritter und Held.
+      ctx.beginPath();
+      ctx.moveTo(cx - hr * 0.2, hy - hr * 0.95); ctx.quadraticCurveTo(cx + hr * 0.2, hy - hr * 2.0, cx + hr * 1.1, hy - hr * 1.3);
+      ctx.quadraticCurveTo(cx + hr * 0.4, hy - hr * 1.2, cx + hr * 0.2, hy - hr * 0.9); ctx.closePath();
+      ctx.fillStyle = t >= 4 ? GOLD : "#d33"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+    }
+    ctx.fillStyle = "#fff";
+    ctx.font = `700 ${Math.round(hr * 1.25)}px ${cssVar("--font-display") || "sans-serif"}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 2.5; ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeText(String(level), cx, hy + 0.5); ctx.fillText(String(level), cx, hy + 0.5);
+    if (pk.lance) {
+      // Lanze: Schaft rechts, Spitze nach oben.
+      const lx = cx + rx * 1.05, ly0 = cy - W * 0.04, ly1 = hy - hr * 1.6;
+      ctx.beginPath(); ctx.moveTo(lx, ly0); ctx.lineTo(lx, ly1);
+      ctx.strokeStyle = "#6b4a2b"; ctx.lineWidth = Math.max(1.5, W * 0.025); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx - W * 0.035, ly1 + W * 0.02); ctx.lineTo(lx, ly1 - W * 0.09); ctx.lineTo(lx + W * 0.035, ly1 + W * 0.02); ctx.closePath();
+      ctx.fillStyle = "#c9ced6"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    if (pk.horse) {
+      // Pferd: Pferdekopf links neben der Figur.
+      const hx = cx - rx * 1.25, hb = cy - W * 0.08, s = W * 0.0042;
+      ctx.beginPath();
+      ctx.moveTo(hx + 6 * s, hb);
+      ctx.lineTo(hx + 8 * s, hb - 18 * s);
+      ctx.lineTo(hx + 5 * s, hb - 30 * s);
+      ctx.lineTo(hx + 7 * s, hb - 36 * s);
+      ctx.lineTo(hx + 2 * s, hb - 33 * s);
+      ctx.lineTo(hx - 12 * s, hb - 24 * s);
+      ctx.lineTo(hx - 13 * s, hb - 18 * s);
+      ctx.lineTo(hx - 4 * s, hb - 19 * s);
+      ctx.lineTo(hx - 6 * s, hb);
+      ctx.closePath();
+      ctx.fillStyle = "#7a5230"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    // Reichweite: Punkte vor dem Sockel
+    const pr = Math.max(1.5, W * 0.025);
+    for (let i = 0; i < range; i++) {
+      const px = cx + (i - (range - 1) / 2) * pr * 3.2;
+      ctx.beginPath(); ctx.arc(px, cy + W * 0.075, pr, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+  function star(x, y, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+      i ? ctx.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)) : ctx.moveTo(x + rr * Math.cos(a), y + rr * Math.sin(a));
+    }
+    ctx.closePath(); ctx.fillStyle = GOLD; ctx.fill(); ctx.strokeStyle = "rgba(90,60,0,0.9)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  /**
+   * Lager als kleine Leiste ueber Fabrik oder Koenig: Rauten in den Kat-1-Farben, dann die
+   * Mengen von Kat 2, 3, 4 (Farben wie die Symbole auf dem Brett). Optional am Ende die Stufe,
+   * die beim Aufloesen entstuende.
+   */
+  function drawStockPill(cx, by, inv, level) {
+    if (!inv.length && !level) return;
+    const colors = [...new Set(inv.filter(([r]) => category(r) === 1).map(([r]) => crystalColor(r)))];
+    // Je Kategorie und Farbe ein Teil: Quadrat = Quader (Kat 2), Kreis = Ball (Kat 3).
+    const parts = inv.filter(([r]) => category(r) >= 2)
+      .sort(([a], [b]) => category(a) - category(b) || a - b)
+      .map(([r, n]) => [category(r), String(n), crystalColor(r)]);
+    drawPill(cx, by, colors, parts, level);
+  }
+  /** Zeichnet die Lagerleiste aus fertigen Teilen (auch fuer die Legende). */
+  function drawPill(cx, by, colors, parts, level) {
+    const W = geo.W, h = Math.max(12, W * 0.2), fs = Math.round(h * 0.72);
+    ctx.font = `600 ${fs}px ${cssVar("--font-data") || "monospace"}`;
+    const dw = h * 0.62;
+    let width = h * 0.35 + colors.length * dw;
+    for (const [, t] of parts) width += ctx.measureText(t).width + h * 0.55;
+    const lv = level ? `→${level}` : "";
+    if (lv) width += ctx.measureText(lv).width + h * 0.5;
+    width += h * 0.2;
+    const bx = cx - width / 2;
+    ctx.fillStyle = "rgba(20,24,22,0.85)";
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, width, h, h / 2) : ctx.rect(bx, by, width, h); ctx.fill();
+    let x = bx + h * 0.35;
+    for (const col of colors) {
+      const mx = x + dw * 0.4, my = by + h / 2, d = h * 0.3;
+      ctx.beginPath(); ctx.moveTo(mx, my - d); ctx.lineTo(mx + d * 0.8, my); ctx.lineTo(mx, my + d); ctx.lineTo(mx - d * 0.8, my); ctx.closePath();
+      ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 1; ctx.stroke();
+      x += dw;
+    }
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    for (const [c, t, col] of parts) {
+      ctx.fillStyle = col || "#c9ced6";
+      const q = h * 0.17, mx = x + h * 0.15, my = by + h / 2;
+      ctx.beginPath();
+      if (c === 2) ctx.rect(mx - q, my - q, q * 2, q * 2);
+      else if (c === 3) ctx.arc(mx, my, q, 0, Math.PI * 2);
+      else { ctx.moveTo(mx - q, my + q); ctx.lineTo(mx, my - q); ctx.lineTo(mx + q, my + q); ctx.closePath(); }
+      ctx.fill(); ctx.strokeStyle = "rgba(255,255,255,0.75)"; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.fillText(t, x + h * 0.33, by + h / 2 + 0.5);
+      x += ctx.measureText(t).width + h * 0.55;
+    }
+    if (lv) { ctx.fillStyle = GOLD; ctx.fillText(lv, x + h * 0.1, by + h / 2 + 0.5); }
+  }
+  function drawFactory(cx, cy, color, fac) {
+    const W = geo.W, w = W * 0.3, d = W * 0.15, h = W * 0.2;
+    shadow(cx, cy, w * 0.8);
+    const y0 = cy;
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.beginPath(); ctx.moveTo(cx - w, y0 - h); ctx.lineTo(cx, y0 - h + d); ctx.lineTo(cx, y0 + d); ctx.lineTo(cx - w, y0); ctx.closePath();
+    ctx.fillStyle = shade(color, -0.05); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + w, y0 - h); ctx.lineTo(cx, y0 - h + d); ctx.lineTo(cx, y0 + d); ctx.lineTo(cx + w, y0); ctx.closePath();
+    ctx.fillStyle = shade(color, -0.4); ctx.fill(); ctx.stroke();
+    // Saegezahndach
+    ctx.beginPath(); ctx.moveTo(cx - w, y0 - h); ctx.lineTo(cx, y0 - h - d); ctx.lineTo(cx + w, y0 - h); ctx.lineTo(cx, y0 - h + d); ctx.closePath();
+    ctx.fillStyle = shade(color, 0.35); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - w * 0.5, y0 - h - d * 0.5); ctx.lineTo(cx - w * 0.15, y0 - h - d * 1.6); ctx.lineTo(cx + w * 0.2, y0 - h - d * 0.3); ctx.closePath();
+    ctx.fillStyle = "#5c5f66"; ctx.fill(); ctx.stroke();
+    // Schornstein
+    ctx.fillStyle = "#4b4e55";
+    ctx.fillRect(cx + w * 0.35, y0 - h - d * 2.2, w * 0.2, d * 1.8);
+    ctx.strokeRect(cx + w * 0.35, y0 - h - d * 2.2, w * 0.2, d * 1.8);
+    if (fac) drawStockPill(cx, y0 - h - d * 3.6, fac.storage, fac.level || 0);
+  }
+  function drawLoot(cx, cy) {
+    const W = geo.W, r = W * 0.11;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath(); ctx.ellipse(cx + (i - 1) * r * 0.5, cy - i * r * 0.45, r, r * 0.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = i === 2 ? shade(GOLD, 0.25) : GOLD; ctx.fill();
+      ctx.strokeStyle = "rgba(90,60,0,0.8)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+  function drawFlag(cell, color) {
+    const [x, y] = R.board.cells[cell];
+    const [cx, cy] = iso(x, y);
+    const W = geo.W, px = cx, base = cy - W * 0.18, top = base - W * 0.55;
+    ctx.strokeStyle = "rgba(30,30,30,0.8)"; ctx.lineWidth = Math.max(1.5, W * 0.03);
+    ctx.beginPath(); ctx.moveTo(px, base); ctx.lineTo(px, top); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + W * 0.28, top + W * 0.08); ctx.lineTo(px, top + W * 0.17); ctx.closePath();
+    ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 1; ctx.stroke();
+  }
+  function drawLabels() {
+    if (!geo.square) return;
+    const { W } = geo;
+    ctx.fillStyle = cssVar("--label") || "#666";
+    ctx.font = `500 ${Math.max(9, Math.round(W * 0.18))}px ${cssVar("--font-data") || "monospace"}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (let i = 0; i < R.side; i++) {
+      const [ax, ay] = iso(i + 0.35, -1.25); ctx.fillText(COLS[i] || "?", ax, ay);
+      const [bx, by] = iso(-1.25, i + 0.35); ctx.fillText(String(i + 1), bx, by);
+    }
+  }
+
+  function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+  function draw(now) {
+    if (!R || !geo) return;
+    const { dpr } = geo;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, geo.cssW, geo.cssH);
+    ctx.fillStyle = cssVar("--board-bg") || "#ddd";
+    ctx.fillRect(0, 0, geo.cssW, geo.cssH);
+
+    let t = 1, prev = null;
+    if (tween && !reduceMotion) {
+      t = Math.min(1, (now - tween.start) / tween.dur);
+      if (tween.to === fi && tween.from === fi - 1) prev = R.frames[tween.from];
+      if (t >= 1) tween = null;
+    }
+    const f = R.frames[fi];
+    const k = ease(t);
+
+    // Kacheln von hinten nach vorn
+    const order = [];
+    for (let c = 0; c < R.board.cells.length; c++) order.push(c);
+    order.sort((a, b) => {
+      const [ax, ay] = R.board.cells[a], [bx, by] = R.board.cells[b];
+      return depth(ax, ay) - depth(bx, by) || ax - bx;
+    });
+    for (const c of order) drawTile(c);
+    drawLabels();
+
+    // Letzter Zug hervorheben
+    const moved = f.events.find((e) => e.type === "moved");
+    if (moved && f.player !== null) {
+      const col = PLAYER[f.player].color;
+      outlineCell(moved.from, col, 0.12);
+      outlineCell(moved.to, col, 0.28);
+    }
+    for (const e of f.events) {
+      if (e.type === "factory_built" || e.type === "spawned") outlineCell(e.cell, PLAYER[e.owner].color, 0.25);
+      if (e.type === "painted") for (const c of e.cells) outlineCell(c, PLAYER[e.player].color, 0.16);
+      if (e.type === "cut_off" && e.to !== null) for (const c of e.cells) outlineCell(c, PLAYER[e.to].color, 0.32);
+      if (e.type === "enclosed") for (const c of e.cells) outlineCell(c, PLAYER[e.player].color, 0.3);
+      if (e.type === "reconnected") outlineCell(e.cell, PLAYER[e.owner].color, 0.3);
+    }
+    if (hoverCell !== null) outlineCell(hoverCell, cssVar("--ink") || "#000", 0);
+    if (canAct()) {
+      const accent = cssVar("--accent") || "#2f55a4";
+      if (selected !== null && f.byId.get(selected)) {
+        const me = f.byId.get(selected);
+        outlineCell(me.cell, accent, 0.3);
+        for (const to of destinations(selected)) {
+          const hostile = f.pieces.some((q) => q.cell === to && q.owner !== me.owner) ||
+            f.factories.some((x) => x.cell === to && x.owner !== me.owner);
+          markCell(to, hostile ? "#d23c34" : accent);
+        }
+      } else {
+        for (const id of movablePieces()) {
+          const p = f.byId.get(id);
+          if (p) outlineCell(p.cell, accent, 0);
+        }
+      }
+    }
+
+    drawRoutes(f);
+
+    // Objekte sammeln und nach Tiefe sortieren
+    const objs = [];
+    const occupied = new Set(f.pieces.map((p) => p.cell));
+    const built = new Set(f.factories.map((x) => x.cell));
+    for (let c = 0; c < R.deposits.length; c++) {
+      if (liveDeposits(f, c).length) {
+        const [x, y] = R.board.cells[c];
+        objs.push({ d: depth(x, y), o: 0, x, fn: () => drawDeposits(c, occupied.has(c) || built.has(c)) });
+      }
+    }
+    R.board.corners.forEach((cell, corner) => {
+      const p = R.cornerPlayer[corner];
+      const [x, y] = R.board.cells[cell];
+      const color = p >= 0 ? PLAYER[p].color : "#f4f4ef";
+      if (p >= 0 && !f.alive[p]) return;
+      objs.push({ d: depth(x, y) - 0.01, o: 1, x, fn: () => drawFlag(cell, color) });
+    });
+    for (const l of f.loot) {
+      const [x, y] = R.board.cells[l.cell];
+      objs.push({ d: depth(x, y), o: 2, x, fn: () => { const [cx, cy] = iso(x, y); drawLoot(cx - geo.W * 0.18, cy + geo.W * 0.04); } });
+    }
+    for (const fac of f.factories) {
+      const [x, y] = R.board.cells[fac.cell];
+      const fresh = prev && !prev.fById.has(fac.id);
+      objs.push({ d: depth(x, y), o: 3, x, alpha: fresh ? k : 1, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, fac); } });
+    }
+    if (prev) {
+      for (const fac of prev.factories) {
+        if (!f.fById.has(fac.id)) {
+          const [x, y] = R.board.cells[fac.cell];
+          objs.push({ d: depth(x, y), o: 3, x, alpha: 1 - k, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, null); } });
+        }
+      }
+    }
+    for (const p of f.pieces) {
+      const [x1, y1] = R.board.cells[p.cell];
+      let x = x1, y = y1, alpha = 1;
+      if (prev) {
+        const before = prev.byId.get(p.id);
+        if (before && before.cell !== p.cell) {
+          const [x0, y0] = R.board.cells[before.cell];
+          x = x0 + (x1 - x0) * k; y = y0 + (y1 - y0) * k;
+        } else if (!before) alpha = k;
+      }
+      objs.push({ d: depth(x, y) + 0.001, o: 4, x, alpha, fn: () => drawPiece(p, x, y) });
+    }
+    if (prev) {
+      for (const p of prev.pieces) {
+        if (!f.byId.has(p.id)) {
+          const [x, y] = R.board.cells[p.cell];
+          objs.push({ d: depth(x, y), o: 4, x, alpha: 1 - k, fn: () => drawPiece(p, x, y) });
+        }
+      }
+    }
+    objs.sort((a, b) => a.d - b.d || a.o - b.o || a.x - b.x);
+    for (const ob of objs) {
+      ctx.globalAlpha = ob.alpha === undefined ? 1 : Math.max(0, Math.min(1, ob.alpha));
+      ob.fn();
+    }
+    ctx.globalAlpha = 1;
+    canvas.dataset.pieces = String(f.pieces.length);
+    canvas.dataset.frame = String(fi);
+
+    if (tween) requestAnimationFrame(draw);
+  }
+
+  function drawPiece(p, x, y) {
+    if (isTerr() && helpless(R.frames[fi], p)) {
+      ctx.save();
+      ctx.globalAlpha *= 0.5;
+      drawPieceBody(p, x, y);
+      ctx.restore();
+      return;
+    }
+    drawPieceBody(p, x, y);
+  }
+  function drawPieceBody(p, x, y) {
+    const [cx, cy] = iso(x, y);
+    const color = PLAYER[p.owner].color;
+    if (p.king) {
+      drawKing(cx, cy + geo.W * 0.02, color, p.perks);
+      // Was der Koenig traegt, als Leiste ueber der Krone.
+      const carried = (R.frames[fi].carried || [])[p.owner] || [];
+      if (carried.length) drawStockPill(cx, cy - geo.W * 1.08, carried, 0);
+    } else {
+      drawUnit(cx, cy + geo.W * 0.02, color, p);
+    }
+  }
+
+  // ----- Texte -------------------------------------------------------------------------------
+  function pieceLabel(p) {
+    if (!p) return "Figur";
+    return p.king ? "König" : `${unitTitle(p.level)} (Stufe ${p.level})`;
+  }
+  function invText(inv) {
+    if (!inv.length) return "nichts";
+    const byCat = [0, 0, 0, 0];
+    for (const [res, n] of inv) byCat[category(res)] += n;
+    return [1, 2, 3].filter((c) => byCat[c]).map((c) => `${byCat[c]}× Kat ${c}`).join(", ");
+  }
+  function actionText(i) {
+    const f = R.frames[i];
+    if (i === 0) return { who: null, text: "Aufstellung: jeder Spieler hat nur seinen König." };
+    const prev = R.frames[i - 1];
+    const a = f.action, who = f.player;
+    let text = "";
+    if (a.type === "move") {
+      const piece = prev.byId.get(a.piece);
+      text = `${pieceLabel(piece)} ${cellName(piece.cell)} → ${cellName(a.to)}`;
+      const cap = f.events.find((e) => e.type === "captured");
+      if (cap) {
+        const victim = prev.byId.get(cap.piece);
+        text += `, schlägt ${victim && victim.king ? "König" : "Figur"} von ${playerName(cap.owner)}`;
+      }
+      const fd = f.events.find((e) => e.type === "factory_destroyed");
+      if (fd) text += isTerr() ? `, zerstört die Fabrik von ${playerName(fd.owner)}` : `, nimmt Fabrik von ${playerName(fd.owner)} ein`;
+      const pt = f.events.find((e) => e.type === "painted");
+      if (pt) text += `, färbt ${pt.cells.length} Feld${pt.cells.length === 1 ? "" : "er"}`;
+      const cut = f.events.find((e) => e.type === "cut_off");
+      if (cut) text += `, trennt ${cut.cells.length} Feld${cut.cells.length === 1 ? "" : "er"} von ${playerName(cut.from)} ab`;
+      const rcs = f.events.filter((e) => e.type === "reconnected");
+      if (rcs.length) {
+        const own = rcs.find((e) => e.piece === a.piece);
+        const others = rcs.length - (own ? 1 : 0);
+        if (own) text += ", wieder angebunden und färbt ihr Feld";
+        if (others) text += `, bindet ${others} wartende Figur${others === 1 ? "" : "en"} wieder an`;
+      }
+      const encl = f.events.filter((e) => e.type === "enclosed");
+      if (encl.length) {
+        const n = encl.reduce((sum, e) => sum + e.cells.length, 0);
+        text += `, umschließt ${n} neutrale${n === 1 ? "s Feld" : " Felder"}`;
+      }
+    } else if (a.type === "build_unit") {
+      text = `Fabrik baut eine Figur: ${unitTitle(a.level)} (Stufe ${a.level}), kostet ${terrPriceText(a.level)}`;
+    } else if (a.type === "build") {
+      const king = prev.pieces.find((p) => p.owner === who && p.king);
+      text = `König baut Fabrik auf ${cellName(king.cell)}`;
+    } else if (a.type === "spawn") {
+      const sp = f.events.find((e) => e.type === "spawned");
+      text = `Fabrik auf ${cellName(sp.cell)} wird zur Figur: Stufe ${sp.level}, Reichweite ${sp.range}`;
+    } else if (a.type === "buy") {
+      text = `kauft „${CARD(a.card).name}“${buyWhere(a, prev)}`;
+    } else {
+      text = "passt";
+    }
+    return { who, text };
+  }
+  /** Wo bezahlt wird und fuer wen die Karte ist (fuer Knoepfe und Zugtext). */
+  function buyWhere(a, f) {
+    const src = a.from === "king" ? "aus dem Gepäck" : `aus der Fabrik auf ${cellName(f.fById.get(a.from).cell)}`;
+    if (a.target === null || a.target === undefined) return `, bezahlt ${src}`;
+    const t = f.byId.get(a.target);
+    const c = CARD(a.card);
+    const price = c.per_range && t ? ` (${costParts(costFor(c, t.range))})` : "";
+    return ` für ${pieceLabel(t)} auf ${t ? cellName(t.cell) : "?"}${price}, bezahlt ${src}`;
+  }
+  function eventText(e) {
+    switch (e.type) {
+      case "card_bought": return `${playerName(e.player)} kauft „${CARD(e.card).name}“ und zahlt ${invText(e.paid)}.`;
+      case "shield_blocked": return `Schild hält: ${playerName(e.by)} prallt auf ${cellName(e.at)} ab.`;
+      case "recruited": return `${playerName(e.owner)} bekommt einen Rekruten auf ${cellName(e.cell)}.`;
+      case "deposit_created": return `Neues Kat-1-Vorkommen auf ${cellName(e.cell)} (${colorOwner(e.resource)}).`;
+      case "moved": return null;
+      case "painted": return `${playerName(e.player)} färbt ${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}: ${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}.`;
+      case "cut_off": return `Land von ${playerName(e.from)} abgetrennt (${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}): ${e.to === null ? "wird neutral" : `geht an ${playerName(e.to)}`}.`;
+      case "enclosed": return `${playerName(e.player)} umschließt ${e.cells.length} neutrale${e.cells.length === 1 ? "s Feld" : " Felder"}: sie gehen an ${playerName(e.player)} (${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}).`;
+      case "reconnected": return `Figur von ${playerName(e.owner)} auf ${cellName(e.cell)} grenzt wieder an ihr Land: wieder aktiv, das Feld ist jetzt ${playerName(e.owner)}s.`;
+      case "income": return `Fabrik von ${playerName(e.player)} sammelt ${e.area} Fläche${e.gained.length ? ` und ${invText(e.gained)}` : ""}.`;
+      case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
+      case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
+      case "factory_destroyed": if (isTerr()) return `Fabrik von ${playerName(e.owner)} auf ${cellName(e.cell)} zerstört: Lager, Fläche und gelagerte Karte sind weg, es gibt keine neuen Figuren mehr.`;
+        return `Fabrik von ${playerName(e.owner)} auf ${cellName(e.cell)} zerstört; Beute: ${invText(e.loot)}.`;
+      case "spawned": return `${playerName(e.owner)} erhält eine Figur Stufe ${e.level}, Reichweite ${e.range}.`;
+      case "collected": return `König von ${playerName(e.player)} sammelt auf ${cellName(e.cell)}: ${invText(e.gained)}.`;
+      case "unloaded": return `König von ${playerName(e.player)} lädt ab: ${invText(e.amount)}.`;
+      case "factory_yield": return `Fabrik ${e.factory} sammelt ${invText(e.gained)}.`;
+      case "eliminated": return `${playerName(e.player)} scheidet aus.`;
+      case "passed": return `${playerName(e.player)} passt.`;
+      case "scored": return `Wertung nach ${(R.config || {}).score_after || ""} Runden: ${e.scores.map((n, p) => `${playerName(p)} ${n}`).join(", ")} (${scoreNote()}).`;
+      case "game_over":
+        if (e.outcome.type === "winner") return `Spielende: ${playerName(e.outcome.player)} gewinnt.`;
+        if (e.outcome.type === "points") return `Spielende: ${playerName(e.outcome.player)} gewinnt nach Wertung.`;
+        return "Spielende: unentschieden.";
+      default: return null;
+    }
+  }
+  function outcomeText(rep) {
+    const last = rep.frames.length - 1;
+    const round = last > 0 ? rep.frames[last - 1].round : 1;
+    if (!rep.outcome) return "läuft noch";
+    if (rep.outcome.type === "winner") return `${playerName(rep.outcome.player)} gewinnt in Runde ${round}`;
+    if (rep.outcome.type === "points") return `${playerName(rep.outcome.player)} gewinnt nach Wertung in Runde ${round}`;
+    return `unentschieden nach ${round} Runden`;
+  }
+  function gameLabel(rep) {
+    const bots = rep.bots || [];
+    const same = bots.length > 0 && bots.every((b) => b === bots[0]);
+    let who;
+    if (rep.players === 2) who = bots.join(" gegen ");
+    else if (same) who = `${rep.players} Spieler, alle ${bots[0]}`;
+    else who = `${rep.players} Spieler: ${bots.join(", ")}`;
+    return `Seed ${rep.seed} · ${who} · ${outcomeText(rep)}`;
+  }
+
+  // ----- Oberflaeche aktualisieren ------------------------------------------------------------
+  /** Wessen Lager und Kaufmoeglichkeiten gezeigt werden: du (gegen Bots), sonst wer am Zug ist. */
+  function focusPlayer(f) {
+    if (mode === "play" && live && R === liveR && !live.watch && live.opponent !== 2) return 0;
+    return f.current;
+  }
+  /** Rohstoffe als HTML: Kat-1-Farben als Rauten, Quader als Quadrate, Baelle als Kreise, je Farbe. */
+  function resHtml(inv) {
+    if (!inv.length) return "<span>nichts</span>";
+    const out = [];
+    for (const [r, n] of inv.filter(([r]) => category(r) === 1)) {
+      out.push(`<span><i class="chip1" style="background:${crystalColor(r)}"></i>${n}× ${escapeHtml(colorOwner(r))}</span>`);
+    }
+    for (let c = 2; c <= 4; c++) {
+      const items = inv.filter(([r]) => category(r) === c);
+      if (!items.length) continue;
+      const chips = items.map(([r, k]) =>
+        `<i class="chip${Math.min(c, 4)}" style="background:${crystalColor(r)}" title="${escapeHtml(colorOwner(r))}"></i>${k}`).join(" ");
+      out.push(`<span>${RES_NAME[c]}: ${chips}</span>`);
+    }
+    return out.join("");
+  }
+  // ----- Gebietsmodus: Preise und Lager -------------------------------------------------------
+  const catUnits = (inv, c) => inv.filter(([r]) => category(r) === c).reduce((a, [, n]) => a + n, 0);
+  /** Preis einer Figur im Gebietsmodus (wie unit_price im Spielkern). */
+  function terrPrice(level) {
+    const c = R.config;
+    if (level <= 1) return { area: c.terr_pawn, k1: 0, k2: 0, k3: 0 };
+    return { area: c.terr_area + (c.terr_area_step || 0) * (level - 2), k1: c.terr_k1, k2: level >= 3 ? c.terr_k2 : 0, k3: level >= 4 ? c.terr_k3 : 0 };
+  }
+  const terrMaxLevel = () => Math.min(R.board.corners.length, 4);
+  function terrPriceText(level) {
+    const p = terrPrice(level), parts = [`${p.area} Fläche`];
+    if (p.k1) parts.push(`${p.k1}× Kat 1`);
+    if (p.k2) parts.push(`${p.k2}× Kat 2`);
+    if (p.k3) parts.push(`${p.k3}× Kat 3`);
+    return parts.join(" + ");
+  }
+  const scoreNote = () => (isTerr() ? "Land + Figurenstufen" : "Figurenstufen + Fabriken + Farben");
+  function renderTerritoryStock(f, p) {
+    const fac = f.factories.find((x) => x.owner === p);
+    const rows = [];
+    if (!fac) {
+      rows.push(`<div class="loc"><b>Fabrik zerstört</b><span class="sub">Ohne Fabrik gibt es kein Einkommen und keine neuen Figuren. Nur der König entscheidet das Spiel noch.</span></div>`);
+      return rows;
+    }
+    const area = (f.area || [])[p] || 0;
+    rows.push(`<div class="loc"><b>Fabrik auf ${cellName(fac.cell)}</b><div class="res"><span>Fläche: <b style="display:inline">${area}</b></span>${resHtml(fac.storage)}</div>` +
+      `<span class="sub">Am Ende deines Zugs sammelt sie alle Felder ein, die an ihr hängen (je 1 Fläche), dazu die Rohstoffe auf diesen Feldern. Gebaut wird auf der Fabrik, sie muss frei sein.</span></div>`);
+    const color = PLAYER[p].color;
+    const req = (kind, have, need) => {
+      const ok = have >= need;
+      const mark = kind ? slotSvg(kind, ok ? color : null) : "<small>Fläche</small>";
+      const what = kind ? `Kat ${kind}` : "Fläche";
+      return `<span class="req${ok ? " ok" : ""}" title="${what}: ${have} von ${need}">${mark}${Math.min(have, need)}/${need}</span>`;
+    };
+    for (let level = 1; level <= terrMaxLevel(); level++) {
+      const pr = terrPrice(level);
+      const bits = [req(null, area, pr.area)];
+      let ok = area >= pr.area;
+      for (const c of [1, 2, 3]) {
+        const need = pr["k" + c];
+        if (!need) continue;
+        const have = catUnits(fac.storage, c);
+        bits.push(req(c, have, need));
+        ok = ok && have >= need;
+      }
+      rows.push(`<div class="loc ladder${ok ? " ok" : ""}"><b>Stufe ${level} · ${unitTitle(level)}${ok ? " – bezahlbar" : ""}</b><div class="res">${bits.join("")}</div></div>`);
+    }
+    const sc = (f.stored_card || [])[p];
+    rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – wirkt auf die nächste gebaute Figur.` : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit)."}</span></div>`);
+    return rows;
+  }
+  function renderStock(f) {
+    const p = focusPlayer(f);
+    const box = $("stockBox");
+    if (p === undefined || p === null || !f.alive[p]) { box.hidden = true; return; }
+    box.hidden = false;
+    const me = mode === "play" && live && R === liveR && live.seats[p] === "mensch";
+    $("stockTitle").textContent = `Lager von Spieler ${playerName(p)}${me ? " (du)" : ""}`;
+    if (isTerr()) { $("stock").innerHTML = renderTerritoryStock(f, p).join(""); return; }
+    const rows = [];
+    const carried = (f.carried || [])[p] || [];
+    rows.push(`<div class="loc"><b>König trägt</b><div class="res">${resHtml(carried)}</div>` +
+      `<span class="sub">Er lädt automatisch ab, wenn er auf einer eigenen Fabrik steht.</span></div>`);
+    const cfg = R.config || {};
+    for (const fac of f.factories.filter((x) => x.owner === p)) {
+      let sub = "";
+      if (fac.level) {
+        const preview = { king: false, level: fac.level, range: fac.level, perks: {} };
+        sub = `Auflösen ergäbe: <b style="display:inline">${unitTitle(fac.level)} (Stufe ${fac.level})</b> – ${escapeHtml(abilityText(preview))}.`;
+      } else {
+        sub = "Keine Farbe im Lager: noch keine Figur möglich.";
+      }
+      if (cfg.upgrade_step && fac.upgrade < (cfg.max_upgrades || 0)) {
+        const need = (fac.upgrade + 1) * cfg.upgrade_step, kinds = fac.upgrade + 1;
+        const min = cfg.upgrade_region_min || 1;
+        sub += ` Nächster Ausbau: ${Math.min(fac.upgrade_units, need)}/${need} Quader und Bälle` +
+          (kinds > 1 ? `, aus ${Math.min(fac.upgrade_kinds, kinds)}/${kinds} Regionen (je mindestens ${min} in der Farbe).` : ".");
+      }
+      rows.push(`<div class="loc"><b>Fabrik auf ${cellName(fac.cell)}</b><div class="res">${resHtml(fac.storage)}</div>` +
+        `<span class="sub">${sub}</span></div>`);
+    }
+    $("stock").innerHTML = rows.join("");
+  }
+  /** Was an einem Ort zum Bezahlen fehlt (fuer die Anzeige; die Regeln prueft der Spielkern). */
+  function shortfall(cost, inv, own) {
+    const units = (pred) => inv.filter(([r]) => pred(r)).reduce((a, [, n]) => a + n, 0);
+    const kinds = (pred) => inv.filter(([r]) => pred(r)).length;
+    const miss = [];
+    const c1 = (r) => category(r) === 1;
+    if (cost.foreign_color > units((r) => c1(r) && r !== own)) miss.push(`${cost.foreign_color}× fremde Farbe`);
+    const needColor = cost.color + cost.foreign_color;
+    if (needColor > units(c1) && cost.color) miss.push(`${needColor - units(c1)}× Farbe`);
+    for (const c of [2, 3]) {
+      const need = cost["k" + c], needKinds = cost["k" + c + "_kinds"];
+      const have = units((r) => category(r) === c), haveKinds = kinds((r) => category(r) === c);
+      if (need > have) miss.push(`${need - have}× ${RES_NAME[c]}`);
+      else if (needKinds > haveKinds) miss.push(`${RES_NAME[c]} in ${needKinds - haveKinds} weiteren Farbe${needKinds - haveKinds > 1 ? "n" : ""}`);
+    }
+    return miss;
+  }
+  function ownColorOf(p) {
+    const corner = R.player_corners[p];
+    const t = R.resource_types.find((x) => x.category === 1 && x.home === corner);
+    return t ? t.id : -1;
+  }
+  // ----- Kartenkosten als Symbole ---------------------------------------------------------------
+  /** Ein Platz im Preis: Raute (Kat 1), Quadrat (Quader, Kat 2) oder Kreis (Ball, Kat 3).
+   *  Gefuellt in der Farbe der Einheit, die dort bezahlt wuerde; gestrichelt, wenn sie fehlt. */
+  function slotSvg(kind, color) {
+    const filled = color !== null && color !== undefined;
+    const fill = filled ? color : "none";
+    const stroke = filled ? "rgba(0,0,0,.6)" : "currentColor";
+    const attrs = `fill="${fill}" stroke="${stroke}" stroke-width="1.6"${filled ? "" : ' stroke-dasharray="2.6 2"'}`;
+    const shape = kind === 1 ? `<polygon points="9,1.6 16.4,9 9,16.4 1.6,9" ${attrs}/>`
+      : kind === 2 ? `<rect x="2.6" y="2.6" width="12.8" height="12.8" rx="1.2" ${attrs}/>`
+        : `<circle cx="9" cy="9" r="6.6" ${attrs}/>`;
+    return `<svg class="slot${filled ? " on" : " off"}" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">${shape}</svg>`;
+  }
+  /** Wie `plan_payment` im Spielkern: welche Einheit bezahlt welchen Platz? null = fehlt noch. */
+  function slotPlan(cost, inv, own) {
+    const left = new Map(inv.map(([r, n]) => [r, n]));
+    const take = (fits, n, kinds) => {
+      const out = [], used = [];
+      for (let i = 0; i < n; i++) {
+        const distinct = i < kinds;
+        let best = null;
+        for (const [r, c] of left) {
+          if (c <= 0 || !fits(r) || (distinct && used.includes(r))) continue;
+          if (best === null || c > left.get(best) || (c === left.get(best) && r < best)) best = r;
+        }
+        if (best === null) { out.push(null); continue; }
+        left.set(best, left.get(best) - 1);
+        used.push(best);
+        out.push(best);
+      }
+      return out.sort((a, b) => (a === null) - (b === null));
+    };
+    const c1 = (r) => category(r) === 1;
+    const groups = [
+      { kind: 1, label: "fremde Farbe", name: "fremde Farbe", slots: take((r) => c1(r) && r !== own, cost.foreign_color, 0) },
+      { kind: 1, label: "", name: "Farbe", slots: take(c1, cost.color, 0) },
+      { kind: 2, label: cost.k2_kinds > 1 ? `in ${cost.k2_kinds} Farben` : "", name: "Quader", slots: take((r) => category(r) === 2, cost.k2, cost.k2_kinds) },
+      { kind: 3, label: cost.k3_kinds > 1 ? `in ${cost.k3_kinds} Farben` : "", name: "Ball", slots: take((r) => category(r) === 3, cost.k3, cost.k3_kinds) },
+    ].filter((g) => g.slots.length);
+    const missing = groups.reduce((s, g) => s + g.slots.filter((x) => x === null).length, 0);
+    return { groups, missing };
+  }
+  /** Die Symbolzeile einer Karte. `plan` null: nur der Preis, ohne Vergleich mit einem Lager. */
+  function slotsHtml(cost, plan) {
+    const groups = plan ? plan.groups : slotPlan(cost, [], -1).groups;
+    const parts = groups.map((g) => {
+      const need = g.slots.length, have = g.slots.filter((x) => x !== null).length;
+      const svgs = g.slots.map((x) => slotSvg(g.kind, x === null ? null : crystalColor(x))).join("");
+      const count = plan ? `${have}/${need}` : `${need}×`;
+      const tip = plan ? `${g.name}: ${have} von ${need} vorhanden` : `${need}× ${g.name}`;
+      const kindsTxt = g.label ? ` ${g.label}` : "";
+      return `<span class="sg" title="${escapeHtml(tip + kindsTxt)}">${svgs}<small>${count}${escapeHtml(kindsTxt)}</small></span>`;
+    });
+    return parts.join("");
+  }
+  /** Der Ort, an dem am wenigsten zum Bezahlen fehlt: Gepaeck des Koenigs oder eine Fabrik. */
+  function bestPlace(cost, places, own) {
+    let best = null;
+    for (const [name, inv] of places) {
+      const plan = slotPlan(cost, inv, own);
+      if (!best || plan.missing < best.plan.missing) best = { name, inv, plan };
+    }
+    return best;
+  }
+  function renderMarket(f) {
+    const market = R.market || [];
+    $("marketBox").hidden = market.length === 0;
+    if (!market.length) return;
+    const p = focusPlayer(f);
+    const acting = canAct();
+    const own = p === null || p === undefined ? -1 : ownColorOf(p);
+    $("marketNote").textContent = isTerr()
+      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Sie liegt neben der Fabrik und wirkt auf die nächste gebaute Figur; es passt nur eine."
+      : acting
+      ? "Eine Karte pro Zug, zusätzlich zu deinem Zug. Bezahlt wird aus einem Ort: dem Gepäck des Königs oder einer Fabrik."
+      : "Eine Karte pro Zug, zusätzlich zum Zug. Bezahlt wird aus einem Ort: Gepäck des Königs oder eine Fabrik.";
+    $("marketLegend").innerHTML =
+      `<span>${slotSvg(1, null)} Farbe (Kat 1)</span><span>${slotSvg(2, null)} Quader (Kat 2)</span><span>${slotSvg(3, null)} Ball (Kat 3)</span>` +
+      `<span class="lg-note">${p === null || p === undefined ? "Preis der Karte." : "Gefüllt: hast du am besten Ort, gestrichelt: fehlt noch."}</span>`;
+    const places = p === null || p === undefined || !f.alive[p] ? [] : [["Gepäck des Königs", (f.carried || [])[p] || []]]
+      .concat(f.factories.filter((x) => x.owner === p).map((x) => [`Fabrik ${cellName(x.cell)}`, x.storage]));
+    // Preis nach Reichweite: die billigste eigene Figur zaehlt.
+    const ranges = p === null || p === undefined ? [] : f.pieces.filter((x) => x.owner === p && !x.king).map((x) => x.range);
+    const minRange = ranges.length ? Math.min(...ranges) : 1;
+    const ul = $("market");
+    ul.innerHTML = "";
+    for (const c of market) {
+      const li = document.createElement("li");
+      const cost = costFor(c, minRange);
+      const best = places.length ? bestPlace(cost, places, own) : null;
+      const ready = best && best.plan.missing === 0;
+      const cardText = isTerr() ? c.text.replace(/ Preis je Reichweite der Figur\./, "") : c.text;
+      li.innerHTML = `<b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(cardText)}` +
+        (c.per_range ? `<span class="cost">Kosten: ${escapeHtml(costText(c))}. Gezeigt: Reichweite ${minRange}.</span>` : "") +
+        `<div class="slots" role="group" aria-label="${escapeHtml("Kosten: " + costText(c))}">${slotsHtml(cost, best ? best.plan : null)}</div>` +
+        (best ? `<span class="where${ready ? " ok" : ""}">${ready ? "Reicht" : "Am nächsten dran"}: ${escapeHtml(best.name)}</span>` : "");
+      if (acting) {
+        const options = [];
+        live.legal.forEach((a, i) => { if (a.type === "buy" && a.card === c.key) options.push([a, i]); });
+        if (options.length) {
+          li.classList.add("can");
+          const box = document.createElement("div");
+          box.className = "buy";
+          for (const [a, i] of options) {
+            const b = document.createElement("button");
+            b.type = "button"; b.className = "btn";
+            b.textContent = `Kaufen${buyWhere(a, f)}`;
+            b.addEventListener("click", () => humanAct(i));
+            box.appendChild(b);
+          }
+          li.appendChild(box);
+        } else if (f.bought_this_turn) {
+          li.insertAdjacentHTML("beforeend", `<span class="missing">In diesem Zug wurde schon eine Karte gekauft.</span>`);
+        } else {
+          const miss = best ? shortfall(cost, best.inv, own) : [];
+          const text = best && miss.length
+            ? `Es fehlt noch: ${miss.join(", ")}.`
+            : "Gerade nicht möglich (keine passende Figur oder Fabrik).";
+          li.insertAdjacentHTML("beforeend", `<span class="missing">${escapeHtml(text)}</span>`);
+        }
+      }
+      ul.appendChild(li);
+    }
+  }
+  /** Kurzfassung der Regeln einer Partie fuer die Zusammenfassung (leer bei alten Dateien). */
+  function rulesText(c) {
+    if (!c || !Array.isArray(c.regrow_rounds)) return "";
+    if (c.territory) {
+      const score = c.score_after ? `Wertung nach Runde ${c.score_after}` : "keine Wertung";
+      const cut = c.terr_cut_flips ? "Abgetrenntes Land fällt an den Gegner" : "Abgetrenntes Land wird neutral";
+      const a = (l) => c.terr_area + (c.terr_area_step || 0) * (l - 2);
+      const extra = [];
+      if (c.terr_reconnect === false) extra.push("ohne Wieder-Anbinden");
+      if (c.terr_enclose === false) extra.push("ohne Umschließen");
+      else if (c.terr_enclose_edge === true) extra.push("Brettrand zählt als Wand");
+      return `Gebietsmodus${extra.length ? ` (${extra.join(", ")})` : ""} · Bauer ${c.terr_pawn} Fläche · Stufe 2: ${a(2)} Fläche + ${c.terr_k1} Kat 1 · Stufe 3: ${a(3)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 · Stufe 4: ${a(4)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 + ${c.terr_k3} Kat 3 · ${cut} · ${score}`;
+    }
+    const cats = R.players >= 6 ? 4 : 3;
+    const rg = c.regrow_rounds.slice(0, cats);
+    const regrow = rg.every((n) => n === 0)
+      ? "nichts wächst nach"
+      : `Nachwachsen (Kat ${rg.map((_, i) => i + 1).join("/")}) nach ${rg.map((n) => (n === 0 ? "nie" : n)).join("/")} Runden`;
+    const score = c.score_after ? `Wertung nach Runde ${c.score_after}` : "keine Wertung";
+    const cards = c.market_size ? `${c.market_size} Karten` : "ohne Karten";
+    const roles = c.kat_roles ? " · Rollen: Kat 2 = Bauern, Kat 3 = Spezialzüge" : "";
+    return `${regrow} · ${score} · ${cards}${roles}`;
+  }
+  function renderPanel() {
+    const f = R.frames[fi];
+    const last = R.frames.length - 1;
+    $("summary").innerHTML =
+      `<strong>Seed <span class="mono">${R.seed}</span></strong> · ${boardText()} · ` +
+      `${R.players} Spieler · ${R.frames.length - 1} ${R.frames.length === 2 ? "Zug" : "Züge"}<br>Ergebnis: <strong>${outcomeText(R)}</strong>` +
+      (rulesText(R.config) ? `<br><span title="Die Regeln dieser Partie">Regeln: ${escapeHtml(rulesText(R.config))}</span>` : "");
+
+    const players = $("players");
+    players.innerHTML = "";
+    for (let p = 0; p < R.players; p++) {
+      const mine = f.pieces.filter((x) => x.owner === p);
+      const units = mine.filter((x) => !x.king);
+      const facs = f.factories.filter((x) => x.owner === p);
+      const stock = facs.reduce((s, x) => s + total(x.storage), 0);
+      const carried = f.carried[p] || [];
+      const colors = carried.filter(([res]) => category(res) === 1).map(([res]) => crystalColor(res));
+      const isWinner = fi === last && R.outcome && (R.outcome.type === "winner" || R.outcome.type === "points") && R.outcome.player === p;
+      const turn = fi < last && f.current === p && f.alive[p];
+      const div = document.createElement("div");
+      div.className = "player" + (turn ? " turn" : "") + (f.alive[p] ? "" : " out");
+      const levels = units.reduce((acc, u) => { acc[u.level] = (acc[u.level] || 0) + 1; return acc; }, {});
+      const levelText = Object.keys(levels).length
+        ? Object.entries(levels).map(([l, n]) => `${n}×St.${l}`).join(" ")
+        : "keine";
+      let tag = "";
+      if (isWinner) tag = `<span class="tag win">Sieger</span>`;
+      else if (!f.alive[p]) tag = `<span class="tag">ausgeschieden</span>`;
+      else if (turn) tag = `<span class="tag">am Zug</span>`;
+      const pp = (f.player_perks || [])[p];
+      const cardBits = [];
+      if (pp) {
+        if (pp.mining) cardBits.push("Bergbau");
+        if (pp.farming) cardBits.push("Ackerbau");
+        if (pp.runes) cardBits.push(`Runen ${pp.runes}/3`);
+        if (pp.shards) cardBits.push(`Splitter ${pp.shards}/3`);
+        if (pp.cards_bought) cardBits.push(`${pp.cards_bought} Karten gekauft`);
+      }
+      // Wertung wie im Spielkern: Figurenstufen + Fabriken + Farben (Region/Zentrum) im Besitz.
+      const held = new Set();
+      for (const [res] of carried) held.add(typeInfo(res).home === null ? `z${res}` : typeInfo(res).home);
+      for (const x of facs) for (const [res] of x.storage) held.add(typeInfo(res).home === null ? `z${res}` : typeInfo(res).home);
+      const score = f.alive[p] ? units.reduce((a, u) => a + u.level, 0) + facs.length + held.size : 0;
+      const scoreAt = (R.config || {}).score_after || 0;
+      const facLevels = facs.map((x) => x.level).filter((l) => l > 0);
+      const facText = facLevels.length ? ` → St.${facLevels.join("/")}` : "";
+      let statsHtml;
+      if (isTerr()) {
+        const landN = f.land.filter((o) => o === p).length;
+        let linkedN = 0;
+        for (let c = 0; c < f.land.length; c++) if (f.land[c] === p && f.linked[c]) linkedN++;
+        const tscore = f.alive[p] ? landN + units.reduce((a, u) => a + u.level, 0) : 0;
+        statsHtml =
+          `<span>Figuren ${levelText}</span>` +
+          `<span title="Felder in der Farbe des Spielers; verbunden = hängt an der Fabrik und bringt Fläche.">Land ${landN}${f.anchored[p] ? ` (${linkedN} verbunden)` : ""}</span>` +
+          `<span title="Gesammelte Fläche: damit werden Figuren gebaut.">Fläche ${(f.area || [])[p] || 0}</span>` +
+          `<span>Fabrik ${facs.length ? `steht (Lager ${stock})` : "zerstört"}</span>` +
+          (scoreAt ? `<span title="Land + Figurenstufen. Nach Runde ${scoreAt} entscheidet sie, wenn niemand gewonnen hat (bei Gleichstand Fläche und Rohstoffe).">Wertung ${tscore}</span>` : "");
+      } else {
+        statsHtml =
+          `<span>Figuren ${levelText}</span><span>Fabriken ${facs.length}${facText} (Lager ${stock})</span>` +
+          `<span>Gepäck ${total(carried)} <span class="dots">${colors.map((c) => `<i style="background:${c}"></i>`).join("")}</span></span>` +
+          (scoreAt ? `<span title="Figurenstufen + Fabriken + Farben im Besitz. Nach Runde ${scoreAt} entscheidet sie, wenn niemand gewonnen hat (bei Gleichstand die meisten Rohstoffe).">Wertung ${score}</span>` : "");
+      }
+      div.innerHTML =
+        `<span class="chip" style="background:${PLAYER[p].color}">${PLAYER[p].name}</span>` +
+        `<div class="pname">Spieler ${PLAYER[p].name} <small>${seatLabel(p)}</small> ${tag}</div>` +
+        `<div class="pstats">${statsHtml}</div>` +
+        (cardBits.length ? `<div class="perks">${escapeHtml(cardBits.join(" · "))}</div>` : "");
+      players.appendChild(div);
+    }
+
+    renderStock(f);
+    renderMarket(f);
+
+    const list = $("events");
+    list.innerHTML = "";
+    const lines = f.events.map(eventText).filter(Boolean);
+    if (!lines.length) {
+      const li = document.createElement("li");
+      li.className = "none";
+      li.textContent = fi === 0 ? "Noch kein Zug gespielt." : "Keine weiteren Ereignisse.";
+      list.appendChild(li);
+    }
+    for (const line of lines) {
+      const li = document.createElement("li");
+      li.textContent = line;
+      list.appendChild(li);
+    }
+
+    const { who, text } = actionText(fi);
+    const when = fi === 0 ? "Start" : `Runde ${roundOf(fi)} · Zug ${fi}/${last}`;
+    const whoHtml = who === null ? "" : `<span class="chip" style="display:inline-grid;width:22px;height:22px;font-size:0.75rem;vertical-align:middle;background:${PLAYER[who].color}">${PLAYER[who].name}</span> `;
+    $("status").innerHTML = `<span class="when">${when}</span><span class="what">${whoHtml}${escapeHtml(text)}</span>`;
+
+    $("scrub").max = String(last);
+    $("scrub").value = String(fi);
+    $("play").setAttribute("aria-label", playing ? "Anhalten" : "Abspielen");
+    $("playIcon").setAttribute("d", playing ? "M5 4h4v12H5zM11 4h4v12h-4z" : "M6 4v12l10-6z");
+    renderTurnBox();
+  }
+  function boardText() {
+    const n = R.board.cells.length;
+    if (R.board.kind === "square") return `Karte ${R.side}×${R.side}`;
+    if (R.board.kind === "triangle") return `Dreieck, Seite ${R.side}, ${n} Felder`;
+    const names = { 5: "Fünfeck", 6: "Sechseck", 7: "Siebeneck", 8: "Achteck" };
+    return `${names[R.board.corners.length] || R.board.corners.length + "-Eck"}, Seite ${R.side}, ${n} Felder`;
+  }
+  function seatLabel(p) {
+    const name = (R.bots || [])[p] || "";
+    if (name !== "mensch") return R === liveR ? `Bot ${name}` : name;
+    return live && live.opponent === 2 ? "Mensch" : "du";
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  function goTo(i, animate) {
+    if (!R) return;
+    const next = Math.max(0, Math.min(R.frames.length - 1, i));
+    if (animate && next === fi + 1 && !reduceMotion) {
+      tween = { from: fi, to: next, start: performance.now(), dur: Math.min(380, Number($("speed").value) * 0.75) };
+    } else {
+      tween = null;
+    }
+    fi = next;
+    renderPanel();
+    requestAnimationFrame(draw);
+    if (fi === R.frames.length - 1 && !watching()) setPlaying(false);
+  }
+
+  let timer = null;
+  function setPlaying(on) {
+    if (watching()) {
+      // Bot gegen Bot: Abspielen = Bots ziehen lassen, Anhalten = Bots warten.
+      playing = on && !live.outcome;
+      clearTimeout(timer);
+      if (playing) {
+        goTo(R.frames.length - 1, false);
+        scheduleBots();
+      } else {
+        clearTimeout(botTimer);
+      }
+      renderPanel();
+      return;
+    }
+    playing = on;
+    clearTimeout(timer);
+    if (playing) {
+      if (fi === R.frames.length - 1) goTo(0, false);
+      const step = () => {
+        if (!playing) return;
+        goTo(fi + 1, true);
+        if (playing) timer = setTimeout(step, Number($("speed").value));
+      };
+      timer = setTimeout(step, 120);
+    }
+    if (R) renderPanel();
+  }
+
+  // ----- Tooltip -----------------------------------------------------------------------------
+  function showTip(cell, mx, my) {
+    const tip = $("tip");
+    if (cell === null) { tip.hidden = true; return; }
+    const f = R.frames[fi];
+    const t = R.territories[cell];
+    const region = t >= 0 ? TERRAIN[t % TERRAIN.length].name : NEUTRAL.name;
+    const stock = R.config.deposit_stock || 0;
+    const deps = liveDeposits(f, cell).map((res) => {
+      const info = typeInfo(res);
+      const home = info.home === null || info.home === undefined ? "Zentrum"
+        : R.cornerPlayer[info.home] >= 0 ? `Gebiet ${playerName(R.cornerPlayer[info.home])}` : "freie Ecke";
+      let left = "";
+      if (stock > 0) {
+        const h = (f.harvested || []).find(([c, r]) => c === cell && r === res);
+        left = `, noch ${stock - (h ? h[2] : 0)}`;
+      }
+      const wait = regrowLeft(f, cell, res);
+      const back = wait ? `, abgebaut, wieder da in ${wait} Runde${wait > 1 ? "n" : ""}` : "";
+      return `${RES_NAME[info.category]} (Kat ${info.category}), Farbe: ${home}${left}${back}`;
+    });
+    const extraHere = (f.extra_deposits || []).find(([c]) => c === cell);
+    const used = R.deposits[cell].length + (extraHere ? extraHere[1].length : 0) - deps.length;
+    if (used > 0) deps.push(`${used} Vorkommen verbraucht`);
+    const piece = f.pieces.find((p) => p.cell === cell);
+    const fac = f.factories.find((x) => x.cell === cell);
+    const loot = f.loot.find((l) => l.cell === cell);
+    const rows = [];
+    if (piece) {
+      const extra = perkText(piece.perks);
+      rows.push(piece.king
+        ? `König von ${playerName(piece.owner)}: ${abilityText(piece)}`
+        : `${unitTitle(piece.level)} von ${playerName(piece.owner)} (Stufe ${piece.level}, Reichweite ${piece.range}${extra ? `; ${extra}` : ""}): ${abilityText(piece)}`);
+    }
+    if (fac) {
+      const lvl = fac.level ? `; Auflösen ergäbe ${unitTitle(fac.level)} (Stufe ${fac.level})` : "";
+      rows.push(`Fabrik von ${playerName(fac.owner)}, Lager: ${invText(fac.storage)}${lvl}`);
+    }
+    if (loot) rows.push(`Beute: ${invText(loot.items)}`);
+    if (isTerr()) {
+      const o = f.land[cell];
+      rows.unshift(o < 0 ? "Neutrales Land (weiß)"
+        : `Land von ${playerName(o)}${f.anchored[o] ? "" : " (seine Fabrik ist zerstört)"}`);
+      if (piece && helpless(f, piece)) rows.push("Wehrlos: nicht mit dem eigenen Land verbunden, färbt nichts und kann nicht schlagen.");
+    }
+    tip.innerHTML =
+      `<b>${cellName(cell)}</b> · ${region}` +
+      `<ul>${(deps.length ? deps : ["keine Rohstoffe"]).map((d) => `<li>${d}</li>`).join("")}` +
+      `${rows.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul>`;
+    tip.hidden = false;
+    const wrap = canvas.parentElement.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let left = mx + 14, top = my + 14;
+    if (left + tw > wrap.width) left = Math.max(0, mx - tw - 14);
+    if (top + th > wrap.height) top = Math.max(0, my - th - 14);
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+  function pointer(ev) {
+    if (!R || !geo) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const cell = cellAt(mx, my);
+    modifiersChanged(ev.shiftKey, ev.ctrlKey || ev.metaKey);
+    if (cell !== hoverCell) { hoverCell = cell; requestAnimationFrame(draw); }
+    showTip(cell, mx, my);
+  }
+  canvas.addEventListener("pointermove", pointer);
+  let downAt = null;
+  canvas.addEventListener("pointerdown", (ev) => { downAt = [ev.clientX, ev.clientY]; pointer(ev); });
+  canvas.addEventListener("pointerup", (ev) => {
+    if (!downAt || !R || !geo) return;
+    const moved = Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]);
+    downAt = null;
+    if (moved > 10 || !canAct()) return;
+    $("tip").hidden = true;
+    const rect = canvas.getBoundingClientRect();
+    const cell = cellAt(ev.clientX - rect.left, ev.clientY - rect.top);
+    if (ev.shiftKey) routeClick(cell, "auto");
+    else if (ev.ctrlKey || ev.metaKey) routeClick(cell, "tile");
+    else boardClick(cell);
+  });
+  canvas.addEventListener("contextmenu", (ev) => { if (ev.ctrlKey) ev.preventDefault(); });
+  canvas.addEventListener("pointerleave", () => { hoverCell = null; $("tip").hidden = true; requestAnimationFrame(draw); });
+
+  // ----- Legende -----------------------------------------------------------------------------
+  function legend() {
+    const items = [
+      ["king", "König: sammelt, baut Fabriken. Fällt er, ist der Spieler raus."],
+      ["unit1", "Bauer (Stufe 1): zieht und schlägt geradeaus. Zahl = Stufe, Punkte = Reichweite."],
+      ["unit2", "Krieger (Stufe 2, Helm): zieht frei um Ecken. Ritter (3) mit Helmbusch, Held (4) mit Umhang."],
+      ["unitCards", "Karten sieht man an der Figur: Lanze, weiße Schärpe = Läuferschlag, Pferdekopf, Feder = Sprungfeder, Flügel = Lange Beine, Sterne = Stufen durch Karten."],
+      ["factory", "Fabrik: der König baut sie mit Kat 1 aus dem Gepäck auf jedem freien Feld; sie sammelt Quader und Bälle von Feld und Nachbarn. 10 davon: Stufe +1. 20 aus zwei Regionen (zwei Farben): Stufe +2."],
+      ["pill", "Lager über Fabrik und König: Rauten = Kat-1-Farben, Quadrat = Quader, Kreis = Ball, je in der Farbe der Region; →2 = Stufe der Figur beim Auflösen."],
+      ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Limette, Braun, Silber, Cyan = Zentrumsfarben. Nach dem Abbau 20 Runden weg (bei Quadern 5, bei Bällen 3); der König erntet es beim Betreten und trägt es im Gepäck: damit baut er eine Fabrik oder bringt eine neue Farbe in eine Fabrik (höhere Stufe)."],
+      ["ingot", "Quader (Kat 2) in der Farbe seiner Region. Nach dem Abbau weg, nach 5 Runden wieder da (blass mit Zahl = Runden bis dahin)."],
+      ["grain", "Ball (Kat 3) in der Farbe seiner Region. Nach 3 Runden wieder da."],
+      ["barrel", "Kat 4 (ab 6 Spielern)"],
+      ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
+      ["land", "Gebietsmodus: Land in der Farbe des Spielers. Jedes Feld auf dem Weg einer Figur wird ihre Farbe, betritt ein Gegner es, kippt es um."],
+      ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt: sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist. Es genügt, dass sie neben ihrem verbundenen Land steht: dann färbt sie ihr Feld und ist wieder aktiv."],
+    ];
+    const dl = $("legend");
+    dl.innerHTML = "";
+    const saved = geo;
+    for (const [kind, text] of items) {
+      const dt = document.createElement("dt");
+      const c = document.createElement("canvas");
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      c.width = 40 * dpr; c.height = 40 * dpr;
+      dt.appendChild(c);
+      const dd = document.createElement("dd");
+      dd.textContent = text;
+      dl.append(dt, dd);
+      const lc = c.getContext("2d");
+      lc.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx = lc;
+      try {
+        geo = { W: 46 };
+        if (kind === "king") drawKing(20, 34, PLAYER[0].color);
+        if (kind === "unit1") drawUnit(20, 33, PLAYER[1].color, { level: 1, range: 1, perks: {} });
+        if (kind === "unit2") drawUnit(20, 35, PLAYER[1].color, { level: 3, range: 3, perks: {} });
+        if (kind === "unitCards") drawUnit(22, 35, PLAYER[4].color, { level: 2, range: 3, perks: { lance: true, diagonal: true, horse: true, extra_range: 1, card_levels: 1 } });
+        geo = { W: 38 };
+        if (kind === "factory") drawFactory(20, 34, PLAYER[2].color, null);
+        geo = { W: 30 };
+        if (kind === "pill") drawPill(20, 13, [PLAYER[0].color], [[2, "5", PLAYER[0].color], [3, "7", PLAYER[1].color]], 2);
+        geo = { W: 46 };
+        if (kind === "crystal") drawCrystal(20, 34, 22, PLAYER[3].color);
+        if (kind === "ingot") drawIngot(20, 28, 24, PLAYER[0].color);
+        if (kind === "grain") drawGrain(20, 32, 24, PLAYER[1].color);
+        if (kind === "barrel") drawBarrel(20, 34, 40);
+        if (kind === "loot") drawLoot(20, 28);
+        if (kind === "land") {
+          lc.fillStyle = mixHex(PLAYER[0].color, "#ffffff", 0.5);
+          lc.fillRect(6, 10, 28, 20);
+          lc.strokeStyle = "rgba(0,0,0,0.25)";
+          lc.strokeRect(6.5, 10.5, 27, 19);
+        }
+        if (kind === "helpless") {
+          lc.globalAlpha = 0.5;
+          drawUnit(20, 33, PLAYER[1].color, { level: 1, range: 1, perks: {} });
+          lc.globalAlpha = 1;
+        }
+      } finally {
+        ctx = boardCtx;
+      }
+    }
+    geo = saved;
+  }
+
+  // ----- Spielen ------------------------------------------------------------------------------
+  function canAct() {
+    return mode === "play" && live && !live.outcome && live.humanToMove && R === liveR && fi === R.frames.length - 1;
+  }
+  /** Laufende Partie ganz ohne Menschen: Abspielen/Anhalten steuert die Bots. */
+  function watching() {
+    return mode === "play" && live && live.watch && R === liveR;
+  }
+  function botOnce() {
+    if (!live || live.outcome || live.humanToMove) return;
+    try {
+      pushStep(callWasm("sv_bot_step"));
+    } catch (err) {
+      showPlayError(err.message);
+    }
+  }
+  function destinations(pieceId) {
+    return live.legal.filter((a) => a.type === "move" && a.piece === pieceId).map((a) => a.to);
+  }
+  function movablePieces() {
+    return [...new Set(live.legal.filter((a) => a.type === "move").map((a) => a.piece))];
+  }
+  function boardClick(cell) {
+    if (!canAct()) return;
+    const f = R.frames[fi];
+    if (cell !== null && selected !== null) {
+      const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === cell);
+      if (i >= 0) { humanAct(i); return; }
+    }
+    const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
+    selected = piece && destinations(piece.id).length ? piece.id : null;
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  // ----- Premoves -------------------------------------------------------------------------------
+  /** Nachbarfelder (gemeinsame Kante), aus den Feldumrissen abgeleitet; gilt fuer jede Brettform. */
+  function boardAdj(board) {
+    const b = board || R.board;
+    if (b.adj) return b.adj;
+    const key = ([x, y]) => `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
+    const edges = new Map();
+    b.shapes.forEach((poly, c) => {
+      poly.forEach((p, i) => {
+        const q = poly[(i + 1) % poly.length];
+        const k = [key(p), key(q)].sort().join("|");
+        if (!edges.has(k)) edges.set(k, []);
+        edges.get(k).push(c);
+      });
+    });
+    const adj = b.cells.map(() => []);
+    for (const cs of edges.values()) {
+      if (cs.length === 2) { adj[cs[0]].push(cs[1]); adj[cs[1]].push(cs[0]); }
+    }
+    b.adj = adj;
+    return adj;
+  }
+  function enemyAt(f, cell, owner) {
+    return f.pieces.some((q) => q.cell === cell && q.owner !== owner) ||
+      f.factories.some((x) => x.cell === cell && x.owner !== owner);
+  }
+  /** Kuerzester Weg ueber freie Felder; nur das Ziel darf ein Gegner sein (Angriff am Ende). */
+  function shortestPath(f, piece, from, to) {
+    if (from === to) return [from];
+    const blocked = new Set();
+    for (const p of f.pieces) if (p.id !== piece.id) blocked.add(p.cell);
+    for (const x of f.factories) if (x.owner !== piece.owner) blocked.add(x.cell);
+    if (blocked.has(to) && !enemyAt(f, to, piece.owner)) return null;
+    const adj = boardAdj();
+    const prev = new Map([[from, -1]]);
+    const queue = [from];
+    for (let i = 0; i < queue.length && !prev.has(to); i++) {
+      for (const n of adj[queue[i]]) {
+        if (prev.has(n) || (blocked.has(n) && n !== to)) continue;
+        prev.set(n, queue[i]);
+        queue.push(n);
+      }
+    }
+    if (!prev.has(to)) return null;
+    const path = [];
+    for (let c = to; c !== -1; c = prev.get(c)) path.push(c);
+    return path.reverse();
+  }
+  /** Weg, den die Vorschau gerade zeigt (Shift: automatisch; Strg: Kacheln plus naechste). */
+  function previewRoute() {
+    if (!canAct() || selected === null || hoverCell === null) return null;
+    const f = R.frames[fi], piece = f.byId.get(selected);
+    if (!piece) return null;
+    if (ctrlDown || ctrlPath) {
+      const base = ctrlPath ? ctrlPath.cells : [piece.cell];
+      const ext = shortestPath(f, piece, base[base.length - 1], hoverCell);
+      return ctrlDown && ext && ext.length > 1 ? base.concat(ext.slice(1)) : (ctrlPath ? ctrlPath.cells : null);
+    }
+    if (shiftDown) return shortestPath(f, piece, piece.cell, hoverCell);
+    return null;
+  }
+  function routeClick(cell, how) {
+    if (!canAct() || cell === null) return;
+    const f = R.frames[fi];
+    if (selected === null) { boardClick(cell); return; } // erst eine Figur waehlen
+    const piece = f.byId.get(selected);
+    if (!piece) return;
+    if (how === "auto") {
+      const path = shortestPath(f, piece, piece.cell, cell);
+      if (!path || path.length < 2) { routeNote = "Dorthin gibt es keinen freien Weg."; renderTurnBox(); return; }
+      commitRoute(piece, path);
+    } else {
+      const base = ctrlPath ? ctrlPath.cells : [piece.cell];
+      const ext = shortestPath(f, piece, base[base.length - 1], cell);
+      if (!ext || ext.length < 2) { routeNote = "Dorthin gibt es keinen freien Weg."; renderTurnBox(); return; }
+      ctrlPath = { piece: piece.id, cells: base.concat(ext.slice(1)) };
+      routeNote = "";
+      renderTurnBox();
+      requestAnimationFrame(draw);
+    }
+  }
+  function commitRoute(piece, cells) {
+    routes = routes.filter((r) => r.piece !== piece.id);
+    routes.push({ piece: piece.id, owner: piece.owner, cells });
+    selected = null; ctrlPath = null; routeNote = "";
+    runPremove();
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  function cancelRoutes(note) {
+    clearTimeout(premoveTimer);
+    routes = []; ctrlPath = null;
+    routeNote = note || "";
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  /** Spielt den naechsten Schritt der ersten Route, die gerade dran ist (ein Zug je Runde). */
+  function runPremove() {
+    clearTimeout(premoveTimer);
+    if (!canAct() || !routes.length) return;
+    const f = R.frames[fi];
+    for (const r of routes.slice()) {
+      if (r.owner !== f.current) continue;
+      const drop = (why) => { routes = routes.filter((x) => x !== r); routeNote = why; };
+      const piece = f.byId.get(r.piece);
+      const at = piece ? r.cells.indexOf(piece.cell) : -1;
+      if (!piece) { drop("Route beendet: die Figur ist nicht mehr da."); continue; }
+      if (at < 0) { drop("Route abgebrochen: die Figur steht nicht mehr auf dem Weg."); continue; }
+      if (at === r.cells.length - 1) { drop("Route beendet: Ziel erreicht."); continue; }
+      let best = -1, bestAction = -1;
+      live.legal.forEach((a, i) => {
+        if (a.type !== "move" || a.piece !== r.piece) return;
+        const j = r.cells.indexOf(a.to);
+        if (j <= at) return;
+        if (enemyAt(f, a.to, piece.owner) && j !== r.cells.length - 1) return; // unterwegs nie schlagen
+        if (j > best) { best = j; bestAction = i; }
+      });
+      if (bestAction < 0) { drop("Route abgebrochen: der Weg ist versperrt."); continue; }
+      if (best === r.cells.length - 1) {
+        routes = routes.filter((x) => x !== r);
+        routeNote = "Route beendet: Ziel erreicht.";
+      }
+      humanAct(bestAction);
+      return;
+    }
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  function schedulePremove() {
+    clearTimeout(premoveTimer);
+    if (mode !== "play" || !live || live.outcome || !live.humanToMove || !routes.length) return;
+    premoveTimer = setTimeout(runPremove, botDelay());
+  }
+  function drawRoute(cells, color, alpha, dashed) {
+    if (cells.length < 2) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(2, geo.W * 0.07);
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    if (dashed) ctx.setLineDash([geo.W * 0.16, geo.W * 0.14]);
+    ctx.beginPath();
+    cells.forEach((c, i) => {
+      const [sx, sy] = iso(...R.board.cells[c]);
+      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    cells.slice(1).forEach((c, i) => {
+      const [sx, sy] = iso(...R.board.cells[c]);
+      ctx.beginPath();
+      ctx.arc(sx, sy, geo.W * (i === cells.length - 2 ? 0.13 : 0.07), 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+  function drawRoutes(f) {
+    if (mode !== "play" || !live || R !== liveR || fi !== R.frames.length - 1) return;
+    const accent = cssVar("--accent") || "#2f55a4";
+    for (const r of routes) {
+      const piece = f.byId.get(r.piece);
+      const at = piece ? r.cells.indexOf(piece.cell) : -1;
+      if (at >= 0) drawRoute(r.cells.slice(at), PLAYER[r.owner].color, 0.85, false);
+    }
+    if (ctrlPath) drawRoute(ctrlPath.cells, accent, 0.8, false);
+    const prev = previewRoute();
+    if (prev) drawRoute(prev, accent, 0.72, true);
+  }
+  function callWasm(name, ...args) {
+    const code = wasm[name](...args);
+    const ptr = wasm.sv_out_ptr(), len = wasm.sv_out_len();
+    const text = new TextDecoder().decode(new Uint8Array(wasm.memory.buffer, ptr, len));
+    const json = JSON.parse(text);
+    if (code !== 0) throw new Error(json.error || "Unbekannter Fehler im Spielkern");
+    return json;
+  }
+  function showPlayError(msg) {
+    const el = $("playError");
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+  function showMenuError(msg) {
+    const el = $("menuError");
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+
+  // ----- Startmenue: alle Regeln einstellbar ---------------------------------------------------
+  // Die Vorgaben (ph) spiegeln Config::new im Spielkern; sie erscheinen nur grau als Platzhalter.
+  // Gesendet wird nur, was jemand eintippt: leere Felder lassen dem Spielkern seinen Standard.
+  const menuPlayers = () => Number($("setPlayers").value) || 2;
+  const marketDefault = (p) => (p <= 4 ? 2 * p : p);
+  const sideRange = (p) => (p === 3 ? [6, 40] : p >= 5 ? [8, 30] : [6, 64]);
+  const RULE_GROUPS = [
+    { title: "Brett", fields: [
+      { key: "side", label: "Seitenlänge", ph: () => "10", hint: () => { const [a, b] = sideRange(menuPlayers()); return `Felder je Kante, bei ${menuPlayers()} Spielern ${a} bis ${b}.`; } },
+      { key: "min_factory_distance", label: "Mindestabstand zwischen Fabriken", ph: () => "3", hint: () => "in Schritten, 2 oder 3" },
+    ] },
+    { title: "Nachwachsen der Rohstoffe", note: "Ein abgebautes Vorkommen ist weg. Die Zahl sagt, nach wie vielen Runden es wieder da ist; 0 = nie.", fields: [
+      { key: "regrow_cat1", label: "Kat 1 (Kristalle der Farben)", ph: () => "20" },
+      { key: "regrow_cat2", label: "Kat 2", ph: () => "5" },
+      { key: "regrow_cat3", label: "Kat 3", ph: () => "3" },
+      { key: "regrow_cat4", label: "Kat 4 (nur ab 6 Spielern)", ph: () => "2" },
+    ] },
+    { title: "Ende und Wertung", fields: [
+      { key: "score_after", label: "Wertung nach Runde", ph: () => "100", hint: () => "Hat bis dahin niemand gewonnen, zählen Figurenstufen + Fabriken + Farben. 0 = keine Wertung." },
+      { key: "max_rounds", label: "Unentschieden nach Runde", ph: () => "300", hint: () => "Nur wichtig, wenn die Wertung ausgeschaltet ist." },
+    ] },
+    { title: "Karten", fields: [
+      { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
+      { key: "card_target_near", label: "Figurenkarten nur nahe am Zahlfeld", check: true },
+    ] },
+    { title: "Rollen der Kategorien (neu)", note: "Kat 1 baut Fabriken und gibt Stufen. Kat 2 kauft Bauern: Rekrut liegt immer im Markt, kostet nur Kat 2, die Fabrik bleibt stehen. Kat 3 kauft Spezialzüge (Lanze, Sprungfeder, Pferd, Läuferschlag, Lange Beine); Lanze, Sprungfeder, Pferd und Läuferschlag gehen auch auf den König. Die Karten im Markt kommen zum Rekruten dazu.", fields: [
+      { key: "kat_roles", label: "Rollen einschalten", check: true },
+      { key: "pawn_cost", label: "Kat 2 für einen Bauern", ph: () => "4", hint: () => "Einheiten einer Region, nur mit den Rollen." },
+    ] },
+    { title: "Gebietsmodus (neu)", note: "Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld: Bauer ab Fläche, Stufe 2 mit Fläche + Kat 1, Stufe 3 zusätzlich Kat 2, Stufe 4 zusätzlich Kat 3 (alles wird verbraucht). Karten liegen neben der Fabrik und wirken auf die nächste Figur. Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Nachwachsen, Ausbau und Rollen gelten hier nicht.", fields: [
+      { key: "territory", label: "Gebietsmodus einschalten", check: true },
+      { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
+      { key: "terr_area", label: "Fläche für Stufe 2", ph: () => "150" },
+      { key: "terr_area_step", label: "Mehr Fläche je weitere Stufe", ph: () => "50", hint: () => "Stufe 3 kostet so viel mehr als Stufe 2, Stufe 4 das Doppelte (Standard 150 / 200 / 250)." },
+      { key: "terr_k1", label: "Kat 1 für Stufe 2 (und höher)", ph: () => "20" },
+      { key: "terr_k2", label: "Kat 2 zusätzlich für Stufe 3", ph: () => "40" },
+      { key: "terr_k3", label: "Kat 3 zusätzlich für Stufe 4", ph: () => "60" },
+      { key: "terr_yield", label: "Ertrag je Vorkommen und Runde", ph: () => "1" },
+      { key: "terr_cut_flips", label: "Abgetrenntes Land fällt an den Gegner", ph: () => "1", hint: () => "1 = an den, der durchtrennt hat; 0 = wird neutral" },
+      { key: "terr_reconnect", label: "Wehrlose Figur wieder anbinden", ph: () => "1", hint: () => "1 = steht sie neben ihrem verbundenen Land, ist sie aktiv und färbt ihr Feld; 0 = aus" },
+      { key: "terr_enclose", label: "Umschlossene neutrale Fläche", ph: () => "1", hint: () => "1 = ganz umschlossene neutrale Fläche geht an die umschließende Farbe; 0 = aus" },
+      { key: "terr_enclose_edge", label: "Brettrand zählt als Wand", ph: () => "0", hint: () => "0 = eine neutrale Fläche am Brettrand wird nie umschlossen; 1 = der Rand ist eine Wand (ein „L“ aus der Ecke holt ein Quadrat)" },
+      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "16", hint: () => "Preise der Karten (Kat 2 und 3) mal diese Zahl. Pferd kostet so 32 Kat 2 und 32 Kat 3." },
+    ] },
+    { title: "Stufen der Fabriken", fields: [
+      { key: "upgrade_step", label: "Einheiten je Stufe", ph: () => "10", hint: () => "Je so viele Einheiten ab Kat 2 im Lager steigt die Stufe der kommenden Figur." },
+      { key: "upgrade_region_min", label: "Einheiten je Region", ph: () => "3", hint: () => "So viele einer Regionsfarbe müssen im Lager liegen, damit die Region zählt." },
+      { key: "max_upgrades", label: "Höchste Ausbaustufe", ph: () => "2" },
+    ] },
+    { title: "Erweitert: Rohstoffe auf der Karte", details: true, wide: true, fields: [
+      { key: "yield_per_round", label: "Ertrag je Vorkommen und Runde", ph: () => "1" },
+      { key: "deposit_stock", label: "Vorrat je Vorkommen", ph: () => "0", hint: () => "0 = unerschöpflich" },
+      { key: "cat1_cells", label: "Kat-1-Felder je Ecke", ph: () => "1" },
+      { key: "cat1_distance", label: "Abstand der eigenen Kat-1-Felder zum Start", ph: () => "2" },
+      { key: "center_colors", label: "Zentrumsfarben", ph: () => String(Math.ceil(menuPlayers() / 2)), hint: () => "Neutrale Kat-1-Farben um die Mitte, höchstens 8" },
+      { key: "center_radius", label: "Radius der Mitte", ph: () => "2" },
+      { key: "center_cells", label: "Felder je Zentrumsfarbe", ph: () => "3" },
+      { key: "center_mix", label: "Mischfelder in der Mitte", ph: () => "1" },
+      { key: "mid_cat1", label: "Kat-1-Felder je Spieler im Zwischenring", ph: () => "1" },
+    ] },
+  ];
+  const PRESETS = {
+    pc: {
+      note: "Wie bisher: Rohstoffe wachsen nach (Kat 1 nach 20, Kat 2 nach 5, Kat 3 nach 3 Runden), nach Runde 100 entscheidet die Wertung.",
+      rules: {},
+    },
+    roles: {
+      note: "Wie Computerspiel, aber mit den Rollen der Kategorien: Rekrut (Kat 2) liegt immer im Markt, Spezialzüge kosten nur Kat 3, Lanze, Sprungfeder, Pferd und Läuferschlag gehen auch auf den König.",
+      rules: { kat_roles: 1 },
+    },
+    territory: {
+      note: "Weißes Brett, eine Fabrik, Land färben und abtrennen, Figuren aus Fläche und Rohstoffen bauen. Nur der König entscheidet; zerstörte Fabrik = keine neuen Figuren.",
+      rules: { territory: 1 },
+    },
+    board: {
+      note: "Nichts wächst nach: jedes Vorkommen wird genau einmal abgebaut. So ließe sich das Spiel auf einem echten Brett mit Plättchen spielen; es endet, wenn keiner mehr gewinnen kann, spätestens mit der Wertung.",
+      rules: { regrow_cat1: 0, regrow_cat2: 0, regrow_cat3: 0, regrow_cat4: 0 },
+    },
+  };
+  const MENU_KEY = "spacevitan-menu-v1";
+  let preset = "pc";
+  let menuOpen = false;
+  const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
+  function buildMenu() {
+    const host = $("menuGroups");
+    for (const g of RULE_GROUPS) {
+      const box = document.createElement(g.details ? "details" : "fieldset");
+      box.className = "group" + (g.wide ? " wide" : "");
+      const head = document.createElement(g.details ? "summary" : "legend");
+      head.textContent = g.title;
+      box.appendChild(head);
+      if (g.note) {
+        const p = document.createElement("p");
+        p.className = "note";
+        p.textContent = g.note;
+        box.appendChild(p);
+      }
+      let inner = box;
+      if (g.details) {
+        inner = document.createElement("div");
+        inner.className = "inner";
+        box.appendChild(inner);
+      }
+      for (const f of g.fields) {
+        const label = document.createElement("label");
+        const name = document.createElement("span");
+        name.textContent = f.label;
+        const input = document.createElement("input");
+        input.dataset.rule = f.key;
+        if (f.check) {
+          label.className = "check";
+          input.type = "checkbox";
+          label.append(input, name);
+        } else {
+          input.type = "number";
+          input.min = "0";
+          input.step = "1";
+          input.inputMode = "numeric";
+          label.append(name, input);
+          if (f.hint) {
+            const small = document.createElement("small");
+            small.dataset.hintFor = f.key;
+            label.appendChild(small);
+          }
+        }
+        input.id = `rule_${f.key}`;
+        label.htmlFor = input.id;
+        input.addEventListener("input", () => { markCustom(); refreshMenu(); });
+        input.addEventListener("change", () => { markCustom(); refreshMenu(); });
+        inner.appendChild(label);
+      }
+      host.appendChild(box);
+    }
+    refreshMenu();
+  }
+  /** Platzhalter und Hinweise folgen der Spielerzahl; belegte Felder bekommen einen Rand. */
+  function refreshMenu() {
+    const fields = new Map();
+    for (const g of RULE_GROUPS) for (const f of g.fields) fields.set(f.key, f);
+    for (const input of ruleInputs()) {
+      const f = fields.get(input.dataset.rule);
+      if (!f) continue;
+      if (!f.check) {
+        input.placeholder = f.ph();
+        input.classList.toggle("set", input.value.trim() !== "");
+        const small = document.querySelector(`[data-hint-for="${f.key}"]`);
+        if (small) small.textContent = f.hint ? f.hint() : "";
+      }
+    }
+    const kat4 = $("rule_regrow_cat4");
+    if (kat4) kat4.disabled = menuPlayers() < 6;
+  }
+  function markCustom() {
+    if (preset === "custom") return;
+    preset = "custom";
+    syncPresetButtons();
+  }
+  function syncPresetButtons() {
+    for (const b of document.querySelectorAll(".preset[data-preset]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.preset === preset));
+    }
+    $("presetNote").textContent = preset === "custom"
+      ? "Eigene Einstellungen. Die Vorlagen oben setzen die Regelfelder zurück und füllen sie neu."
+      : PRESETS[preset].note;
+  }
+  function clearRuleFields() {
+    for (const input of ruleInputs()) {
+      if (input.type === "checkbox") input.checked = false;
+      else input.value = "";
+    }
+  }
+  function applyPreset(name) {
+    clearRuleFields();
+    for (const [key, value] of Object.entries(PRESETS[name].rules)) {
+      const input = $(`rule_${key}`);
+      if (!input) continue;
+      if (input.type === "checkbox") input.checked = Boolean(value);
+      else input.value = String(value);
+    }
+    preset = name;
+    syncPresetButtons();
+    refreshMenu();
+  }
+  /** Text `name=wert,...` fuer den Spielkern aus den belegten Feldern. */
+  function ruleText() {
+    const parts = [];
+    for (const input of ruleInputs()) {
+      if (input.disabled) continue;
+      const key = input.dataset.rule;
+      if (input.type === "checkbox") {
+        if (input.checked) parts.push(`${key}=1`);
+        continue;
+      }
+      const raw = input.value.trim();
+      if (raw === "") continue;
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 0) {
+        const label = input.closest("label").querySelector("span").textContent;
+        throw new Error(`„${label}“: bitte eine ganze Zahl ab 0 eintragen.`);
+      }
+      parts.push(`${key}=${n}`);
+    }
+    return parts.join(",");
+  }
+  function sendRules(text) {
+    if (typeof wasm.sv_set_rules !== "function" || typeof wasm.sv_in_reserve !== "function") {
+      if (text) throw new Error("Dieser Spielkern kennt noch keine Regeleinstellungen. Bitte die neueste Seite laden.");
+      return;
+    }
+    const bytes = new TextEncoder().encode(text);
+    const ptr = wasm.sv_in_reserve(bytes.length);
+    if (bytes.length) new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
+    callWasm("sv_set_rules", bytes.length);
+  }
+  function saveMenu() {
+    try {
+      const rules = {};
+      for (const input of ruleInputs()) {
+        if (input.type === "checkbox") { if (input.checked) rules[input.dataset.rule] = 1; }
+        else if (input.value.trim() !== "") rules[input.dataset.rule] = input.value.trim();
+      }
+      localStorage.setItem(MENU_KEY, JSON.stringify({
+        players: $("setPlayers").value, self: $("setSelf").value, opp: $("setOpp").value, preset, rules,
+      }));
+    } catch (err) { /* Speicher gesperrt: dann eben ohne Merken */ }
+  }
+  function loadMenu() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(MENU_KEY) || "null");
+      if (!saved || typeof saved !== "object") return;
+      for (const [id, key] of [["setPlayers", "players"], ["setSelf", "self"], ["setOpp", "opp"]]) {
+        const sel = $(id);
+        if (saved[key] !== undefined && [...sel.options].some((o) => o.value === String(saved[key]))) sel.value = String(saved[key]);
+      }
+      for (const input of ruleInputs()) {
+        const v = saved.rules && saved.rules[input.dataset.rule];
+        if (v === undefined) continue;
+        if (input.type === "checkbox") input.checked = true;
+        else input.value = String(v);
+      }
+      preset = ["pc", "board", "roles", "territory", "custom"].includes(saved.preset) ? saved.preset : "pc";
+    } catch (err) { /* kaputter Eintrag: Voreinstellungen */ }
+  }
+  function openMenu(canGoBack) {
+    menuOpen = true;
+    clearTimeout(botTimer);
+    $("menu").hidden = false;
+    document.querySelector("main.layout").hidden = true;
+    $("menuBack").hidden = !canGoBack;
+    $("menuStart").textContent = canGoBack ? "Neue Partie starten" : "Partie starten";
+    showMenuError("");
+    refreshMenu();
+    syncPresetButtons();
+    window.scrollTo(0, 0);
+  }
+  function closeMenu() {
+    menuOpen = false;
+    $("menu").hidden = true;
+    document.querySelector("main.layout").hidden = false;
+    // Der Start-Knopf liegt weit unten im langen Menue; ohne das bliebe die Seite dort stehen
+    // und das Brett laege oberhalb des sichtbaren Bereichs.
+    window.scrollTo(0, 0);
+  }
+  function randomSeed() {
+    const a = new Uint32Array(1);
+    (window.crypto || window.msCrypto).getRandomValues(a);
+    return a[0] % 1000000;
+  }
+  function startLive(players, opponent, seed, self) {
+    clearTimeout(botTimer);
+    playing = false; clearTimeout(timer);
+    const s = seed === null || seed === undefined ? randomSeed() : seed;
+    const seatA = self === undefined || self === null ? 2 : self;
+    const lo = s % 4294967296, hi = Math.floor(s / 4294967296);
+    const out = seatA === 2 || typeof wasm.sv_new_game_seats !== "function"
+      ? callWasm("sv_new_game", players, lo, hi, 0, opponent)
+      : callWasm("sv_new_game_seats", players, lo, hi, 0, seatA, opponent);
+    const header = out.header;
+    header.frames = [out.frame];
+    header.outcome = out.outcome;
+    liveR = prepare(header);
+    const watch = out.seats.every((x) => x !== "mensch");
+    live = { legal: out.legal, humanToMove: out.human_to_move, outcome: out.outcome, seats: out.seats, opponent, watch };
+    playing = watch; // Zuschauen laeuft sofort los
+    R = liveR;
+    selected = null; fi = 0; tween = null; hoverCell = null;
+    routes = []; ctrlPath = null; routeNote = ""; clearTimeout(premoveTimer);
+    showPlayError("");
+    layout();
+    renderPanel();
+    requestAnimationFrame(draw);
+    scheduleBots();
+  }
+  function pushStep(out) {
+    const follow = R === liveR && fi === liveR.frames.length - 1;
+    liveR.frames.push(prepFrame(out.frame, liveR.board));
+    liveR.outcome = out.outcome;
+    live.legal = out.legal;
+    live.humanToMove = out.human_to_move;
+    live.outcome = out.outcome;
+    if (live.watch && out.outcome) playing = false;
+    if (R !== liveR) return;
+    if (follow) goTo(liveR.frames.length - 1, true);
+    else renderPanel();
+  }
+  function humanAct(i) {
+    if (!canAct()) return;
+    try {
+      const out = callWasm("sv_apply", i);
+      selected = null;
+      pushStep(out);
+      scheduleBots();
+    } catch (err) {
+      showPlayError(err.message);
+    }
+  }
+  function botDelay() {
+    const speed = Number($("speed").value);
+    return live && live.watch ? Math.max(40, speed) : Math.max(120, Math.min(700, speed));
+  }
+  function scheduleBots() {
+    clearTimeout(botTimer);
+    renderTurnBox();
+    schedulePremove();
+    if (mode !== "play" || !live || live.outcome || live.humanToMove) return;
+    if (live.watch && (!playing || R !== liveR)) return;
+    botTimer = setTimeout(() => {
+      if (mode !== "play" || !live) return;
+      try {
+        pushStep(callWasm("sv_bot_step"));
+      } catch (err) {
+        showPlayError(err.message);
+        return;
+      }
+      scheduleBots();
+    }, botDelay());
+  }
+  function homeName(res) {
+    return colorOwner(res);
+  }
+  function actionLabel(a, f) {
+    if (a.type === "build_unit") {
+      return `Figur bauen: ${unitTitle(a.level)} (Stufe ${a.level}) auf der Fabrik – kostet ${terrPriceText(a.level)}`;
+    }
+    if (a.type === "build") {
+      const king = f.pieces.find((p) => p.king && p.owner === f.current);
+      return `Fabrik bauen auf ${cellName(king.cell)} (mit Kat 1 aus dem Gepäck, ${homeName(a.pay)})`;
+    }
+    if (a.type === "spawn") {
+      const fac = f.fById.get(a.factory);
+      const level = fac.level || fac.storage.filter(([r]) => category(r) === 1).length;
+      const tip = level === 1 ? " – mehr Farben oder mehr Kat 2/3 im Lager ergeben eine höhere Stufe" : "";
+      return `Fabrik auf ${cellName(fac.cell)} auflösen: Figur Stufe ${level}, Reichweite ${level}${tip}`;
+    }
+    if (a.type === "buy") {
+      return `„${CARD(a.card).name}“${buyWhere(a, f)}`;
+    }
+    if (a.type === "pass") return "Passen";
+    return a.type;
+  }
+  /** Hinweis im Gebietsmodus: was gerade wichtig ist. */
+  function territorySub(f) {
+    const me = f.current;
+    const fac = f.factories.find((x) => x.owner === me);
+    if (!fac) return "Deine Fabrik ist zerstört: keine neuen Figuren. Schütze den König und jage den gegnerischen.";
+    const blocked = f.pieces.some((x) => x.cell === fac.cell);
+    const afford = ((f.area || [])[me] || 0) >= terrPrice(1).area;
+    if (blocked && afford) return "Die Fabrik ist besetzt: zieh die Figur von der Fabrik, dann kannst du bauen.";
+    const stuck = f.pieces.filter((x) => x.owner === me && helpless(f, x)).length;
+    const note = stuck ? ` ${stuck} deiner Figuren ${stuck === 1 ? "ist" : "sind"} vom Land abgeschnitten (blass): sie färben nichts und können nicht schlagen.` : "";
+    return `Tippe eine Figur an: das Land färbt sich auf dem ganzen Weg. Was nicht mehr an der Fabrik hängt, ist nichts wert.${note}`;
+  }
+  function renderTurnBox() {
+    const box = $("turnBox");
+    if (mode !== "play" || !live || R !== liveR) { box.hidden = true; return; }
+    box.hidden = false;
+    const last = liveR.frames.length - 1;
+    const now = liveR.frames[last];
+    const hotseat = live.opponent === 2 || live.watch;
+    let hint, sub = "";
+    if (live.watch && !live.outcome) {
+      hint = playing ? `Bot gegen Bot: Spieler ${playerName(now.current)} ist am Zug …` : "Bot gegen Bot: angehalten.";
+      sub = playing ? "▶/⏸ oder Leertaste hält an. Das Tempo stellst du unten rechts ein."
+        : "▶ oder Leertaste läuft weiter, → macht einen einzelnen Zug, ← blättert zurück.";
+    } else if (live.outcome) {
+      if (live.outcome.type === "winner") {
+        const w = live.outcome.player;
+        hint = hotseat ? `Spieler ${playerName(w)} gewinnt!`
+          : w === 0 ? "Gewonnen! Du hast den letzten gegnerischen König geschlagen."
+          : `Verloren: Spieler ${playerName(w)} gewinnt.`;
+      } else if (live.outcome.type === "points") {
+        const w = live.outcome.player;
+        hint = hotseat ? `Spieler ${playerName(w)} gewinnt nach Wertung!`
+          : w === 0 ? "Gewonnen nach Wertung: Du hast die meisten Punkte."
+          : `Verloren nach Wertung: Spieler ${playerName(w)} hat mehr Punkte.`;
+      } else {
+        hint = "Unentschieden: die Wertung steht gleich.";
+      }
+      const scored = now.events.find((e) => e.type === "scored");
+      sub = (scored ? `Wertung: ${scored.scores.map((n, p) => `${playerName(p)} ${n}`).join(", ")} (${scoreNote()}). ` : "") +
+        "Starte rechts eine neue Partie oder spiele diese mit den Tasten noch einmal ab.";
+    } else if (!live.humanToMove) {
+      hint = `Spieler ${playerName(now.current)} (Bot) ist am Zug …`;
+    } else {
+      hint = hotseat ? `Spieler ${playerName(now.current)} ist am Zug.` : "Du bist am Zug (Spieler A, rot).";
+      sub = selected !== null
+        ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur. Shift zeigt den ganzen Weg, Shift+Klick läuft ihn automatisch; Strg+Klick wählt Kacheln einzeln (Strg loslassen = los)."
+        : isTerr() ? territorySub(now) : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
+      if (routes.length) sub = `Eine Route läuft von selbst weiter (Esc bricht ab). ${sub}`;
+      if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
+      if (routeNote) sub = `${routeNote} ${sub}`;
+    }
+    if (fi < last) sub = "Du siehst einen früheren Zug. " + sub;
+    $("hint").innerHTML = escapeHtml(hint) + (sub ? `<small>${escapeHtml(sub)}</small>` : "");
+    $("toNow").hidden = fi >= last;
+    const actions = $("actions");
+    actions.innerHTML = "";
+    if (canAct()) {
+      if (routes.length) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn";
+        b.textContent = "Route abbrechen (Esc)";
+        b.addEventListener("click", () => cancelRoutes("Route abgebrochen."));
+        actions.appendChild(b);
+      }
+      live.legal.forEach((a, i) => {
+        if (a.type === "move" || a.type === "buy") return;
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn";
+        b.textContent = actionLabel(a, now);
+        b.addEventListener("click", () => humanAct(i));
+        actions.appendChild(b);
+      });
+      const buys = live.legal.filter((a) => a.type === "buy").length;
+      if ((R.market || []).length) {
+        const note = document.createElement("p");
+        note.className = "note";
+        note.textContent = buys
+          ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"} im Kartenmarkt unter dem Brett (zusätzlich zum Zug).`
+          : "Karten: im Kartenmarkt unter dem Brett steht, was dir zum Kaufen noch fehlt.";
+        actions.appendChild(note);
+      }
+    }
+  }
+  function setMode(m) {
+    mode = m;
+    $("modePlay").setAttribute("aria-pressed", String(m === "play"));
+    $("modeView").setAttribute("aria-pressed", String(m === "view"));
+    $("viewPick").hidden = m !== "view";
+    $("playBox").hidden = m !== "play";
+    clearTimeout(botTimer);
+    playing = false; clearTimeout(timer);
+    selected = null;
+    routes = []; ctrlPath = null; routeNote = ""; clearTimeout(premoveTimer);
+    if (m === "play") {
+      if (!liveR) {
+        // Noch keine Partie: erst das Startmenue, gestartet wird mit "Partie starten".
+        openMenu(false);
+        return;
+      }
+      closeMenu();
+      R = liveR;
+      fi = liveR.frames.length - 1;
+      tween = null;
+      layout();
+      renderPanel();
+      requestAnimationFrame(draw);
+      scheduleBots();
+    } else {
+      closeMenu();
+      if (games.length) selectGame(Number($("game").value) || 0, undefined);
+      else renderTurnBox();
+    }
+  }
+  async function loadWasm() {
+    const el = $("wasm");
+    const b64 = ((el && el.textContent) || "").trim();
+    if (!b64) throw new Error("In dieser Seite ist kein Spielkern eingebettet.");
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const { instance } = await WebAssembly.instantiate(bytes, {});
+    const ex = instance.exports;
+    if (typeof ex.sv_api_version !== "function" || ex.sv_api_version() !== 1) {
+      throw new Error("Der eingebettete Spielkern hat eine unerwartete Version.");
+    }
+    return ex;
+  }
+
+  // ----- Laden -------------------------------------------------------------------------------
+  function showError(msg) {
+    const el = $("error");
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+  function selectGame(index, startFrame) {
+    playing = false;
+    clearTimeout(timer);
+    R = prepare(games[index].replay);
+    layout();
+    const last = R.frames.length - 1;
+    fi = startFrame === undefined ? 0 : Math.max(0, Math.min(last, startFrame));
+    tween = null;
+    hoverCell = null;
+    selected = null;
+    renderPanel();
+    requestAnimationFrame(draw);
+  }
+  function addGame(replay, label) {
+    prepare(replay); // prueft das Format
+    games.push({ label: label || gameLabel(replay), replay });
+    const opt = document.createElement("option");
+    opt.value = String(games.length - 1);
+    opt.textContent = games[games.length - 1].label;
+    $("game").appendChild(opt);
+    return games.length - 1;
+  }
+  /** Ein spannender Startpunkt fuer die Ansicht in Ruhe: der Zug mit den meisten Objekten. */
+  function busiestFrame(replay) {
+    let best = 0, score = -1;
+    const limit = Math.floor(replay.frames.length * 0.85);
+    for (let i = 0; i < limit; i++) {
+      const f = replay.frames[i];
+      const s = f.pieces.length * 2 + f.factories.length;
+      if (s > score) { score = s; best = i; }
+    }
+    return best;
+  }
+
+  $("game").addEventListener("change", (e) => selectGame(Number(e.target.value), 0));
+  $("modePlay").addEventListener("click", () => setMode("play"));
+  $("modeView").addEventListener("click", () => setMode("view"));
+  $("toNow").addEventListener("click", () => { setPlaying(false); goTo(R.frames.length - 1, false); });
+  const hadGame = () => Boolean(liveR && mode === "play");
+  $("setup").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const raw = $("setSeed").value.trim();
+    let seed = null;
+    if (raw !== "") {
+      seed = Number.parseInt(raw, 10);
+      if (!Number.isSafeInteger(seed) || seed < 0) {
+        showMenuError("Der Seed muss eine ganze Zahl ab 0 sein.");
+        return;
+      }
+    }
+    try {
+      sendRules(ruleText());
+      closeMenu();
+      startLive(Number($("setPlayers").value), Number($("setOpp").value), seed, Number($("setSelf").value));
+      saveMenu();
+    } catch (err) {
+      // Die alte Partie (falls es eine gibt) bleibt unberuehrt; das Menue bleibt offen.
+      openMenu(hadGame());
+      showMenuError(err.message);
+    }
+  });
+  $("setPlayers").addEventListener("change", refreshMenu);
+  $("openMenu").addEventListener("click", () => openMenu(true));
+  $("menuBack").addEventListener("click", () => {
+    closeMenu();
+    if (R) { layout(); renderPanel(); requestAnimationFrame(draw); }
+    scheduleBots();
+  });
+  for (const b of document.querySelectorAll(".preset[data-preset]")) {
+    b.addEventListener("click", () => applyPreset(b.dataset.preset));
+  }
+  $("menuReset").addEventListener("click", () => {
+    $("setPlayers").value = "2"; $("setSelf").value = "2"; $("setOpp").value = "3"; $("setSeed").value = "";
+    applyPreset("pc");
+  });
+  $("file").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const replay = JSON.parse(String(reader.result));
+        prepare(replay); // wirft eine verstaendliche Meldung, wenn das Format nicht passt
+        const idx = addGame(replay, `${file.name} · ${gameLabel(replay)}`);
+        $("game").value = String(idx);
+        showError("");
+        selectGame(idx, 0);
+      } catch (err) {
+        showError(`Datei konnte nicht gelesen werden: ${err.message}`);
+      }
+      e.target.value = "";
+    };
+    reader.onerror = () => showError("Datei konnte nicht gelesen werden.");
+    reader.readAsText(file);
+  });
+  $("first").addEventListener("click", () => { setPlaying(false); goTo(0, false); });
+  $("prev").addEventListener("click", () => { setPlaying(false); goTo(fi - 1, false); });
+  function stepForward() {
+    if (watching() && fi === R.frames.length - 1) {
+      setPlaying(false);
+      botOnce();
+      return;
+    }
+    setPlaying(false);
+    goTo(fi + 1, true);
+  }
+  $("next").addEventListener("click", stepForward);
+  $("last").addEventListener("click", () => { setPlaying(false); goTo(R.frames.length - 1, false); });
+  $("play").addEventListener("click", () => setPlaying(!playing));
+  $("scrub").addEventListener("input", (e) => { setPlaying(false); goTo(Number(e.target.value), false); });
+  function modifiersChanged(shift, ctrl) {
+    if (shift === shiftDown && ctrl === ctrlDown) return;
+    const released = ctrlDown && !ctrl;
+    shiftDown = shift; ctrlDown = ctrl;
+    if (released && ctrlPath && ctrlPath.cells.length > 1 && canAct()) {
+      const piece = R.frames[fi].byId.get(ctrlPath.piece);
+      if (piece) commitRoute(piece, ctrlPath.cells);
+      else ctrlPath = null;
+    }
+    requestAnimationFrame(draw);
+  }
+  document.addEventListener("keydown", (e) => {
+    if (!R) return;
+    if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
+    if (e.key === "Escape" && mode === "play" && (routes.length || ctrlPath || selected !== null)) {
+      selected = null;
+      cancelRoutes(routes.length || ctrlPath ? "Route abgebrochen." : "");
+    }
+    if (e.key === "Enter" && ctrlPath && ctrlPath.cells.length > 1 && canAct()) {
+      const piece = R.frames[fi].byId.get(ctrlPath.piece);
+      if (piece) commitRoute(piece, ctrlPath.cells);
+    }
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
+  });
+  window.addEventListener("blur", () => modifiersChanged(false, false));
+  document.addEventListener("keydown", (e) => {
+    if (!R || menuOpen || e.target.closest && e.target.closest("select, input")) return;
+    if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
+    else if (e.key === "ArrowRight") stepForward();
+    else if (e.key === "ArrowLeft") { setPlaying(false); goTo(fi - 1, false); }
+    else if (e.key === "Home") { setPlaying(false); goTo(0, false); }
+    else if (e.key === "End") { setPlaying(false); goTo(R.frames.length - 1, false); }
+  });
+  new ResizeObserver(() => { if (R) { layout(); requestAnimationFrame(draw); } }).observe(canvas.parentElement);
+  const scheme = window.matchMedia("(prefers-color-scheme: dark)");
+  if (scheme.addEventListener) scheme.addEventListener("change", () => requestAnimationFrame(draw));
+  new MutationObserver(() => requestAnimationFrame(draw)).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { legend(); requestAnimationFrame(draw); });
+
+  // Beispielpartien
+  let samples = [];
+  try { samples = JSON.parse($("samples").textContent); } catch (err) { showError("Beispielpartien fehlen."); }
+  for (const s of samples) {
+    try { addGame(s.replay || s, s.label); } catch (err) { showError(err.message); }
+  }
+  legend();
+  buildMenu();
+  loadMenu();
+  refreshMenu();
+  syncPresetButtons();
+  $("viewPick").hidden = false;
+  if (games.length) {
+    selectGame(0, busiestFrame(games[0].replay));
+  } else {
+    $("summary").textContent = "Keine Partie geladen. Lade eine mit „Eigene Partie laden …“ (erzeugt mit spacevitan --export partie.json).";
+  }
+  window.__viewer = {
+    goTo, select: selectGame, click: boardClick, act: humanAct, start: startLive, setMode,
+    get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; },
+    get live() { return live; }, get mode() { return mode; }, get selected() { return selected; },
+    get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
+    get ready() { return wasm !== null; },
+    /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
+    get replay() { return R; },
+    /** Feld einer Figur im angezeigten Zug (fuer automatische Tests). */
+    pieceCell(id) {
+      const p = R.frames[fi].byId.get(id);
+      return p ? p.cell : null;
+    },
+    /** Bildschirmpunkt der Feldmitte (fuer automatische Tests). */
+    cellPoint(cell) {
+      const [x, y] = R.board.cells[cell];
+      const [cx, cy] = iso(x, y);
+      const r = canvas.getBoundingClientRect();
+      return [r.left + cx, r.top + cy];
+    },
+  };
+  loadWasm().then((ex) => {
+    wasm = ex;
+    setMode("play");
+  }).catch((err) => {
+    $("modePlay").disabled = true;
+    $("modePlay").title = "Spielen ist hier nicht verfügbar";
+    const n = $("notice");
+    n.textContent = `Spielen ist in dieser Ansicht nicht verfügbar (${err.message}). Die Wiedergabe funktioniert. ` +
+      "Zum Spielen die Datei spacevitan.html herunterladen und im Browser öffnen.";
+    n.hidden = false;
+  });
+})();
+</script>
