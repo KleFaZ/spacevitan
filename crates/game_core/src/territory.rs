@@ -16,8 +16,10 @@
 //!   ihres Besitzers, ist sie sofort wieder aktiv und faerbt das Feld, auf dem sie steht
 //!   (`terr_reconnect`). Das gilt nach jedem Zug fuer alle Figuren, nicht nur fuer die des Ziehenden.
 //! - **Umschliessen.** Eine neutrale Flaeche (zusammenhaengende neutrale Felder), deren saemtliche
-//!   Nachbarfelder einer einzigen Farbe gehoeren, faellt ganz an diese Farbe (`terr_enclose`). Der
-//!   Brettrand zaehlt nicht als Nachbar, schliesst also mit ein.
+//!   Nachbarfelder einer einzigen Farbe gehoeren, faellt ganz an diese Farbe (`terr_enclose`).
+//!   Standardmaessig zaehlt der Brettrand nicht als Wand: eine Flaeche, die den Rand beruehrt, wird nie
+//!   umschlossen. Mit `terr_enclose_edge=1` ist der Rand eine Wand (dann holt ein "L" aus der Ecke
+//!   ein ganzes Quadrat).
 //! - **Ertrag.** Am Ende des eigenen Zuges sammelt die Fabrik die verbundenen Felder ein: je Feld
 //!   eine Einheit Flaeche, dazu `terr_yield` Einheiten je Rohstoffvorkommen auf diesen Feldern
 //!   (Vorkommen werden nie abgebaut).
@@ -488,6 +490,13 @@ impl Game {
         let n = board.len();
         let mut seen = vec![false; n];
         let mut found: Vec<(PlayerId, Vec<CellId>)> = Vec::new();
+        // Randfelder haben weniger Nachbarn als ein Feld mitten im Brett.
+        let full = board
+            .cells()
+            .map(|c| board.neighbors(c).count())
+            .max()
+            .unwrap_or(0);
+        let edge_is_wall = self.config.terr_enclose_edge;
         for start in board.cells() {
             if seen[start.idx()] || self.state.land[start.idx()].is_some() {
                 continue;
@@ -500,6 +509,9 @@ impl Game {
             while head < region.len() {
                 let cur = region[head];
                 head += 1;
+                if !edge_is_wall && board.neighbors(cur).count() < full {
+                    mixed = true;
+                }
                 for nb in board.neighbors(cur) {
                     match self.state.land[nb.idx()] {
                         None => {

@@ -41,7 +41,7 @@ Optionen:
                  regrow_cat1..4, center_mix, score_after, upgrade_region_min, upgrade_step, max_upgrades, market_size,
                  card_target_near, min_factory_distance, kat_roles, pawn_cost)
                  Gebietsmodus: territory=1 (weisses Brett, Land faerben), terr_pawn,
-                 terr_area, terr_area_step, terr_k1, terr_k2, terr_k3, terr_yield, terr_cut_flips, terr_enclose, terr_reconnect,
+                 terr_area, terr_area_step, terr_k1, terr_k2, terr_k3, terr_yield, terr_cut_flips, terr_enclose, terr_enclose_edge, terr_reconnect,
                  terr_card_mult
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
                  z. B. stark,gierig

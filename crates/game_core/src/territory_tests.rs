@@ -41,6 +41,13 @@ fn round_prices() -> Config {
     c
 }
 
+/// Wie `config`, aber der Brettrand zaehlt beim Umschliessen als Wand (fuer Taschen in der Ecke).
+fn config_edge_walls(players: u8) -> Config {
+    let mut c = config(players);
+    c.terr_enclose_edge = true;
+    c
+}
+
 fn blank_with(config: Config) -> Game {
     let mut map = Map::generate(&config).expect("Karte");
     map.deposits = vec![Vec::new(); map.board.len()];
@@ -410,7 +417,7 @@ fn enclosed(events: &[Event]) -> Vec<(PlayerId, Vec<CellId>)> {
 
 #[test]
 fn a_neutral_pocket_closed_by_one_colour_falls_to_it() {
-    let mut g = blank();
+    let mut g = blank_with(config_edge_walls(2));
     // Ein Ring um (0,1) und (1,1); es fehlt nur (0,2).
     paint(&mut g, P0, &[(1, 0), (2, 0), (2, 1), (2, 2), (1, 2)]);
     let king = king_id(&g, P0);
@@ -432,14 +439,37 @@ fn a_neutral_pocket_closed_by_one_colour_falls_to_it() {
 }
 
 #[test]
-fn the_board_edge_closes_a_pocket_too() {
-    let mut g = blank();
+fn the_board_edge_closes_a_pocket_when_it_counts_as_a_wall() {
+    let mut g = blank_with(config_edge_walls(2));
     without_factory(&mut g, P0);
     paint(&mut g, P0, &[(0, 4), (1, 5)]);
     let unit = g.setup_unit(P0, c(&g, 0, 7), 1, 1);
     let events = act!(g, mv(&g, unit, 0, 6));
     assert_eq!(enclosed(&events), vec![(P0, vec![c(&g, 0, 5)])]);
     assert_eq!(owner(&g, 0, 5), Some(P0));
+}
+
+#[test]
+fn by_default_a_pocket_at_the_edge_stays_neutral() {
+    let mut g = blank();
+    without_factory(&mut g, P0);
+    paint(&mut g, P0, &[(0, 4), (1, 5)]);
+    let unit = g.setup_unit(P0, c(&g, 0, 7), 1, 1);
+    let events = act!(g, mv(&g, unit, 0, 6));
+    assert!(enclosed(&events).is_empty());
+    assert_eq!(owner(&g, 0, 5), None);
+}
+
+#[test]
+fn by_default_a_ring_in_the_middle_still_closes() {
+    let mut g = blank();
+    without_factory(&mut g, P0);
+    // Ein Ring um (4,4); es fehlt nur noch (4,5).
+    paint(&mut g, P0, &[(4, 3), (3, 4), (5, 4)]);
+    let unit = g.setup_unit(P0, c(&g, 4, 7), 2, 2);
+    let events = act!(g, mv(&g, unit, 4, 5));
+    assert_eq!(enclosed(&events), vec![(P0, vec![c(&g, 4, 4)])]);
+    assert_eq!(owner(&g, 4, 4), Some(P0));
 }
 
 #[test]
@@ -489,7 +519,7 @@ fn enclosing_can_be_switched_off() {
 
 #[test]
 fn cutting_and_enclosing_work_together() {
-    let mut g = blank();
+    let mut g = blank_with(config_edge_walls(2));
     without_factory(&mut g, P1);
     // A: Linie (1,0)..(3,0) an der Fabrik. B: Land rechts und unten um das Loch (4,0).
     paint(&mut g, P0, &[(1, 0), (2, 0), (3, 0)]);

@@ -100,6 +100,9 @@ pub struct Config {
     /// Gebiet: Eine neutrale Flaeche, die ganz von einer Farbe umschlossen ist, faellt an diese
     /// Farbe.
     pub terr_enclose: bool,
+    /// Gebiet: Der Brettrand zaehlt beim Umschliessen als Wand (`true`); sonst (Standard) wird eine
+    /// neutrale Flaeche, die den Rand beruehrt, nie umschlossen.
+    pub terr_enclose_edge: bool,
     /// Gebiet: Eine abgetrennte Figur wird aktiv und faerbt ihr Feld, sobald sie an ihr
     /// verbundenes Land grenzt.
     pub terr_reconnect: bool,
@@ -173,6 +176,7 @@ impl Config {
             terr_yield: 1,
             terr_cut_flips: true,
             terr_enclose: true,
+            terr_enclose_edge: false,
             terr_reconnect: true,
             terr_card_mult: 16,
         }
@@ -229,6 +233,7 @@ impl Config {
             "terr_yield" => self.terr_yield = as_u32(value)?,
             "terr_cut_flips" => self.terr_cut_flips = value != 0,
             "terr_enclose" => self.terr_enclose = value != 0,
+            "terr_enclose_edge" => self.terr_enclose_edge = value != 0,
             "terr_reconnect" => self.terr_reconnect = value != 0,
             "terr_card_mult" => self.terr_card_mult = as_u32(value)?,
             other => return Err(format!("unbekannte Regel '{other}'")),
