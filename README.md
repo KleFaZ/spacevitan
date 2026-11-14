@@ -267,8 +267,11 @@ Gedacht als Vereinfachung: kein Abbauen, keine Fabrikbauten, keine Kartenmaerkte
   fuer eine Figur, die selbst dorthin zieht, genauso wie fuer eine, die schon wartet und neben die das eigene
   Land waechst. Kette: Das neue Feld kann die naechste wartende Figur wecken (`territory_settle`).
 - **Umschliessen** (`terr_enclose`, Standard an): Eine zusammenhaengende neutrale Flaeche, die nur an eine
-  einzige Farbe grenzt (der Brettrand zaehlt als Wand), geht ganz an diese Farbe. Grenzt sie an zwei Farben
-  oder an keine, bleibt sie neutral. Auch Land ohne Fabrik und abgetrenntes Land zaehlt als Wand.
+  einzige Farbe grenzt, geht ganz an diese Farbe. Grenzt sie an zwei Farben oder an keine, bleibt sie neutral.
+  Auch Land ohne Fabrik und abgetrenntes Land zaehlt als Wand. **Der Brettrand zaehlt standardmaessig nicht
+  als Wand** (`terr_enclose_edge=0`): eine Flaeche am Rand wird nie umschlossen. Mit `terr_enclose_edge=1`
+  holt ein "L" aus der Ecke ein ganzes Quadrat (siehe Messung). Im Zug, der das Spiel entscheidet, laeuft
+  nichts davon: das weisse Land des Verlierers bleibt weiss.
 - Am Ende des eigenen Zugs sammelt die Fabrik alle verbundenen Landfelder als **Flaeche** ein, dazu
   `terr_yield` je Vorkommen auf verbundenen Feldern. Rohstoffvorkommen werden nie leergebaut.
 - Figur bauen (Fabrik muss frei sein, die Figur erscheint genau darauf): Bauer `terr_pawn` Flaeche (50,
@@ -319,6 +322,27 @@ Stufenleiter (Kartenpreis x12, `stark` gegen `stark`):
 | 150 / 200 / 250 und Rohstoffpreise x1,5 | 29,4 / 30,3 / 38,0 | 36 |
 | 150 / 250 / 350 und Rohstoffpreise x1,5 | 44,0 / 53,7 / 58,6 | 48 |
 | 200 / 300 / 400 | 60,2 / 68,3 / 72,2 | 54 |
+
+**Wieder anbinden und Umschliessen** (`stark` gegen `stark`, je 60 Partien; "Aus" = beide Regeln abgeschaltet,
+das entspricht genau dem Stand davor):
+
+| Stand | Seeds | Siege A | Runden | Umschlossen je Partie | Wieder angebunden |
+|---|---|---|---|---|---|
+| Aus | 300 / 400 / 500 | 45 % / 45 % / 45 % | 41,5 / 38,6 / 44,0 | - | - |
+| Nur Wieder anbinden | 300 | 48 % | 40,5 | - | 0,5 |
+| Nur Umschliessen, Rand als Wand | 300 | 60 % | 29,9 | 3,2 (21 Felder) | - |
+| Nur Umschliessen, Rand keine Wand | 300 / 400 | 60 % / 70 % | 36,8 / 37,9 | 4,5 / 4,1 (10 / 9 Felder) | - |
+| **Beide, Rand keine Wand (Standard)** | 300 / 400 | 63 % / 63 % | 38,6 / 38,5 | 4,7 / 4,0 (10 / 8 Felder) | 0,4 |
+| Beide, Rand als Wand | 300 / 400 | 60 % / 65 % | 29,5 / 32,8 | 3,2 / 3,4 (21 Felder) | 0,1 / 0,2 |
+
+- Wieder anbinden aendert fuer sich kaum etwas, es wird selten ausgeloest.
+- **Der Rand als Wand verkuerzt die Partien um etwa ein Viertel**: Ein "L" aus der Ecke umschliesst ein
+  ganzes Quadrat (quadratischer Gewinn fuer linearen Aufwand). Deshalb ist der Standard "Rand keine Wand".
+- **Offene Reibung: Umschliessen bevorzugt den ersten Spieler.** Ohne die Regeln gewinnt A in allen drei
+  Messreihen 45 %, mit Umschliessen 60 bis 70 % (rund 18 Punkte mehr bei +-6 Punkten Standardfehler). Wer die
+  Taschen zuerst schliesst, gewinnt. Moegliche Hebel (nicht gebaut): Fabrikfeld oder Gegenueberliegendes
+  zaehlt als Gegenfarbe, Mindestgroesse fuer Taschen, Ausgleich fuer den zweiten Spieler.
+- Rechenzeit der starken KI: etwa 60 ms je Zug ohne, 80 bis 90 ms mit den neuen Regeln.
 
 Was daran auffaellt:
 
