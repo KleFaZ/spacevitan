@@ -1137,6 +1137,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (e.type === "factory_built" || e.type === "spawned") outlineCell(e.cell, PLAYER[e.owner].color, 0.25);
       if (e.type === "painted") for (const c of e.cells) outlineCell(c, PLAYER[e.player].color, 0.16);
       if (e.type === "cut_off" && e.to !== null) for (const c of e.cells) outlineCell(c, PLAYER[e.to].color, 0.32);
+      if (e.type === "enclosed") for (const c of e.cells) outlineCell(c, PLAYER[e.player].color, 0.3);
+      if (e.type === "reconnected") outlineCell(e.cell, PLAYER[e.owner].color, 0.3);
     }
     if (hoverCell !== null) outlineCell(hoverCell, cssVar("--ink") || "#000", 0);
     if (canAct()) {
@@ -1279,6 +1281,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (pt) text += `, färbt ${pt.cells.length} Feld${pt.cells.length === 1 ? "" : "er"}`;
       const cut = f.events.find((e) => e.type === "cut_off");
       if (cut) text += `, trennt ${cut.cells.length} Feld${cut.cells.length === 1 ? "" : "er"} von ${playerName(cut.from)} ab`;
+      const rcs = f.events.filter((e) => e.type === "reconnected");
+      if (rcs.length) {
+        const own = rcs.find((e) => e.piece === a.piece);
+        const others = rcs.length - (own ? 1 : 0);
+        if (own) text += ", wieder angebunden und färbt ihr Feld";
+        if (others) text += `, bindet ${others} wartende Figur${others === 1 ? "" : "en"} wieder an`;
+      }
+      const encl = f.events.filter((e) => e.type === "enclosed");
+      if (encl.length) {
+        const n = encl.reduce((sum, e) => sum + e.cells.length, 0);
+        text += `, umschließt ${n} neutrale${n === 1 ? "s Feld" : " Felder"}`;
+      }
     } else if (a.type === "build_unit") {
       text = `Fabrik baut eine Figur: ${unitTitle(a.level)} (Stufe ${a.level}), kostet ${terrPriceText(a.level)}`;
     } else if (a.type === "build") {
@@ -1312,6 +1326,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       case "moved": return null;
       case "painted": return `${playerName(e.player)} färbt ${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}: ${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}.`;
       case "cut_off": return `Land von ${playerName(e.from)} abgetrennt (${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}): ${e.to === null ? "wird neutral" : `geht an ${playerName(e.to)}`}.`;
+      case "enclosed": return `${playerName(e.player)} umschließt ${e.cells.length} neutrale${e.cells.length === 1 ? "s Feld" : " Felder"}: sie gehen an ${playerName(e.player)} (${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}).`;
+      case "reconnected": return `Figur von ${playerName(e.owner)} auf ${cellName(e.cell)} grenzt wieder an ihr Land: wieder aktiv, das Feld ist jetzt ${playerName(e.owner)}s.`;
       case "income": return `Fabrik von ${playerName(e.player)} sammelt ${e.area} Fläche${e.gained.length ? ` und ${invText(e.gained)}` : ""}.`;
       case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
       case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
@@ -1607,7 +1623,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const score = c.score_after ? `Wertung nach Runde ${c.score_after}` : "keine Wertung";
       const cut = c.terr_cut_flips ? "Abgetrenntes Land fällt an den Gegner" : "Abgetrenntes Land wird neutral";
       const a = (l) => c.terr_area + (c.terr_area_step || 0) * (l - 2);
-      return `Gebietsmodus · Bauer ${c.terr_pawn} Fläche · Stufe 2: ${a(2)} Fläche + ${c.terr_k1} Kat 1 · Stufe 3: ${a(3)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 · Stufe 4: ${a(4)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 + ${c.terr_k3} Kat 3 · ${cut} · ${score}`;
+      const extra = [];
+      if (c.terr_reconnect === false) extra.push("ohne Wieder-Anbinden");
+      if (c.terr_enclose === false) extra.push("ohne Umschließen");
+      return `Gebietsmodus${extra.length ? ` (${extra.join(", ")})` : ""} · Bauer ${c.terr_pawn} Fläche · Stufe 2: ${a(2)} Fläche + ${c.terr_k1} Kat 1 · Stufe 3: ${a(3)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 · Stufe 4: ${a(4)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 + ${c.terr_k3} Kat 3 · ${cut} · ${score}`;
     }
     const cats = R.players >= 6 ? 4 : 3;
     const rg = c.regrow_rounds.slice(0, cats);
@@ -1879,7 +1898,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["barrel", "Kat 4 (ab 6 Spielern)"],
       ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
       ["land", "Gebietsmodus: Land in der Farbe des Spielers. Jedes Feld auf dem Weg einer Figur wird ihre Farbe, betritt ein Gegner es, kippt es um."],
-      ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt: sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist."],
+      ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt: sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist. Es genügt, dass sie neben ihrem verbundenen Land steht: dann färbt sie ihr Feld und ist wieder aktiv."],
     ];
     const dl = $("legend");
     dl.innerHTML = "";
@@ -2180,7 +2199,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "kat_roles", label: "Rollen einschalten", check: true },
       { key: "pawn_cost", label: "Kat 2 für einen Bauern", ph: () => "4", hint: () => "Einheiten einer Region, nur mit den Rollen." },
     ] },
-    { title: "Gebietsmodus (neu)", note: "Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld: Bauer ab Fläche, Stufe 2 mit Fläche + Kat 1, Stufe 3 zusätzlich Kat 2, Stufe 4 zusätzlich Kat 3 (alles wird verbraucht). Karten liegen neben der Fabrik und wirken auf die nächste Figur. Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Nachwachsen, Ausbau und Rollen gelten hier nicht.", fields: [
+    { title: "Gebietsmodus (neu)", note: "Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (der Brettrand zählt als Wand), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld: Bauer ab Fläche, Stufe 2 mit Fläche + Kat 1, Stufe 3 zusätzlich Kat 2, Stufe 4 zusätzlich Kat 3 (alles wird verbraucht). Karten liegen neben der Fabrik und wirken auf die nächste Figur. Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Nachwachsen, Ausbau und Rollen gelten hier nicht.", fields: [
       { key: "territory", label: "Gebietsmodus einschalten", check: true },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
       { key: "terr_area", label: "Fläche für Stufe 2", ph: () => "150" },
@@ -2190,6 +2209,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_k3", label: "Kat 3 zusätzlich für Stufe 4", ph: () => "60" },
       { key: "terr_yield", label: "Ertrag je Vorkommen und Runde", ph: () => "1" },
       { key: "terr_cut_flips", label: "Abgetrenntes Land fällt an den Gegner", ph: () => "1", hint: () => "1 = an den, der durchtrennt hat; 0 = wird neutral" },
+      { key: "terr_reconnect", label: "Wehrlose Figur wieder anbinden", ph: () => "1", hint: () => "1 = steht sie neben ihrem verbundenen Land, ist sie aktiv und färbt ihr Feld; 0 = aus" },
+      { key: "terr_enclose", label: "Umschlossene neutrale Fläche", ph: () => "1", hint: () => "1 = ganz umschlossene neutrale Fläche geht an die umschließende Farbe; 0 = aus" },
       { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "16", hint: () => "Preise der Karten (Kat 2 und 3) mal diese Zahl. Pferd kostet so 32 Kat 2 und 32 Kat 3." },
     ] },
     { title: "Stufen der Fabriken", fields: [
