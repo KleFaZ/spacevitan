@@ -12,6 +12,12 @@
 //!   `terr_cut_flips = false` wird es neutral). Eine Figur, die nicht auf verbundenem Land
 //!   steht, faerbt nichts und kann nicht angreifen: sie ist wehrlos, bis sie wieder verbunden ist.
 //!   Wer keine Fabrik mehr hat, braucht keinen Zusammenhang mehr (und bekommt auch keinen Ertrag).
+//! - **Wieder anbinden.** Grenzt eine abgetrennte Figur (ueber eine Kante) an das verbundene Land
+//!   ihres Besitzers, ist sie sofort wieder aktiv und faerbt das Feld, auf dem sie steht
+//!   (`terr_reconnect`). Das gilt nach jedem Zug fuer alle Figuren, nicht nur fuer die des Ziehenden.
+//! - **Umschliessen.** Eine neutrale Flaeche (zusammenhaengende neutrale Felder), deren saemtliche
+//!   Nachbarfelder einer einzigen Farbe gehoeren, faellt ganz an diese Farbe (`terr_enclose`). Der
+//!   Brettrand zaehlt nicht als Nachbar, schliesst also mit ein.
 //! - **Ertrag.** Am Ende des eigenen Zuges sammelt die Fabrik die verbundenen Felder ein: je Feld
 //!   eine Einheit Flaeche, dazu `terr_yield` Einheiten je Rohstoffvorkommen auf diesen Feldern
 //!   (Vorkommen werden nie abgebaut).
@@ -280,6 +286,13 @@ impl Game {
     pub fn move_gain(&self, id: PieceId, to: CellId) -> u32 {
         let plan = self.territory_plan(id, to);
         let owner = self.state.pieces[&id].owner;
+        if !plan.connected && self.config.terr_reconnect {
+            // Eine wehrlose Figur, die an ihr Land heranzieht, faerbt das Zielfeld.
+            let next_to_land = self
+                .connected_land(owner)
+                .is_some_and(|c| self.map.board.neighbors(to).any(|nb| c[nb.idx()]));
+            return u32::from(next_to_land && self.state.land[to.idx()] != Some(owner));
+        }
         plan.path
             .iter()
             .filter(|&&c| self.state.land[c.idx()] != Some(owner))
@@ -417,29 +430,145 @@ impl Game {
         plan: &MovePlan,
         events: &mut Vec<Event>,
     ) {
-        if !plan.connected {
-            return;
+        if plan.connected {
+            let mut changed = Vec::new();
+            for &cell in &plan.path {
+                if self.state.land[cell.idx()] == Some(actor) {
+                    continue;
+                }
+                self.paint(cell, actor, events);
+                changed.push(cell);
+            }
+            if !changed.is_empty() {
+                events.push(Event::Painted {
+                    player: actor,
+                    cells: changed,
+                });
+            }
+            self.cut_off(actor, events);
         }
-        let mut changed = Vec::new();
-        for &cell in &plan.path {
-            if self.state.land[cell.idx()] == Some(actor) {
+        self.territory_settle(actor, events);
+    }
+
+    /// Setzt die Farbe eines Feldes; steht dort eine gegnerische Fabrik, ist sie zerstoert.
+    fn paint(&mut self, cell: CellId, player: PlayerId, events: &mut Vec<Event>) {
+        self.state.land[cell.idx()] = Some(player);
+        if let Some(fid) = self.state.factory_at[cell.idx()] {
+            if self.state.factories[&fid].owner != player {
+                self.destroy_factory(fid, player, events);
+            }
+        }
+    }
+
+    /// Folgen eines Zuges, die sich gegenseitig anstossen koennen: Umschliessen faerbt neutrale
+    /// Flaechen, Wiederanbinden faerbt Felder unter abgetrennten Figuren (und kann dabei fremdes
+    /// Land durchtrennen). Wiederholt, bis nichts mehr passiert; jede Figur wird je Zug hoechstens
+    /// einmal wieder angebunden, damit es sicher endet.
+    fn territory_settle(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
+        let mut done: Vec<PieceId> = Vec::new();
+        let limit = self.map.board.len() + self.state.pieces.len() + 4;
+        for _ in 0..limit {
+            let mut changed = self.config.terr_enclose && self.enclose_neutral(events);
+            if self.config.terr_reconnect {
+                changed |= self.reconnect_one(actor, &mut done, events);
+            }
+            if !changed {
+                return;
+            }
+        }
+    }
+
+    /// Neutrale Flaechen, die nur an eine einzige Farbe grenzen, gehoeren jetzt dieser Farbe.
+    fn enclose_neutral(&mut self, events: &mut Vec<Event>) -> bool {
+        let board = &self.map.board;
+        let n = board.len();
+        let mut seen = vec![false; n];
+        let mut found: Vec<(PlayerId, Vec<CellId>)> = Vec::new();
+        for start in board.cells() {
+            if seen[start.idx()] || self.state.land[start.idx()].is_some() {
                 continue;
             }
-            self.state.land[cell.idx()] = Some(actor);
-            changed.push(cell);
-            if let Some(fid) = self.state.factory_at[cell.idx()] {
-                if self.state.factories[&fid].owner != actor {
-                    self.destroy_factory(fid, actor, events);
+            let mut region = vec![start];
+            seen[start.idx()] = true;
+            let mut owner: Option<PlayerId> = None;
+            let mut mixed = false;
+            let mut head = 0;
+            while head < region.len() {
+                let cur = region[head];
+                head += 1;
+                for nb in board.neighbors(cur) {
+                    match self.state.land[nb.idx()] {
+                        None => {
+                            if !seen[nb.idx()] {
+                                seen[nb.idx()] = true;
+                                region.push(nb);
+                            }
+                        }
+                        Some(p) => match owner {
+                            None => owner = Some(p),
+                            Some(o) if o != p => mixed = true,
+                            _ => {}
+                        },
+                    }
                 }
             }
+            if let (Some(p), false) = (owner, mixed) {
+                found.push((p, region));
+            }
         }
-        if !changed.is_empty() {
-            events.push(Event::Painted {
-                player: actor,
-                cells: changed,
+        let any = !found.is_empty();
+        for (player, mut cells) in found {
+            cells.sort();
+            for c in &cells {
+                self.state.land[c.idx()] = Some(player);
+            }
+            events.push(Event::Enclosed { player, cells });
+        }
+        any
+    }
+
+    /// Findet eine abgetrennte Figur, die an das verbundene Land ihres Besitzers grenzt, und
+    /// faerbt ihr Feld. Der Ziehende kommt zuerst, sonst die kleinere Figurennummer.
+    fn reconnect_one(
+        &mut self,
+        actor: PlayerId,
+        done: &mut Vec<PieceId>,
+        events: &mut Vec<Event>,
+    ) -> bool {
+        let mut ids: Vec<(bool, PieceId)> = self
+            .state
+            .pieces
+            .values()
+            .map(|p| (p.owner != actor, p.id))
+            .collect();
+        ids.sort();
+        for (_, id) in ids {
+            if done.contains(&id) {
+                continue;
+            }
+            let (owner, cell) = {
+                let p = &self.state.pieces[&id];
+                (p.owner, p.cell)
+            };
+            let Some(connected) = self.connected_land(owner) else {
+                continue;
+            };
+            if connected[cell.idx()]
+                || !self.map.board.neighbors(cell).any(|nb| connected[nb.idx()])
+            {
+                continue;
+            }
+            done.push(id);
+            self.paint(cell, owner, events);
+            events.push(Event::Reconnected {
+                piece: id,
+                owner,
+                cell,
             });
+            self.cut_off(owner, events);
+            return true;
         }
-        self.cut_off(actor, events);
+        false
     }
 
     /// Fabrik zerstoert: Lager, Flaeche und gelagerte Karte sind verloren.
@@ -662,6 +791,34 @@ impl Game {
         }
         if !st.loot.is_empty() || st.carried.iter().any(|c| !c.is_empty()) {
             return Err("Beute oder Gepaeck im Gebietsmodus".into());
+        }
+        if self.config.terr_enclose {
+            let mut probe = self.clone();
+            let mut events = Vec::new();
+            if probe.enclose_neutral(&mut events) {
+                return Err(format!(
+                    "umschlossene neutrale Flaeche uebersehen: {events:?}"
+                ));
+            }
+        }
+        if self.config.terr_reconnect {
+            for piece in st.pieces.values() {
+                let Some(connected) = self.connected_land(piece.owner) else {
+                    continue;
+                };
+                if !connected[piece.cell.idx()]
+                    && self
+                        .map
+                        .board
+                        .neighbors(piece.cell)
+                        .any(|nb| connected[nb.idx()])
+                {
+                    return Err(format!(
+                        "{:?} grenzt an verbundenes Land, ist aber nicht angebunden",
+                        piece.id
+                    ));
+                }
+            }
         }
         Ok(())
     }

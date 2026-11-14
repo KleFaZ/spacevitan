@@ -273,6 +273,237 @@ fn a_piece_becomes_dangerous_again_when_it_is_connected() {
     assert!(g.piece_destinations(a_unit).contains(&c(&g, 2, 1)));
 }
 
+// ----- Wieder anbinden -----------------------------------------------------------------------
+
+fn reconnected(events: &[Event]) -> Vec<(PieceId, CellId)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Reconnected { piece, cell, .. } => Some((*piece, *cell)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_cut_off_piece_wakes_up_next_to_its_land_and_paints_its_cell() {
+    let mut g = blank();
+    paint(&mut g, P0, &[(1, 0), (2, 0)]);
+    // Ein Bauer weit weg vom Land: wehrlos.
+    let unit = g.setup_unit(P0, c(&g, 2, 2), 2, 2);
+    assert!(!g.piece_connected(&g.state.pieces[&unit]));
+    // Er zieht ein Feld neben das verbundene Land: sofort wieder aktiv, und das Feld ist seins.
+    let events = act!(g, mv(&g, unit, 2, 1));
+    assert_eq!(reconnected(&events), vec![(unit, c(&g, 2, 1))]);
+    assert_eq!(owner(&g, 2, 1), Some(P0));
+    assert!(g.piece_connected(&g.state.pieces[&unit]));
+    // Auf dem Weg dorthin wurde nichts gefaerbt (er war ja noch wehrlos).
+    assert_eq!(owner(&g, 2, 2), None);
+    // Und er kann jetzt angreifen.
+    let _enemy = g.setup_unit(P1, c(&g, 3, 1), 1, 1);
+    assert!(g.piece_destinations(unit).contains(&c(&g, 3, 1)));
+}
+
+#[test]
+fn a_piece_that_is_not_next_to_its_land_stays_helpless() {
+    let mut g = blank();
+    paint(&mut g, P0, &[(1, 0), (2, 0)]);
+    let unit = g.setup_unit(P0, c(&g, 4, 4), 2, 2);
+    let events = act!(g, mv(&g, unit, 4, 3));
+    assert!(reconnected(&events).is_empty());
+    assert_eq!(owner(&g, 4, 3), None);
+    assert!(!g.piece_connected(&g.state.pieces[&unit]));
+}
+
+#[test]
+fn only_edges_count_for_waking_up_not_corners() {
+    let mut g = blank();
+    paint(&mut g, P0, &[(1, 0), (2, 0)]);
+    // (3,1) liegt nur schraeg neben (2,0).
+    let unit = g.setup_unit(P0, c(&g, 3, 3), 2, 2);
+    let events = act!(g, mv(&g, unit, 3, 2));
+    assert!(reconnected(&events).is_empty());
+    let mut g = blank();
+    paint(&mut g, P0, &[(1, 0), (2, 0)]);
+    let unit = g.setup_unit(P0, c(&g, 4, 2), 2, 2);
+    g.setup_current(P0);
+    let events = act!(g, mv(&g, unit, 3, 1));
+    assert!(reconnected(&events).is_empty(), "nur schraeg neben (2,0)");
+    assert_eq!(owner(&g, 3, 1), None);
+}
+
+#[test]
+fn a_piece_of_a_player_without_a_factory_is_not_affected() {
+    let mut g = blank();
+    without_factory(&mut g, P0);
+    paint(&mut g, P0, &[(1, 0)]);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    let events = act!(g, mv(&g, unit, 5, 4));
+    // Ohne Fabrik gibt es keinen Zusammenhang: die Figur faerbt wie immer, ohne "wieder anbinden".
+    assert!(reconnected(&events).is_empty());
+    assert_eq!(owner(&g, 5, 4), Some(P0));
+}
+
+#[test]
+fn a_waiting_piece_wakes_up_when_its_land_grows_next_to_it() {
+    let mut g = blank();
+    paint(&mut g, P0, &[(1, 0), (2, 0), (1, 1)]);
+    let waiting = g.setup_unit(P0, c(&g, 2, 2), 2, 2);
+    assert!(!g.piece_connected(&g.state.pieces[&waiting]));
+    // Der Koenig faerbt (2,1): damit grenzt das wartende Feld (2,2) ans verbundene Land.
+    let king = king_id(&g, P0);
+    g.setup_teleport(king, c(&g, 1, 1));
+    let events = act!(g, mv(&g, king, 2, 1));
+    assert_eq!(reconnected(&events), vec![(waiting, c(&g, 2, 2))]);
+    assert_eq!(owner(&g, 2, 2), Some(P0));
+    assert!(g.piece_connected(&g.state.pieces[&waiting]));
+}
+
+#[test]
+fn waking_up_takes_an_enemy_cell_and_can_cut_the_enemy_line() {
+    let mut g = blank();
+    // A's Fabrik steht bei (6,7), das Land reicht bis (6,8); A's Koenig ist weit weg.
+    without_factory(&mut g, P0);
+    paint(&mut g, P0, &[(6, 7), (6, 8)]);
+    g.setup_factory(P0, c(&g, 6, 7));
+    // B's Linie von der Fabrik (9,9) nach links.
+    paint(&mut g, P1, &[(8, 9), (7, 9), (6, 9), (5, 9)]);
+    let unit = g.setup_unit(P0, c(&g, 4, 9), 2, 2);
+    assert!(!g.piece_connected(&g.state.pieces[&unit]));
+    // A's Bauer zieht auf B's Feld (6,9) neben A's Land: er nimmt es und durchtrennt B's Linie.
+    let events = act!(g, mv(&g, unit, 6, 9));
+    assert_eq!(reconnected(&events), vec![(unit, c(&g, 6, 9))]);
+    assert_eq!(owner(&g, 6, 9), Some(P0));
+    assert_eq!(owner(&g, 7, 9), Some(P1));
+    // (5,9) hing nur ueber (6,9) an B's Fabrik und geht an A.
+    assert_eq!(owner(&g, 5, 9), Some(P0));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::CutOff { from, to: Some(to), cells } if *from == P1 && *to == P0 && cells.len() == 1
+    )));
+}
+
+#[test]
+fn waking_up_can_be_switched_off() {
+    let mut cfg = config(2);
+    cfg.terr_reconnect = false;
+    let mut g = blank_with(cfg);
+    paint(&mut g, P0, &[(1, 0), (2, 0)]);
+    let unit = g.setup_unit(P0, c(&g, 2, 2), 2, 2);
+    let events = act!(g, mv(&g, unit, 2, 1));
+    assert!(reconnected(&events).is_empty());
+    assert_eq!(owner(&g, 2, 1), None);
+    assert!(!g.piece_connected(&g.state.pieces[&unit]));
+}
+
+// ----- Umschliessen --------------------------------------------------------------------------
+
+fn enclosed(events: &[Event]) -> Vec<(PlayerId, Vec<CellId>)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Enclosed { player, cells } => Some((*player, cells.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_neutral_pocket_closed_by_one_colour_falls_to_it() {
+    let mut g = blank();
+    // Ein Ring um (0,1) und (1,1); es fehlt nur (0,2).
+    paint(&mut g, P0, &[(1, 0), (2, 0), (2, 1), (2, 2), (1, 2)]);
+    let king = king_id(&g, P0);
+    g.setup_teleport(king, c(&g, 1, 2));
+    let events = act!(g, mv(&g, king, 0, 2));
+    let got = enclosed(&events);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0, P0);
+    let mut cells = got[0].1.clone();
+    cells.sort();
+    let mut want = vec![c(&g, 0, 1), c(&g, 1, 1)];
+    want.sort();
+    assert_eq!(cells, want);
+    assert_eq!(owner(&g, 0, 1), Some(P0));
+    assert_eq!(owner(&g, 1, 1), Some(P0));
+    // Alles haengt an der Fabrik und zaehlt als Flaeche: 9 Felder.
+    assert_eq!(g.connected_count(P0), 9);
+    assert_eq!(g.state.area[P0.idx()], 9);
+}
+
+#[test]
+fn the_board_edge_closes_a_pocket_too() {
+    let mut g = blank();
+    without_factory(&mut g, P0);
+    paint(&mut g, P0, &[(0, 4), (1, 5)]);
+    let unit = g.setup_unit(P0, c(&g, 0, 7), 1, 1);
+    let events = act!(g, mv(&g, unit, 0, 6));
+    assert_eq!(enclosed(&events), vec![(P0, vec![c(&g, 0, 5)])]);
+    assert_eq!(owner(&g, 0, 5), Some(P0));
+}
+
+#[test]
+fn a_pocket_that_touches_two_colours_stays_neutral() {
+    let mut g = blank();
+    without_factory(&mut g, P0);
+    without_factory(&mut g, P1);
+    // (4,4) grenzt an zwei Farben.
+    paint(&mut g, P0, &[(3, 4), (4, 3)]);
+    paint(&mut g, P1, &[(5, 4), (4, 5)]);
+    let unit = g.setup_unit(P0, c(&g, 8, 0), 1, 1);
+    let events = act!(g, mv(&g, unit, 8, 1));
+    assert!(enclosed(&events).is_empty());
+    assert_eq!(owner(&g, 4, 4), None);
+}
+
+#[test]
+fn the_open_board_is_not_enclosed_by_anyone() {
+    // Auch in Spielen zu dritt und viert faellt am Anfang nichts zu.
+    for players in [2u8, 3, 4] {
+        let mut g = blank_with(config(players));
+        let king = king_id(&g, P0);
+        let step = g
+            .legal_actions()
+            .into_iter()
+            .find(|a| matches!(a, Action::Move { piece, .. } if *piece == king))
+            .expect("der Koenig kann ziehen");
+        let events = act!(g, step);
+        assert!(enclosed(&events).is_empty(), "{players} Spieler");
+        assert_eq!(land_of(&g, P0), 2);
+    }
+}
+
+#[test]
+fn enclosing_can_be_switched_off() {
+    let mut cfg = config(2);
+    cfg.terr_enclose = false;
+    let mut g = blank_with(cfg);
+    paint(&mut g, P0, &[(1, 0), (2, 0), (2, 1), (2, 2), (1, 2)]);
+    let king = king_id(&g, P0);
+    g.setup_teleport(king, c(&g, 1, 2));
+    let events = act!(g, mv(&g, king, 0, 2));
+    assert!(enclosed(&events).is_empty());
+    assert_eq!(owner(&g, 0, 1), None);
+    assert_eq!(owner(&g, 1, 1), None);
+}
+
+#[test]
+fn cutting_and_enclosing_work_together() {
+    let mut g = blank();
+    without_factory(&mut g, P1);
+    // A: Linie (1,0)..(3,0) an der Fabrik. B: Land rechts und unten um das Loch (4,0).
+    paint(&mut g, P0, &[(1, 0), (2, 0), (3, 0)]);
+    paint(&mut g, P1, &[(3, 1), (4, 1), (5, 0)]);
+    let unit = g.setup_unit(P1, c(&g, 2, 1), 1, 1);
+    g.setup_current(P1);
+    assert_eq!(owner(&g, 4, 0), None);
+    // B schneidet bei (2,0): (3,0) faellt an B, und damit ist (4,0) von B umschlossen.
+    let events = act!(g, mv(&g, unit, 2, 0));
+    assert_eq!(owner(&g, 3, 0), Some(P1));
+    assert_eq!(owner(&g, 4, 0), Some(P1));
+    assert_eq!(enclosed(&events), vec![(P1, vec![c(&g, 4, 0)])]);
+}
+
 // ----- Fabrik --------------------------------------------------------------------------------
 
 #[test]
@@ -590,6 +821,8 @@ struct Seen {
     bought: u32,
     eliminated: u32,
     captured: u32,
+    enclosed: u32,
+    reconnected: u32,
 }
 
 fn random_playout(players: u8, seed: u64, turns: usize, seen: &mut Seen) {
@@ -632,6 +865,8 @@ fn random_playout(players: u8, seed: u64, turns: usize, seen: &mut Seen) {
                 Event::CardBought { .. } => seen.bought += 1,
                 Event::PlayerEliminated { .. } => seen.eliminated += 1,
                 Event::Captured { .. } => seen.captured += 1,
+                Event::Enclosed { .. } => seen.enclosed += 1,
+                Event::Reconnected { .. } => seen.reconnected += 1,
                 _ => {}
             }
         }
@@ -654,5 +889,7 @@ fn random_games_keep_all_invariants() {
     assert!(seen.factory_destroyed > 0, "{seen:?}");
     assert!(seen.bought > 0, "{seen:?}");
     assert!(seen.captured > 0, "{seen:?}");
+    assert!(seen.enclosed > 0, "{seen:?}");
+    assert!(seen.reconnected > 0, "{seen:?}");
     eprintln!("{seen:?}");
 }

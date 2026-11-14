@@ -128,6 +128,18 @@ pub enum Event {
         to: Option<PlayerId>,
         cells: Vec<CellId>,
     },
+    /// Gebiet: eine neutrale Flaeche war ganz von `player` umschlossen und gehoert ihm jetzt.
+    Enclosed {
+        player: PlayerId,
+        cells: Vec<CellId>,
+    },
+    /// Gebiet: die abgetrennte Figur grenzt wieder an das verbundene Land ihres Besitzers, ist
+    /// wieder aktiv und hat das Feld, auf dem sie steht, gefaerbt.
+    Reconnected {
+        piece: PieceId,
+        owner: PlayerId,
+        cell: CellId,
+    },
     /// Gebiet: die Fabrik hat Flaeche und Rohstoffe der zusammenhaengenden Felder eingesammelt.
     Income {
         player: PlayerId,

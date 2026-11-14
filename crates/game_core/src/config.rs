@@ -97,6 +97,12 @@ pub struct Config {
     pub terr_yield: u32,
     /// Gebiet: Abgetrenntes Land geht an den, der durchtrennt hat (`true`), sonst wird es neutral.
     pub terr_cut_flips: bool,
+    /// Gebiet: Eine neutrale Flaeche, die ganz von einer Farbe umschlossen ist, faellt an diese
+    /// Farbe.
+    pub terr_enclose: bool,
+    /// Gebiet: Eine abgetrennte Figur wird aktiv und faerbt ihr Feld, sobald sie an ihr
+    /// verbundenes Land grenzt.
+    pub terr_reconnect: bool,
     /// Gebiet: Kartenpreise sind die alten Kat-2/3-Preise mal diese Zahl (nur nach Kategorie).
     pub terr_card_mult: u32,
 }
@@ -166,6 +172,8 @@ impl Config {
             terr_k3: 60,
             terr_yield: 1,
             terr_cut_flips: true,
+            terr_enclose: true,
+            terr_reconnect: true,
             terr_card_mult: 16,
         }
     }
@@ -220,6 +228,8 @@ impl Config {
             "terr_k3" => self.terr_k3 = as_u32(value)?,
             "terr_yield" => self.terr_yield = as_u32(value)?,
             "terr_cut_flips" => self.terr_cut_flips = value != 0,
+            "terr_enclose" => self.terr_enclose = value != 0,
+            "terr_reconnect" => self.terr_reconnect = value != 0,
             "terr_card_mult" => self.terr_card_mult = as_u32(value)?,
             other => return Err(format!("unbekannte Regel '{other}'")),
         }
