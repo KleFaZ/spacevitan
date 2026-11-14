@@ -1285,7 +1285,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (rcs.length) {
         const own = rcs.find((e) => e.piece === a.piece);
         const others = rcs.length - (own ? 1 : 0);
-        if (own) text += ", wieder angebunden und färbt ihr Feld";
+        if (own) text += ", die Figur ist wieder angebunden und färbt ihr Feld";
         if (others) text += `, bindet ${others} wartende Figur${others === 1 ? "" : "en"} wieder an`;
       }
       const encl = f.events.filter((e) => e.type === "enclosed");
@@ -1326,8 +1326,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       case "moved": return null;
       case "painted": return `${playerName(e.player)} färbt ${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}: ${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}.`;
       case "cut_off": return `Land von ${playerName(e.from)} abgetrennt (${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}): ${e.to === null ? "wird neutral" : `geht an ${playerName(e.to)}`}.`;
-      case "enclosed": return `${playerName(e.player)} umschließt ${e.cells.length} neutrale${e.cells.length === 1 ? "s Feld" : " Felder"}: sie gehen an ${playerName(e.player)} (${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}).`;
-      case "reconnected": return `Figur von ${playerName(e.owner)} auf ${cellName(e.cell)} grenzt wieder an ihr Land: wieder aktiv, das Feld ist jetzt ${playerName(e.owner)}s.`;
+      case "enclosed": return `${playerName(e.player)} umschließt ${e.cells.length} neutrale${e.cells.length === 1 ? "s Feld" : " Felder"}: ${e.cells.length === 1 ? "es geht" : "sie gehen"} an ${playerName(e.player)} (${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}).`;
+      case "reconnected": return `Figur von ${playerName(e.owner)} auf ${cellName(e.cell)} grenzt wieder an ihr Land: wieder aktiv, das Feld gehört jetzt ${playerName(e.owner)}.`;
       case "income": return `Fabrik von ${playerName(e.player)} sammelt ${e.area} Fläche${e.gained.length ? ` und ${invText(e.gained)}` : ""}.`;
       case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
       case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
