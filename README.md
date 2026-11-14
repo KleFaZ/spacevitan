@@ -261,6 +261,14 @@ Gedacht als Vereinfachung: kein Abbauen, keine Fabrikbauten, keine Kartenmaerkte
 - Land muss an der Fabrik haengen. Schneidet ein Gegner eine Linie durch, faellt alles Abgetrennte an
   ihn (`terr_cut_flips=0`: es wird neutral). Eine Figur, die nicht auf angebundenem Land steht, faerbt
   nichts, schlaegt nichts und betritt keine Gegnerfabrik, bis sie wieder verbunden ist ("wehrlos").
+- **Wieder anbinden** (`terr_reconnect`, Standard an): Eine wehrlose Figur ist wieder aktiv, sobald sie
+  ueber eine Kante an das mit ihrer Fabrik verbundene Land des Besitzers grenzt, und faerbt dann sofort ihr
+  eigenes Feld (kippt es also, wenn es einem Gegner gehoert; das kann dessen Linie durchtrennen). Das gilt
+  fuer eine Figur, die selbst dorthin zieht, genauso wie fuer eine, die schon wartet und neben die das eigene
+  Land waechst. Kette: Das neue Feld kann die naechste wartende Figur wecken (`territory_settle`).
+- **Umschliessen** (`terr_enclose`, Standard an): Eine zusammenhaengende neutrale Flaeche, die nur an eine
+  einzige Farbe grenzt (der Brettrand zaehlt als Wand), geht ganz an diese Farbe. Grenzt sie an zwei Farben
+  oder an keine, bleibt sie neutral. Auch Land ohne Fabrik und abgetrenntes Land zaehlt als Wand.
 - Am Ende des eigenen Zugs sammelt die Fabrik alle verbundenen Landfelder als **Flaeche** ein, dazu
   `terr_yield` je Vorkommen auf verbundenen Feldern. Rohstoffvorkommen werden nie leergebaut.
 - Figur bauen (Fabrik muss frei sein, die Figur erscheint genau darauf): Bauer `terr_pawn` Flaeche (50,

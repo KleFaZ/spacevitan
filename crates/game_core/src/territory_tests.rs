@@ -790,6 +790,39 @@ fn only_the_king_ends_the_game_and_the_loser_s_land_turns_white() {
         .any(|e| matches!(e, Event::PlayerEliminated { player } if *player == P1)));
     assert_eq!(g.outcome(), Some(Outcome::Winner(P0)));
     assert_eq!(land_of(&g, P1), 0);
+    // Das weisse Brett bleibt weiss: "Umschliessen" verteilt es nicht an den Sieger.
+    assert_eq!(land_of(&g, P0), 4);
+    assert!(!events.iter().any(|e| matches!(e, Event::Enclosed { .. })));
+}
+
+#[test]
+fn in_a_longer_game_the_rules_keep_running_after_one_player_falls() {
+    // Zu dritt: faellt B, geht sein weisses Land nicht an A, solange es auch an C grenzt, und das
+    // Spiel laeuft weiter (die Invarianten, auch zu Umschliessen und Anbinden, gelten weiter).
+    let mut g = blank_with(config(3));
+    without_factory(&mut g, P0);
+    let b = king_id(&g, P1);
+    let corner_b = g.state.pieces[&b].cell;
+    let step = g
+        .map
+        .board
+        .neighbors(corner_b)
+        .next()
+        .expect("Nachbarfeld des Startfelds");
+    let unit = g.setup_unit(P0, step, 1, 1);
+    let events = act!(
+        g,
+        Action::Move {
+            piece: unit,
+            to: corner_b
+        }
+    );
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, Event::PlayerEliminated { player } if *player == P1)));
+    assert!(g.outcome().is_none());
+    assert_eq!(land_of(&g, P1), 0);
+    assert!(enclosed(&events).is_empty());
 }
 
 // ----- Spruenge ------------------------------------------------------------------------------

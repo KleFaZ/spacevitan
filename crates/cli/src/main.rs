@@ -348,6 +348,10 @@ struct Stats {
     destroyed: u64,
     cut_offs: u64,
     cut_cells: u64,
+    /// Umschlossene Flaechen und ihre Felder, wieder angebundene Figuren.
+    enclosures: u64,
+    enclosed_cells: u64,
+    reconnects: u64,
     first_spawn: (u64, u32),
     leader20: (u32, u32),
     /// Land (Summe) in Runde 20 und am Ende je Partie, fuer den Anteil des Fuehrenden.
@@ -495,6 +499,11 @@ fn run() -> Result<(), String> {
                             stats.cut_offs += 1;
                             stats.cut_cells += cells.len() as u64;
                         }
+                        Event::Enclosed { cells, .. } => {
+                            stats.enclosures += 1;
+                            stats.enclosed_cells += cells.len() as u64;
+                        }
+                        Event::Reconnected { .. } => stats.reconnects += 1,
                         Event::FactoryBuilt { .. } => stats.factories += 1,
                         Event::Captured { .. } => stats.captures += 1,
                         Event::CardBought { card, .. } => {
@@ -637,6 +646,14 @@ fn run() -> Result<(), String> {
                 stats.cut_offs as f64 / n,
                 stats.cut_cells as f64 / n
             );
+            if stats.enclosures > 0 || stats.reconnects > 0 {
+                println!(
+                    "  Umschlossen: {:.1} Mal ({:.1} Felder) pro Partie; {:.1} Figuren wieder angebunden",
+                    stats.enclosures as f64 / n,
+                    stats.enclosed_cells as f64 / n,
+                    stats.reconnects as f64 / n
+                );
+            }
             if stats.first_spawn.1 > 0 {
                 println!(
                     "  Erste gebaute Figur: Runde {:.1} (in {} von {} Partien)",

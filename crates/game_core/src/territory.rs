@@ -447,7 +447,11 @@ impl Game {
             }
             self.cut_off(actor, events);
         }
-        self.territory_settle(actor, events);
+        // Ist das Spiel mit diesem Zug entschieden (letzter Koenig der Gegner gefallen), bleibt das
+        // Brett so, wie es ist: das Land des Verlierers ist weiss und wird nicht mehr verteilt.
+        if self.alive_players().len() > 1 {
+            self.territory_settle(actor, events);
+        }
     }
 
     /// Setzt die Farbe eines Feldes; steht dort eine gegnerische Fabrik, ist sie zerstoert.
@@ -792,7 +796,9 @@ impl Game {
         if !st.loot.is_empty() || st.carried.iter().any(|c| !c.is_empty()) {
             return Err("Beute oder Gepaeck im Gebietsmodus".into());
         }
-        if self.config.terr_enclose {
+        // Im entschiedenen Spiel bleibt das weisse Land des Verlierers, wie es ist.
+        let decided = self.alive_players().len() <= 1;
+        if self.config.terr_enclose && !decided {
             let mut probe = self.clone();
             let mut events = Vec::new();
             if probe.enclose_neutral(&mut events) {
@@ -801,7 +807,7 @@ impl Game {
                 ));
             }
         }
-        if self.config.terr_reconnect {
+        if self.config.terr_reconnect && !decided {
             for piece in st.pieces.values() {
                 let Some(connected) = self.connected_land(piece.owner) else {
                     continue;
