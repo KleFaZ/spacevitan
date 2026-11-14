@@ -31,6 +31,16 @@ fn config(players: u8) -> Config {
     c
 }
 
+/// Die urspruenglichen runden Preise (Stufe 2 bis 4 je 100 Flaeche, Karten mal 3), damit die
+/// Ablauf-Tests nicht an der Feinabstimmung der Standardpreise haengen.
+fn round_prices() -> Config {
+    let mut c = config(2);
+    c.terr_area = 100;
+    c.terr_area_step = 0;
+    c.terr_card_mult = 3;
+    c
+}
+
 fn blank_with(config: Config) -> Game {
     let mut map = Map::generate(&config).expect("Karte");
     map.deposits = vec![Vec::new(); map.board.len()];
@@ -376,8 +386,35 @@ fn the_factory_cell_must_be_free_to_build() {
 }
 
 #[test]
+fn the_area_price_grows_with_each_level() {
+    // Standard: 150 / 200 / 250 Flaeche fuer Stufe 2 / 3 / 4, der Bauer bleibt bei 50.
+    let g = blank();
+    assert_eq!(g.unit_price(1).area, 50);
+    assert_eq!([2, 3, 4].map(|l| g.unit_price(l).area), [150, 200, 250]);
+    assert_eq!(g.unit_price(4).k3, 60);
+    // Ohne Aufschlag kosten alle hoeheren Stufen gleich viel Flaeche.
+    let g = blank_with(round_prices());
+    assert_eq!([2, 3, 4].map(|l| g.unit_price(l).area), [100, 100, 100]);
+    // Ein anderer Aufschlag laesst sich einstellen.
+    let mut c = config(2);
+    c.set("terr_area_step", 75).unwrap();
+    let g = blank_with(c);
+    assert_eq!([2, 3, 4].map(|l| g.unit_price(l).area), [150, 225, 300]);
+}
+
+#[test]
+fn cards_cost_sixteen_times_the_old_category_prices_by_default() {
+    let g = blank();
+    // Pferd: alt 2 Kat 2 und 2 Kat 3; Lange Beine: alt 1 Kat 2 und 2 Kat 3.
+    assert_eq!(g.territory_card_price(Card::Horse), [0, 32, 32]);
+    assert_eq!(g.territory_card_price(Card::LongLegs), [0, 16, 32]);
+    let g = blank_with(round_prices());
+    assert_eq!(g.territory_card_price(Card::Horse), [0, 6, 6]);
+}
+
+#[test]
 fn higher_levels_need_area_and_resources_of_each_category_and_consume_them() {
-    let mut g = blank();
+    let mut g = blank_with(round_prices());
     king_off_factory(&mut g);
     let fid = g.home_factory(P0).unwrap().id;
     let lvl = |level| Action::BuildUnit {
@@ -417,7 +454,7 @@ fn higher_levels_need_area_and_resources_of_each_category_and_consume_them() {
 
 #[test]
 fn a_bought_card_waits_next_to_the_factory_and_works_on_the_next_unit() {
-    let mut g = blank();
+    let mut g = blank_with(round_prices());
     g.state.market = vec![Card::Horse, Card::Lance];
     let king = king_off_factory(&mut g);
     let fid = g.home_factory(P0).unwrap().id;
@@ -560,6 +597,9 @@ fn random_playout(players: u8, seed: u64, turns: usize, seen: &mut Seen) {
     cfg.territory = true;
     cfg.terr_pawn = 6;
     cfg.terr_area = 12;
+    // Kleine, gleiche Preise, damit Zufallsspieler Bauen und Kaufen auch wirklich erreichen.
+    cfg.terr_area_step = 0;
+    cfg.terr_card_mult = 1;
     cfg.terr_k1 = 2;
     cfg.terr_k2 = 3;
     cfg.terr_k3 = 4;

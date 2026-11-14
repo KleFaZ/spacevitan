@@ -41,7 +41,7 @@ Optionen:
                  regrow_cat1..4, center_mix, score_after, upgrade_region_min, upgrade_step, max_upgrades, market_size,
                  card_target_near, min_factory_distance, kat_roles, pawn_cost)
                  Gebietsmodus: territory=1 (weisses Brett, Land faerben), terr_pawn,
-                 terr_area, terr_k1, terr_k2, terr_k3, terr_yield, terr_cut_flips,
+                 terr_area, terr_area_step, terr_k1, terr_k2, terr_k3, terr_yield, terr_cut_flips,
                  terr_card_mult
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
                  z. B. stark,gierig
@@ -340,9 +340,9 @@ struct Stats {
     captures: u64,
     cards: u64,
     cards_by_kind: BTreeMap<&'static str, u64>,
-    /// Je Stufe 2 und 3: Summe der Runden, in denen die erste solche Figur stand, und in wie
+    /// Je Stufe 2, 3 und 4: Summe der Runden, in denen die erste solche Figur stand, und in wie
     /// vielen Partien es ueberhaupt eine gab.
-    first_level: [(u64, u32); 2],
+    first_level: [(u64, u32); 3],
     /// Gebietsmodus: zerstoerte Fabriken, Abtrennungen und abgetrennte Felder, Runde der ersten
     /// gebauten Figur, wer in Runde 20 mehr Land hatte und ob er gewann.
     destroyed: u64,
@@ -442,7 +442,7 @@ fn run() -> Result<(), String> {
             .as_ref()
             .map(|_| ReplayWriter::new(&game, &bot_names));
         let mut gift = o.gift;
-        let mut seen_level = [false; 2];
+        let mut seen_level = [false; 3];
         let mut seen_spawn = false;
         let mut leader20: Option<Option<PlayerId>> = None;
         let mut share20 = 0.0;
@@ -664,9 +664,10 @@ fn run() -> Result<(), String> {
             ),
         };
         println!(
-            "  Erste Figur Stufe 2: {}; Stufe 3: {}",
+            "  Erste Figur Stufe 2: {}; Stufe 3: {}; Stufe 4: {}",
             first(stats.first_level[0]),
-            first(stats.first_level[1])
+            first(stats.first_level[1]),
+            first(stats.first_level[2])
         );
         if !stats.cards_by_kind.is_empty() {
             let mut kinds: Vec<(&str, u64)> =

@@ -264,39 +264,70 @@ Gedacht als Vereinfachung: kein Abbauen, keine Fabrikbauten, keine Kartenmaerkte
 - Am Ende des eigenen Zugs sammelt die Fabrik alle verbundenen Landfelder als **Flaeche** ein, dazu
   `terr_yield` je Vorkommen auf verbundenen Feldern. Rohstoffvorkommen werden nie leergebaut.
 - Figur bauen (Fabrik muss frei sein, die Figur erscheint genau darauf): Bauer `terr_pawn` Flaeche (50,
-  etwa Runde 9-10); Stufe 2: `terr_area` Flaeche (100) + `terr_k1` Kat 1 (20); Stufe 3: dazu `terr_k2`
-  Kat 2 (40); Stufe 4: dazu `terr_k3` Kat 3 (60). Stufe = Reichweite. Flaeche und Rohstoffe werden dabei
-  verbraucht. Hoechste Stufe = Zahl der Kat-1-Farben, hoechstens 4.
+  etwa Runde 11); Stufe 2: `terr_area` Flaeche (150) + `terr_k1` Kat 1 (20); Stufe 3: `terr_area` +
+  `terr_area_step` (200) Flaeche, dazu `terr_k2` Kat 2 (40); Stufe 4: `terr_area` + 2 x Aufschlag (250)
+  Flaeche, dazu `terr_k3` Kat 3 (60); die Rohstoffe der niedrigeren Stufen kommen jeweils dazu. Stufe =
+  Reichweite. Flaeche und Rohstoffe werden dabei verbraucht. Hoechste Stufe = Zahl der Kat-1-Farben,
+  hoechstens 4.
 - Eine Karte (nur Zusatzfaehigkeiten: Laeuferschlag, Lange Beine, Lanze, Sprungfeder, Pferd) liegt neben
-  der Fabrik und wirkt automatisch auf die naechste gebaute Figur. Preis nur nach Kategorie, mal
-  `terr_card_mult` (3).
+  der Fabrik und wirkt automatisch auf die naechste gebaute Figur. Preis nur nach Kategorie, die alten
+  Kat-2/3-Preise mal `terr_card_mult` (16): Pferd 32 Kat 2 + 32 Kat 3, Lange Beine 16 Kat 2 + 32 Kat 3.
 - Betritt (oder ueberquert) ein Gegner die Fabrik, wird sie sofort zerstoert: kein Spielende, aber keine
   neuen Figuren; das Lager ist weg. Ohne Fabrik faerbt man frei, ohne abzutrennen und ohne Einkommen.
   Das Spiel endet nur durch den Fall eines Koenigs (sonst Wertung: eigene Felder + Summe der Stufen).
 
 Bots: `stark` und `gierig` bewerten Land, Anbindung und Fabrik (`ai.rs`, `territory_value`).
 
-**Messung** (Zweierpartien, Seeds 300-359, 60 Partien, `stark` gegen `stark`):
+**Messung** (Zweierpartien, Seeds 300-359, 60 Partien je Zeile, `stark` gegen `stark`; Bots sind kein
+Spass-Test, nur ein Stresstest der Regeln):
 
-| Variante | Siege A | Runden | erste Figur | Stufe 2 / 3 ab Runde | Abtrennungen je Partie |
+| Stand | Siege A | Runden | 1. Figur | Stufe 2 / 3 / 4 ab Runde | Abtrennungen je Partie |
 |---|---|---|---|---|---|
-| Standard (Bauer 50, Abtrennen kippt) | 68 % | 32 | 10 | 20 / 21 | 2,0 (6,9 Felder) |
-| Bauer 100 | 58 % | 25 | 14 | 17 / 19 | 1,6 (5,0 Felder) |
-| Abgetrenntes Land wird neutral | 70 % | 32 | 10 | 21 / 22 | 1,9 (5,6 Felder) |
-| `gierig` gegen `stark` | `stark` gewinnt alle 60 | 21 | 10 | 18 / 19 | 0,6 (1,4 Felder) |
+| Erste Fassung (Stufen je 100 Flaeche, Karten x3) | 68 % | 32 | 10 | 20 / 21 / - | 2,0 (6,9 Felder) |
+| **Jetzt** (Stufen 150 / 200 / 250, Karten x16) | 45 % | 41 | 11 | 25 / 28 / 36 | 3,0 (10,5 Felder) |
 
-Was daran auffaellt (Bots sind kein Spass-Test, nur ein Stresstest der Regeln):
+Nach dem ersten Spieltest (Karten zu stark fuer den Preis, hoehere Figuren zu frueh) wurden Stufen und
+Kartenpreise angepasst. Kartenwert = Siege eines Bots, der Karten kauft, gegen einen gleich starken,
+der nie welche kauft (`stark` gegen `stark-pur`, beide Sitze, je 120 Partien):
 
-- **Anziehender Vorteil**: A gewinnt 68-70 % (41-42 von 60, ueber dem Zufall), bei Bauer 100 nur 58 %
-  (35 von 60, noch im Rauschen). Gegenmittel waeren ein Ausgleich fuer B oder ein spaeterer erster Bauer.
-- **Die Abtrennregel greift kaum**: im Schnitt nur etwa 2 Abtrennungen und rund 6 Felder je Partie; ob
-  das Abgetrennte dem Gegner oder niemandem zufaellt, aendert das Ergebnis nicht messbar (68 % gegen 70 %).
-- **Fabriken fallen fast nie** (0,02-0,05 je Partie): Die Bots rennen lieber mit dem Koenig.
-  Partien enden fast immer durch Koenigsfang, nicht durch Wertung (nur 1-3 von 60).
-- **Schneeball**: Wer in Runde 20 mehr Land hat, gewinnt in 72-75 % der Partien (Bauer 100: 33 von 48).
-- **Die Stufenleiter ist sehr schnell durchlaufen**: Stufe 2 und 3 kommen fast gleichzeitig um Runde 20,
-  weil Rohstoffe nie ausgehen und jede Runde nachfliessen.
-- Die Bots kaufen viele Karten (6-7 je Partie, meist Pferd).
+| Stufenleiter | Kartenpreis | Kartenkaeufer gewinnt | Karten je Partie |
+|---|---|---|---|
+| 100 / 100 / 100 | x3 | 77 % | 2,9 |
+| 100 / 100 / 100 | x8 | 68 % | 2,9 |
+| 100 / 100 / 100 | x10 | 61 % | 2,7 |
+| 100 / 100 / 100 | x12 | 45 % | 1,7 |
+| 150 / 200 / 250 | x12 | 82 % | 1,8 |
+| 150 / 200 / 250 | x14 | 80 % | 1,6 |
+| 150 / 200 / 250 | x16 | 51 % | 0,1 |
+| 150 / 200 / 250 | x20 bis x40 | 50-52 % | 0,0-0,1 |
+
+Stufenleiter (Kartenpreis x12, `stark` gegen `stark`):
+
+| Flaeche Stufe 2 / 3 / 4 | Stufe 2 / 3 / 4 ab Runde | Partielaenge |
+|---|---|---|
+| 100 / 100 / 100 | 17,0 / 22,8 / 25,5 | 32 |
+| 150 / 200 / 250 | 25,1 / 27,7 / 34,6 | 37 |
+| 150 / 225 / 300 | 28,8 / 38,9 / 48,2 | 42 |
+| 150 / 200 / 250 und Rohstoffpreise x1,5 | 29,4 / 30,3 / 38,0 | 36 |
+| 150 / 250 / 350 und Rohstoffpreise x1,5 | 44,0 / 53,7 / 58,6 | 48 |
+| 200 / 300 / 400 | 60,2 / 68,3 / 72,2 | 54 |
+
+Was daran auffaellt:
+
+- **Karten sind ueber den Preis kaum feinzustellen**: Die Rohstoffe ueber den Stufenpreisen hinaus haben
+  sonst keinen Zweck, deshalb kauft der Bot Karten, sobald das Lager reicht, und gewinnt damit klar. Zwischen
+  x14 und x16 faellt der Kauf von 1,6 auf 0,1 je Partie: entweder ein Geschenk oder unerreichbar. Und es
+  wird dabei fast nur **Pferd** gekauft (bei x12 bis x14 ueber 95 %), die anderen Karten sind uninteressant.
+- Bei den teuersten Stufenleitern (letzte zwei Zeilen) erreicht der Bot sie kaum noch: er gibt jede Flaeche
+  sofort fuer 50er-Bauern aus und spart nie. Messwerte dieser Zeilen sagen also mehr ueber den Bot als
+  ueber die Regel.
+- **Stufen 3 und 4 sind selten**: Stufe 4 kommt nur in jeder zweiten Partie vor (31 von 60), erst um Runde 36.
+- **Schneeball**: Wer in Runde 20 mehr Land hat, gewinnt in 85 % der Partien (40 von 47).
+- **Die Abtrennregel greift mehr** als in der ersten Fassung (3,0 statt 2,0 je Partie), vermutlich weil die
+  Partien laenger sind; ob das Abgetrennte dem Gegner oder niemandem zufaellt, ist weiter unbestimmt (erste Fassung: 68 % gegen 70 %).
+- **Fabriken fallen fast nie** (0,08 je Partie): Die Bots rennen lieber mit dem Koenig.
+- **Anziehender Vorteil**: A 68 % in der ersten Fassung, jetzt 45 % (je 60 Partien, Rauschen etwa +-9 Punkte).
+  Alle Zwischenstufen mit den neuen Preisen lagen bei 50-55 %.
 
 ## Karten
 

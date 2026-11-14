@@ -83,8 +83,11 @@ pub struct Config {
     pub territory: bool,
     /// Gebiet: Flaeche, die ein Bauer (Stufe 1) kostet.
     pub terr_pawn: u32,
-    /// Gebiet: Flaeche, die jede hoehere Stufe zusaetzlich zu den Rohstoffen kostet.
+    /// Gebiet: Flaeche, die Stufe 2 zusaetzlich zu den Rohstoffen kostet.
     pub terr_area: u32,
+    /// Gebiet: Aufschlag auf die Flaeche je weitere Stufe (Stufe 3: `terr_area + step`,
+    /// Stufe 4: `terr_area + 2 * step`). 0 = alle hoeheren Stufen kosten gleich viel Flaeche.
+    pub terr_area_step: u32,
     /// Gebiet: Kat 1 fuer Stufe 2 und mehr, Kat 2 ab Stufe 3, Kat 3 fuer Stufe 4 (verbraucht,
     /// die Preise der Stufen sind kumulativ).
     pub terr_k1: u32,
@@ -156,13 +159,14 @@ impl Config {
             mid_cat1: 1,
             territory: false,
             terr_pawn: 50,
-            terr_area: 100,
+            terr_area: 150,
+            terr_area_step: 50,
             terr_k1: 20,
             terr_k2: 40,
             terr_k3: 60,
             terr_yield: 1,
             terr_cut_flips: true,
-            terr_card_mult: 3,
+            terr_card_mult: 16,
         }
     }
 
@@ -210,6 +214,7 @@ impl Config {
             "territory" => self.territory = value != 0,
             "terr_pawn" => self.terr_pawn = as_u32(value)?,
             "terr_area" => self.terr_area = as_u32(value)?,
+            "terr_area_step" => self.terr_area_step = as_u32(value)?,
             "terr_k1" => self.terr_k1 = as_u32(value)?,
             "terr_k2" => self.terr_k2 = as_u32(value)?,
             "terr_k3" => self.terr_k3 = as_u32(value)?,

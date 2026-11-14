@@ -131,7 +131,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .legend span { display: inline-flex; align-items: center; gap: 4px; }
 .legend .lg-note { flex-basis: 100%; }
 .slots { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 6px; color: var(--muted); }
-.slots .sg { display: inline-flex; align-items: center; gap: 2px; }
+.slots .sg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: 100%; }
 .slots .sg small { margin-left: 4px; font-size: 0.74rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .slot { display: block; flex: none; }
 .slot.off { opacity: 0.8; }
@@ -1377,7 +1377,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function terrPrice(level) {
     const c = R.config;
     if (level <= 1) return { area: c.terr_pawn, k1: 0, k2: 0, k3: 0 };
-    return { area: c.terr_area, k1: c.terr_k1, k2: level >= 3 ? c.terr_k2 : 0, k3: level >= 4 ? c.terr_k3 : 0 };
+    return { area: c.terr_area + (c.terr_area_step || 0) * (level - 2), k1: c.terr_k1, k2: level >= 3 ? c.terr_k2 : 0, k3: level >= 4 ? c.terr_k3 : 0 };
   }
   const terrMaxLevel = () => Math.min(R.board.corners.length, 4);
   function terrPriceText(level) {
@@ -1606,7 +1606,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (c.territory) {
       const score = c.score_after ? `Wertung nach Runde ${c.score_after}` : "keine Wertung";
       const cut = c.terr_cut_flips ? "Abgetrenntes Land fällt an den Gegner" : "Abgetrenntes Land wird neutral";
-      return `Gebietsmodus · Bauer ${c.terr_pawn} Fläche · Stufe 2: ${c.terr_area} Fläche + ${c.terr_k1} Kat 1, Stufe 3 + ${c.terr_k2} Kat 2, Stufe 4 + ${c.terr_k3} Kat 3 · ${cut} · ${score}`;
+      const a = (l) => c.terr_area + (c.terr_area_step || 0) * (l - 2);
+      return `Gebietsmodus · Bauer ${c.terr_pawn} Fläche · Stufe 2: ${a(2)} Fläche + ${c.terr_k1} Kat 1 · Stufe 3: ${a(3)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 · Stufe 4: ${a(4)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 + ${c.terr_k3} Kat 3 · ${cut} · ${score}`;
     }
     const cats = R.players >= 6 ? 4 : 3;
     const rg = c.regrow_rounds.slice(0, cats);
@@ -2182,13 +2183,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Gebietsmodus (neu)", note: "Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld: Bauer ab Fläche, Stufe 2 mit Fläche + Kat 1, Stufe 3 zusätzlich Kat 2, Stufe 4 zusätzlich Kat 3 (alles wird verbraucht). Karten liegen neben der Fabrik und wirken auf die nächste Figur. Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Nachwachsen, Ausbau und Rollen gelten hier nicht.", fields: [
       { key: "territory", label: "Gebietsmodus einschalten", check: true },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
-      { key: "terr_area", label: "Fläche für Stufe 2 bis 4", ph: () => "100" },
+      { key: "terr_area", label: "Fläche für Stufe 2", ph: () => "150" },
+      { key: "terr_area_step", label: "Mehr Fläche je weitere Stufe", ph: () => "50", hint: () => "Stufe 3 kostet so viel mehr als Stufe 2, Stufe 4 das Doppelte (Standard 150 / 200 / 250)." },
       { key: "terr_k1", label: "Kat 1 für Stufe 2 (und höher)", ph: () => "20" },
       { key: "terr_k2", label: "Kat 2 zusätzlich für Stufe 3", ph: () => "40" },
       { key: "terr_k3", label: "Kat 3 zusätzlich für Stufe 4", ph: () => "60" },
       { key: "terr_yield", label: "Ertrag je Vorkommen und Runde", ph: () => "1" },
       { key: "terr_cut_flips", label: "Abgetrenntes Land fällt an den Gegner", ph: () => "1", hint: () => "1 = an den, der durchtrennt hat; 0 = wird neutral" },
-      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "3", hint: () => "Preise der Karten (Kat 2 und 3) mal diese Zahl" },
+      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "16", hint: () => "Preise der Karten (Kat 2 und 3) mal diese Zahl. Pferd kostet so 32 Kat 2 und 32 Kat 3." },
     ] },
     { title: "Stufen der Fabriken", fields: [
       { key: "upgrade_step", label: "Einheiten je Stufe", ph: () => "10", hint: () => "Je so viele Einheiten ab Kat 2 im Lager steigt die Stufe der kommenden Figur." },

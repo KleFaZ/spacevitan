@@ -157,13 +157,13 @@ impl Game {
                 k3: 0,
             },
             3 => UnitPrice {
-                area: c.terr_area,
+                area: c.terr_area + c.terr_area_step,
                 k1: c.terr_k1,
                 k2: c.terr_k2,
                 k3: 0,
             },
             _ => UnitPrice {
-                area: c.terr_area,
+                area: c.terr_area + 2 * c.terr_area_step,
                 k1: c.terr_k1,
                 k2: c.terr_k2,
                 k3: c.terr_k3,
