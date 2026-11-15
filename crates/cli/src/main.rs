@@ -49,9 +49,11 @@ Optionen:
                  terr_ripen1..4 (Runden bis zum ersten Ertrag), terr_cats (Rohstoffkategorien),
                  terr_cards (1 = neue Karten)
                  Version 3: terr_v3=1 (baut auf Version 2 auf; Erntezaehler, Umzug der Fabrik,
-                 weniger Rohstoffe, Kat 3 gegen Flaeche), einzeln: terr_cycle (Ernte alle
-                 terr_ripen Runden), terr_move (Umzug), terr_move_k1, terr_move_k2 (Kosten),
-                 terr_rebuild (Bauzeit nach Zerstoerung), terr_trade (Kat 3 -> 2^k Flaeche),
+                 weniger Rohstoffe, Kat 3 als Flaechenbonus), einzeln: terr_cycle (Ernte alle
+                 terr_ripen Runden), terr_move (Umzug, Dauer = halbe Entfernung aufgerundet),
+                 terr_move_k1, terr_move_k2 (Kosten), terr_rebuild (Bauzeit nach Zerstoerung),
+                 terr_bonus (k verbundene Kat-3-Felder = 2^k Flaeche je Runde zusaetzlich),
+                 terr_trade (alte Fassung: Kat 3 ernten und einmalig gegen 2^k Flaeche tauschen),
                  veins2, veins3, cells2, cells3, center_cells, center_mix (Rohstoffmenge)
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,

@@ -873,3 +873,190 @@ fn random_players_that_rebuild_and_trade_never_break_the_rules() {
         assert!(g.state.round > 1);
     }
 }
+
+// ----- Messsonde: lohnt sich ein frueher Umzug zur Mitte? -----------------------------------------
+
+/// Kein Regeltest, sondern eine Messsonde: ein Bot, der den Koenig zur Mitte schickt und die Fabrik dort
+/// neu baut, sobald der Umzug bezahlbar ist (nur einmal). Alles andere macht der Bot darunter.
+struct Rusher {
+    inner: Box<dyn Bot>,
+    radius: u32,
+    done: bool,
+}
+
+impl Bot for Rusher {
+    fn name(&self) -> &'static str {
+        "rusher"
+    }
+
+    fn choose(&mut self, g: &Game) -> Action {
+        let me = g.current_player();
+        let target = g.map.board.cell_at(5, 5).expect("Mitte");
+        if !self.done {
+            if let (Some(king), Some(f)) = (g.king(me), g.standing_factory(me)) {
+                let afford = g.category_units(&f.storage, 1) >= g.config.terr_move_k1
+                    && g.category_units(&f.storage, 2) >= g.config.terr_move_k2;
+                let dist = g.map.board.distances_from(target);
+                let d = dist[king.cell.idx()];
+                let legal = g.legal_actions();
+                if afford && d <= self.radius && legal.contains(&Action::RebuildFactory) {
+                    self.done = true;
+                    return Action::RebuildFactory;
+                }
+                if afford && d > self.radius {
+                    let step = legal
+                        .iter()
+                        .filter_map(|a| match *a {
+                            Action::Move { piece, to } if piece == king.id => {
+                                Some((dist[to.idx()], *a))
+                            }
+                            _ => None,
+                        })
+                        .min_by_key(|&(nd, _)| nd);
+                    if let Some((nd, a)) = step {
+                        if nd < d {
+                            return a;
+                        }
+                    }
+                }
+            }
+        }
+        self.inner.choose(g)
+    }
+}
+
+#[derive(Default, Debug)]
+struct RushStats {
+    games: u32,
+    rusher_wins: u32,
+    draws: u32,
+    rounds: u64,
+    relocations: u32,
+    stood: u32,
+    rusher_factories_lost: u32,
+    first_sum: u64,
+    first_n: u32,
+}
+
+fn rush_series(
+    opponent: &str,
+    nodes: u64,
+    seeds: std::ops::Range<u64>,
+    rush: bool,
+    free: bool,
+) -> RushStats {
+    use crate::ai::{SearchBot, SearchParams};
+    let mut st = RushStats::default();
+    for seed in seeds {
+        for seat in 0..2usize {
+            let mut cfg = Config::new(2, seed);
+            cfg.territory = true;
+            cfg.set_v3(true);
+            if free {
+                // Ohne Preis: zeigt, ob die Kosten oder die Wehrlosigkeit der Bremse sind.
+                cfg.terr_move_k1 = 0;
+                cfg.terr_move_k2 = 0;
+            }
+            let mut g = Game::new(cfg).expect("Karte");
+            let make = |kind: &str, s: u64| -> Box<dyn Bot> {
+                match kind {
+                    "stark" => {
+                        Box::new(SearchBot::with_params(s, SearchParams::with_budget(nodes)))
+                    }
+                    _ => Box::new(AreaBot::new(s)),
+                }
+            };
+            let mut bots: Vec<Box<dyn Bot>> = Vec::new();
+            for i in 0..2usize {
+                let s = seed * 1000 + i as u64;
+                if i == seat {
+                    let inner: Box<dyn Bot> = Box::new(AreaBot::new(s));
+                    bots.push(if rush {
+                        Box::new(Rusher {
+                            inner,
+                            radius: 2,
+                            done: false,
+                        })
+                    } else {
+                        inner
+                    });
+                } else {
+                    bots.push(make(opponent, s));
+                }
+            }
+            let me = PlayerId(seat as u8);
+            let mut first = None;
+            let mut steps = 0;
+            while g.outcome().is_none() {
+                let who = g.current_player().idx();
+                let action = bots[who].choose(&g);
+                let events = g.apply(action).expect("legal");
+                for e in &events {
+                    match e {
+                        Event::FactoryRebuilding {
+                            owner,
+                            from: Some(_),
+                            ..
+                        } if *owner == me => {
+                            st.relocations += 1;
+                            first.get_or_insert(u64::from(g.state.round));
+                        }
+                        Event::FactoryStands { owner, .. } if *owner == me => st.stood += 1,
+                        Event::FactoryDestroyed { owner, .. } if *owner == me => {
+                            st.rusher_factories_lost += 1
+                        }
+                        _ => {}
+                    }
+                }
+                steps += 1;
+                assert!(steps < 30_000);
+            }
+            st.games += 1;
+            st.rounds += u64::from(g.state.round);
+            if let Some(r) = first {
+                st.first_sum += r;
+                st.first_n += 1;
+            }
+            match g.outcome() {
+                Some(crate::state::Outcome::Winner(w)) | Some(crate::state::Outcome::Points(w)) => {
+                    if w == me {
+                        st.rusher_wins += 1;
+                    }
+                }
+                _ => st.draws += 1,
+            }
+        }
+    }
+    st
+}
+
+/// `cargo test --release -p game_core rush_probe -- --ignored --nocapture`
+#[test]
+#[ignore = "Messsonde, dauert eine Weile"]
+fn rush_probe_center_relocation() {
+    for (opp, rush, free) in [
+        ("flaeche", false, false),
+        ("flaeche", true, false),
+        ("flaeche", true, true),
+        ("stark", false, false),
+        ("stark", true, false),
+        ("stark", true, true),
+    ] {
+        {
+            let st = rush_series(opp, 2000, 100..120, rush, free);
+            println!(
+                "{}{} gegen {opp}: {} von {} Partien gewonnen ({:.0} %), {:.0} Runden im Schnitt; Umzuege {} (Fabrik stand {} Mal wieder), verlorene Fabriken {}, erster Umzug im Schnitt Runde {:.0}",
+                if rush { "Rusher" } else { "Bot ohne Umzug" },
+                if free { " (Umzug gratis)" } else { "" },
+                st.rusher_wins,
+                st.games,
+                100.0 * f64::from(st.rusher_wins) / f64::from(st.games),
+                st.rounds as f64 / f64::from(st.games),
+                st.relocations,
+                st.stood,
+                st.rusher_factories_lost,
+                st.first_sum as f64 / f64::from(st.first_n.max(1)),
+            );
+        }
+    }
+}

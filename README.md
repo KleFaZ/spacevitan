@@ -471,11 +471,12 @@ spielbar).
 
 | Schalter | Version 3 | Wirkung |
 |---|---|---|
-| `terr_cycle` | 1 | **Erntezaehler**: jedes Vorkommen hat einen Zaehler (`State::age`, Erntetakte seit dem letzten Besitzerwechsel). Ist er abgelaufen, wird es einmal geerntet, dann beginnt er von vorn. Periode je Kategorie `terr_ripen` = 3 / 10 / 10 (Kat 1 / 2 / 3). Der Zaehler laeuft nur, wenn eine **stehende** Fabrik das Feld ueber verbundenes Land erreicht, sonst steht er still und es wird nichts geerntet. Ein Umfaerben des Feldes setzt ihn zurueck. Periode 0 = jede Runde |
+| `terr_cycle` | 1 | **Erntezaehler**: jedes Vorkommen hat einen Zaehler (`State::age`, Erntetakte seit dem letzten Besitzerwechsel). Ist er abgelaufen, wird es einmal geerntet, dann beginnt er von vorn. Periode je Kategorie `terr_ripen` = 3 / 10 (Kat 1 / 2). Der Zaehler laeuft nur, wenn eine **stehende** Fabrik das Feld ueber verbundenes Land erreicht, sonst steht er still und es wird nichts geerntet. Ein Umfaerben des Feldes setzt ihn zurueck. Periode 0 = jede Runde |
+| `terr_bonus` | 1 | **Kat 3 als Flaechenbonus**: Kat 3 wird nicht geerntet und liegt nie im Lager. Am Ende jedes eigenen Zuges bringen die `k` Kat-3-Felder auf dem mit der stehenden Fabrik **verbundenen** Land zusaetzlich `2^k` Flaeche (`Game::kat3_bonus`; `k = 0` bringt nichts, gedeckelt bei `2^20`). Kein Zaehler, jede Runde. `Event::Income` traegt `kat3` und `bonus` |
+| `terr_trade` | 0 | Alte Fassung (Version 3 vor der Aenderung): Kat 3 wird geerntet (`terr_ripen3`) und mit `Action::TradeKat3` einmalig gegen `2^k` Flaeche getauscht. Geht nur zusammen mit `terr_bonus=0` |
 | `terr_move` | 1 | **Fabrik-Umzug / Neubau durch den Koenig** (`Action::RebuildFactory`, JSON `rebuild_factory`), siehe unten |
 | `terr_move_k1`, `terr_move_k2` | 4, 2 | Preis des freiwilligen Umzugs aus dem Lager der Fabrik (Annahme, nicht von der Regel vorgegeben) |
 | `terr_rebuild` | 3 | Bauzeit in Runden, wenn die Fabrik zerstoert wurde (fest, egal wo, kostenlos) |
-| `terr_trade` | 1 | **Kat 3 gegen Flaeche** (`Action::TradeKat3`, JSON `trade`): das gesamte Kat 3 im Lager wird auf einmal getauscht, k Stueck ergeben 2^k Flaeche (gedeckelt bei 2^20). Wie ein Kartenkauf kein Zug: danach darf man noch ziehen |
 | `terr_cats` | 3 | Kat 1 bis 3 gibt es |
 | `veins1..3`, `cells1..3`, `center_cells`, `center_mix` | 1/1/1, 1/1/2, 2, 0 | weniger Rohstoffe: 20 Vorkommen statt 29 auf dem 10x10-Brett (8 Kat 1, 4 Kat 2, 8 Kat 3) |
 
@@ -483,7 +484,10 @@ spielbar).
 
 - Der Koenig zahlt 4 Kat 1 + 2 Kat 2 aus dem Lager, **die alte Fabrik faellt weg**, auf dem Feld des Koenigs entsteht
   die neue. Lager, Flaeche und die liegende Karte ziehen mit um.
-- Dauer = Entfernung zum alten Platz in Feldern (Brett-Abstand, mindestens 1).
+- Dauer = **halbe Entfernung** zum alten Platz in Feldern (Schritte ueber Nachbarfelder), aufgerundet, mindestens 1
+  Runde (`Game::relocation_rounds`): 1 bis 2 Felder = 1 Runde, 3 bis 4 = 2, ... quer ueber das 10x10-Brett (18) = 9.
+  Der Viewer nennt die Dauer vorab: im Tooltip ueber jedem eigenen verbundenen Feld, in der Fabrik-Karte (fuer das
+  Feld des Koenigs) und im Knopf.
 - Die Zaehlung: bei der Bestellung steht `building = Runden + 1`; am Ende jedes eigenen Zuges sinkt der Wert um 1, bei 0
   steht die Fabrik (`Event::FactoryStands`). Bei n Runden steht sie also am Ende des n-ten folgenden eigenen Zuges,
   und in diesem Zug gibt es noch kein Einkommen.
@@ -495,36 +499,50 @@ baut sie auf **eigenem Land** an seinem Standort neu, kostenlos, fest `terr_rebu
 **nicht verbunden** (`connected_land` ist leer): alle Figuren sind **wehrlos** (sie faerben nichts, schlagen nicht,
 ziehen aber), und der **Koenig darf sich nicht bewegen**. Wer auf den Bauplatz zieht, zerstoert die Fabrik. Das Land
 wird dabei **nicht** an den Gegner umgefaerbt (Annahme: "als waere das Gebiet abgetrennt" gilt nur fuer Verteidigung,
-Faerben und Ertrag); steht die Fabrik wieder, wird alles neu angebunden.
+Faerben und Ertrag); steht die Fabrik wieder, wird alles neu angebunden. Auch der Kat-3-Bonus fehlt in dieser Zeit.
 
-Bots: `stark`, `gierig`, `flaeche` bauen eine zerstoerte Fabrik sofort neu und tauschen Kat 3 nach einer Faustregel
-(wenn dadurch eine hoehere Stufe bezahlbar wird, bei 5 oder mehr Stueck oder kurz vor der Wertung). **Keiner zieht
-freiwillig um**; dieser Teil der Regel ist also nur von Hand zu pruefen. `stark` kennt die Karten von Version 2/3 nicht
-gezielt.
+Bots: `stark`, `gierig`, `flaeche` bauen eine zerstoerte Fabrik sofort neu. **Keiner zieht freiwillig um.** Der
+Flaechen-Bot (`AreaBot`) und der Suchbot (`stark`) bewerten den Bonus (`2^k` je Runde) mit; `gierig` kennt ihn nicht.
+`stark` kennt die Karten von Version 2/3 nicht gezielt.
 
-**Messung** (2 Spieler, Seeds ab 100, 40 Partien; `stark` mit `--nodes 4000`, 16 Partien ab Seed 200; "Wertung" =
+**Messung** (2 Spieler, Seeds ab 100 bzw. 200, 40 Partien, `stark` mit `--nodes 4000`, Spiegel 16 Partien; "Wertung" =
 Entscheidung erst nach Runde 100). Wieder Stresstests, und bei 16 bis 40 Partien rauscht jede Zahl um 8 bis 25
 Prozentpunkte:
 
-| Paarung | Version 2 | Version 3 |
+| Paarung | Version 2 | Version 3 (Bonus) |
 |---|---|---|
-| `flaeche` gegen `gierig` (beide Sitze) | 92 % `flaeche`, 49 Runden | 79 % `flaeche`, 68 Runden |
-| `stark` gegen `flaeche` (beide Sitze, 32 Partien) | 68 % `stark`, 52 Runden | 94 % `stark`, 49 Runden |
-| `flaeche` gegen `flaeche` | A 48 %, 60 Runden | A 45 %, 67 Runden, 13 von 40 nach Wertung |
-| `gierig` gegen `gierig` | A 50 %, 77 Runden | A 57 %, 74 Runden |
-| `stark` gegen `stark` (16 Partien) | A 50 %, 87 Runden | A 62 %, 101 Runden, 15 von 16 nach Wertung |
+| `flaeche` gegen `gierig` (beide Sitze) | 92 % `flaeche`, 49 Runden | 86 % `flaeche`, 74 Runden |
+| `stark` gegen `flaeche` (beide Sitze, 80 Partien) | 68 % `stark`, 52 Runden | 92 % `stark`, 67 Runden |
+| `flaeche` gegen `flaeche` | A 48 %, 60 Runden | A 48 %, 74 Runden, 16 von 40 nach Wertung |
+| `gierig` gegen `gierig` | A 50 %, 77 Runden | A 45 %, 72 Runden |
+| `stark` gegen `stark` (16 Partien) | A 50 %, 87 Runden | A 31 %, 97 Runden, 14 von 16 nach Wertung |
 
 Was daran auffaellt:
 
-- **Kat 1 ist immer noch reichlich**: rund 110 Ernten Kat 1 je Partie (`flaeche`, `gierig`), 175 beim `stark`-Spiegel,
-  dazu 13 Kat 2 und 25 bis 29 Kat 3. Die Rohstoffe sind weniger, aber durch den Zaehler kommen sie planbar.
-- **Kat 3 ist ein ordentlicher Flaechenhahn**: 5 bis 7 Tausche je Partie bringen 160 bis 210 Flaeche (beim
-  `stark`-Spiegel 15 Tausche, 286 Flaeche). Weil der Bot schon bei 2 bis 3 Stueck tauscht, kommt die Exponentialkurve
-  kaum zum Tragen; ob Warten auf 6 bis 8 Stueck (64 bis 256 Flaeche) sich lohnt, ist ungeprueft.
-- **Die Zerstoerung der Fabrik ist kaum noch ein Schlag**: 1,5 Neubauten je Partie bei den schwachen Bots, beim
-  `stark` nur 0,1 bis 0,3. Drei Runden wehrlos sind ein Fenster, das keiner der Bots ausnutzt.
-- **Die Partien sind laenger geworden** (Spiegel mit `stark`: 87 auf 101 Runden, fast alle nach Wertung).
-- **Vorteil des ersten Spielers** ist mit 16 bis 40 Partien nicht von Zufall zu trennen.
+- **Der Kat-3-Bonus ist der groesste Flaechenposten**: je Partie 4000 bis 8400 Bonus-Flaeche gegen 4000 bis 6100 aus
+  den Feldern, also 40 bis 60 % des gesamten Flaecheneinkommens. Durch `2^k` waechst er mit jedem weiteren
+  verbundenen Kat-3-Feld auf das Doppelte: bei `flaeche` gegen `flaeche` haben 13 % der Zugenden alle 8 Kat-3-Felder
+  (256 Flaeche je Runde), 21 % keins. Wer die Kat-3-Felder der freien Ecken zuerst bekommt, haengt den anderen ab.
+- **Kat 1 bleibt reichlich**: rund 110 Ernten Kat 1 je Partie (`flaeche`, `gierig`), 165 beim `stark`-Spiegel, dazu
+  12 bis 21 Kat 2.
+- **Zerstoerte Fabriken kosten kaum noch**: 1,4 bis 2,4 Neubauten je Partie bei den schwachen Bots, beim `stark` nur
+  0,1 bis 0,7. Drei wehrlose Runden sind ein Fenster, das die Bots selten ausnutzen.
+- **Partien sind laenger geworden** (Spiegel mit `stark`: 87 auf 97 Runden, 14 von 16 erst in der Wertung).
+- **Vorteil des ersten Spielers** ist mit 16 bis 40 Partien nicht von Zufall zu trennen (`stark`-Spiegel: A nur 31 %).
+
+**Sonde: lohnt ein Umzug zur Mitte?** (`cargo test --release -p game_core rush_probe -- --ignored --nocapture`, 40
+Partien je Zeile, beide Sitze). Ein Hilfsbot (`Rusher` in `v3_tests.rs`, kein Teil des Spiels) schickt den Koenig zur
+Mitte und baut die Fabrik dort neu, sobald der Umzug bezahlbar ist; sonst spielt er wie der Flaechen-Bot:
+
+| | gegen `flaeche` | gegen `stark` (2000 Knoten) |
+|---|---|---|
+| Bot ohne Umzug | 50 % | 18 % |
+| Umzug zur Mitte, Preis 4 Kat 1 + 2 Kat 2 | 20 % (Umzug im Schnitt Runde 33) | 5 % (Runde 37) |
+| Umzug zur Mitte, gratis | 45 % (Runde 8) | 0 % (Runde 8, Partie nur 28 Runden) |
+
+Die Kosten (2 Kat 2 gibt es erst nach etwa 20 Runden) verhindern den Umzug in den ersten Runden; ein frueher Umzug
+ohne Preis ist gegen den schwachen Bot gleichwertig, gegen den starken Bot ein Verlust (wehrlos und der Koenig auf dem
+Bauplatz). Das gilt fuer einen plumpen Hilfsbot; ein Mensch, der den Zeitpunkt abpasst, ist damit nicht widerlegt.
 
 ## Karten
 
