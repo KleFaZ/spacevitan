@@ -1,4 +1,4 @@
-<title>Spacevitan</title>
+<title>Spacevitan Version 1</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -223,7 +223,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
 <header class="top">
   <div class="brand">
-    <h1>Spacevitan</h1>
+    <h1>Spacevitan <span>Version 1</span></h1>
     <div class="tabs" role="group" aria-label="Modus">
       <button id="modePlay" type="button" aria-pressed="false">Spielen</button>
       <button id="modeView" type="button" aria-pressed="true">Partien ansehen</button>
@@ -241,12 +241,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 <section class="menu" id="menu" hidden aria-label="Neue Partie einrichten">
   <form id="setup" novalidate>
     <div class="menuhead">
-      <h2>Neue Partie</h2>
-      <div class="presets" role="group" aria-label="Regelvorlage">
-        <button type="button" class="preset" data-preset="pc" aria-pressed="true">Computerspiel</button>
-        <button type="button" class="preset" data-preset="board" aria-pressed="false">Brettspiel</button>
-        <button type="button" class="preset" data-preset="roles" aria-pressed="false">Rollen (neu)</button>
-        <button type="button" class="preset" data-preset="territory" aria-pressed="false">Gebiet (neu)</button>
+      <h2>Neue Partie · Version 1</h2>
+      <div class="presets" role="group" aria-label="Einstellungen">
         <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
       </div>
       <p class="note" id="presetNote"></p>
@@ -259,10 +255,6 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
             <option value="2" selected>2 (Quadrat, gegenüber)</option>
             <option value="3">3 (Dreieck)</option>
             <option value="4">4 (Quadrat)</option>
-            <option value="5">5 (Fünfeck)</option>
-            <option value="6">6 (Sechseck)</option>
-            <option value="7">7 (Siebeneck)</option>
-            <option value="8">8 (Achteck)</option>
           </select>
         </label>
         <label for="setSelf"><span>Spieler A</span>
@@ -511,6 +503,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     return R.cornerColor[home];
   };
+  /**
+   * Farbe eines Rohstoffs. Gebietsmodus: weiss, solange ihn niemand besitzt; sobald das Feld, auf dem er
+   * liegt, oder das Lager, in dem er steckt, jemandem gehoert, in dessen Spielerfarbe.
+   */
+  const RES_NEUTRAL = "#ffffff";
+  const resColor = (res, owner) => {
+    if (!isTerr()) return crystalColor(res);
+    return owner === null || owner === undefined || owner < 0 ? RES_NEUTRAL : PLAYER[owner].color;
+  };
+  const cellOwnerAt = (f, cell) => (f.land ? f.land[cell] : null);
   /** Wem gehoert eine Farbe? Text fuer Tooltips und Knoepfe. */
   const colorOwner = (res) => {
     const home = typeInfo(res).home;
@@ -824,7 +826,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     list.forEach((res, k) => {
       const off = list.length === 1 ? 0 : (k === 0 ? -1 : 1) * geo.W * 0.15;
       const px = cx + off, py = cy + geo.W * 0.06 - (list.length > 1 && k === 1 ? geo.W * 0.03 : 0);
-      const cat = category(res), col = crystalColor(res);
+      const cat = category(res), col = resColor(res, cellOwnerAt(f, cell));
       // Abgebaut: blass, mit der Zahl der Runden bis es wieder da ist.
       const wait = regrowLeft(f, cell, res);
       ctx.globalAlpha = wait ? 0.22 : dim ? 0.35 : 1;
@@ -1054,8 +1056,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
    * Mengen von Kat 2, 3, 4 (Farben wie die Symbole auf dem Brett). Optional am Ende die Stufe,
    * die beim Aufloesen entstuende.
    */
-  function drawStockPill(cx, by, inv, level) {
+  function drawStockPill(cx, by, inv, level, owner) {
     if (!inv.length && !level) return;
+    if (isTerr()) {
+      // Gebietsmodus: je Kategorie die Summe, in der Farbe des Besitzers.
+      const col = resColor(1, owner);
+      const parts = [1, 2, 3, 4].map((c) => [c, String(catUnits(inv, c)), col]).filter((x) => x[1] !== "0");
+      drawPill(cx, by, [], parts, level);
+      return;
+    }
     const colors = [...new Set(inv.filter(([r]) => category(r) === 1).map(([r]) => crystalColor(r)))];
     // Je Kategorie und Farbe ein Teil: Quadrat = Quader (Kat 2), Kreis = Ball (Kat 3).
     const parts = inv.filter(([r]) => category(r) >= 2)
@@ -1088,7 +1097,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ctx.fillStyle = col || "#c9ced6";
       const q = h * 0.17, mx = x + h * 0.15, my = by + h / 2;
       ctx.beginPath();
-      if (c === 2) ctx.rect(mx - q, my - q, q * 2, q * 2);
+      if (c === 1) { const d = h * 0.3; ctx.moveTo(mx, my - d); ctx.lineTo(mx + d * 0.8, my); ctx.lineTo(mx, my + d); ctx.lineTo(mx - d * 0.8, my); ctx.closePath(); }
+      else if (c === 2) ctx.rect(mx - q, my - q, q * 2, q * 2);
       else if (c === 3) ctx.arc(mx, my, q, 0, Math.PI * 2);
       else { ctx.moveTo(mx - q, my + q); ctx.lineTo(mx, my - q); ctx.lineTo(mx + q, my + q); ctx.closePath(); }
       ctx.fill(); ctx.strokeStyle = "rgba(255,255,255,0.75)"; ctx.lineWidth = 1; ctx.stroke();
@@ -1116,7 +1126,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.fillStyle = "#4b4e55";
     ctx.fillRect(cx + w * 0.35, y0 - h - d * 2.2, w * 0.2, d * 1.8);
     ctx.strokeRect(cx + w * 0.35, y0 - h - d * 2.2, w * 0.2, d * 1.8);
-    if (fac) drawStockPill(cx, y0 - h - d * 3.6, fac.storage, fac.level || 0);
+    if (fac) drawStockPill(cx, y0 - h - d * 3.6, fac.storage, fac.level || 0, fac.owner);
   }
   function drawLoot(cx, cy) {
     const W = geo.W, r = W * 0.11, ry = geo.flat ? r * 0.9 : r * 0.5;
@@ -1165,8 +1175,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
   // ----- 2D-Draufsicht: flache Figurenmarken statt 3D-Figuren ---------------------------------
   /** Lagerleiste in 2D erst nach allen Figuren zeichnen, damit sie nicht verdeckt wird. */
-  function queuePill(cx, by, inv, level) {
-    const job = () => drawStockPill(cx, by, inv, level);
+  function queuePill(cx, by, inv, level, owner) {
+    const job = () => drawStockPill(cx, by, inv, level, owner);
     if (pills) pills.push(job); else job();
   }
   /** Rohstoff als flaches Zeichen: Raute = Kat 1, Quadrat = Kat 2, Kreis = Kat 3, Dreieck = Kat 4. */
@@ -1177,7 +1187,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     else if (cat === 3) ctx.arc(x, y, s, 0, Math.PI * 2);
     else { ctx.moveTo(x - s, y + s * 0.85); ctx.lineTo(x, y - s * 1.0); ctx.lineTo(x + s, y + s * 0.85); ctx.closePath(); }
     ctx.fillStyle = col; ctx.fill();
-    ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.stroke();
+    ctx.lineJoin = "round";
+    if (col === RES_NEUTRAL) {
+      // Weiss auf hellem Feld: kein heller Rand, dafuer eine kraeftige dunkle Kontur.
+      ctx.lineWidth = 1.8; ctx.strokeStyle = "rgba(30,34,44,0.8)"; ctx.stroke();
+      return;
+    }
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.stroke();
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.stroke();
   }
   function drawDepositsFlat(cell, dim) {
@@ -1191,7 +1207,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const px = cx + (list.length === 1 ? 0 : (k === 0 ? -1 : 1) * U * 0.2), py = cy;
       const wait = regrowLeft(f, cell, res);
       ctx.globalAlpha = wait ? 0.25 : dim ? 0.4 : 1;
-      flatGlyph(category(res), px, py, s, crystalColor(res));
+      flatGlyph(category(res), px, py, s, resColor(res, cellOwnerAt(f, cell)));
       if (wait) {
         ctx.globalAlpha = dim ? 0.5 : 0.95;
         ctx.font = `700 ${Math.max(10, Math.round(U * 0.24))}px ${cssVar("--font-data") || "monospace"}`;
@@ -1286,7 +1302,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ctx.beginPath(); ctx.moveTo(tx, y0 - h); ctx.lineTo(tx, y0 - h - h * 0.55); ctx.lineTo(tx + w * 0.4, y0 - h); ctx.closePath(); ctx.fill(); ctx.stroke();
     }
     ctx.beginPath(); ctx.rect(x0 + w * 0.82, y0 - h - h * 0.8, w * 0.16, h * 0.8 + 1); ctx.fill(); ctx.stroke();
-    if (fac) queuePill(cx, cy + U * 0.5 - Math.max(12, U * 0.2) * 0.5, fac.storage, fac.level || 0);
+    if (fac) queuePill(cx, cy + U * 0.5 - Math.max(12, U * 0.2) * 0.5, fac.storage, fac.level || 0, fac.owner);
   }
   function drawFlagFlat(cx, cy, color) {
     const U = geo.W, px = cx + U * 0.27, base = cy - U * 0.05, top = cy - U * 0.4;
@@ -1446,8 +1462,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       // Was der Koenig traegt, als Leiste ueber der Krone.
       const carried = (R.frames[fi].carried || [])[p.owner] || [];
       if (carried.length) {
-        if (geo.flat) queuePill(cx, cy - geo.W * 0.5 - Math.max(12, geo.W * 0.2) * 0.5, carried, 0);
-        else drawStockPill(cx, cy - geo.W * 1.08, carried, 0);
+        if (geo.flat) queuePill(cx, cy - geo.W * 0.5 - Math.max(12, geo.W * 0.2) * 0.5, carried, 0, p.owner);
+        else drawStockPill(cx, cy - geo.W * 1.08, carried, 0, p.owner);
       }
     } else {
       drawUnit(cx, cy + geo.W * 0.02, color, p);
@@ -1576,9 +1592,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return f.current;
   }
   /** Rohstoffe als HTML: Kat-1-Farben als Rauten, Quader als Quadrate, Baelle als Kreise, je Farbe. */
-  function resHtml(inv) {
+  function resHtml(inv, owner) {
     if (!inv.length) return "<span>nichts</span>";
     const out = [];
+    if (isTerr()) {
+      // Gebietsmodus: Summe je Kategorie, in der Farbe des Besitzers.
+      const col = resColor(1, owner);
+      for (let c = 1; c <= 4; c++) {
+        const n = catUnits(inv, c);
+        if (n) out.push(`<span>${c === 1 ? "Kat 1" : RES_NAME[c]}: <i class="chip${c}" style="background:${col}"></i>${n}</span>`);
+      }
+      return out.join("") || "<span>nichts</span>";
+    }
     for (const [r, n] of inv.filter(([r]) => category(r) === 1)) {
       out.push(`<span><i class="chip1" style="background:${crystalColor(r)}"></i>${n}× ${escapeHtml(colorOwner(r))}</span>`);
     }
@@ -1616,7 +1641,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       return rows;
     }
     const area = (f.area || [])[p] || 0;
-    rows.push(`<div class="loc"><b>Fabrik auf ${cellName(fac.cell)}</b><div class="res"><span>Fläche: <b style="display:inline">${area}</b></span>${resHtml(fac.storage)}</div>` +
+    rows.push(`<div class="loc"><b>Fabrik auf ${cellName(fac.cell)}</b><div class="res"><span>Fläche: <b style="display:inline">${area}</b></span>${resHtml(fac.storage, p)}</div>` +
       `<span class="sub">Am Ende deines Zugs sammelt sie alle Felder ein, die an ihr hängen (je 1 Fläche), dazu die Rohstoffe auf diesen Feldern. Gebaut wird auf der Fabrik, sie muss frei sein.</span></div>`);
     const color = PLAYER[p].color;
     const req = (kind, have, need) => {
@@ -1743,7 +1768,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const groups = plan ? plan.groups : slotPlan(cost, [], -1).groups;
     const parts = groups.map((g) => {
       const need = g.slots.length, have = g.slots.filter((x) => x !== null).length;
-      const svgs = g.slots.map((x) => slotSvg(g.kind, x === null ? null : crystalColor(x))).join("");
+      const svgs = g.slots.map((x) => slotSvg(g.kind, x === null ? null : resColor(x, isTerr() ? focusPlayer(R.frames[fi]) : null))).join("");
       const count = plan ? `${have}/${need}` : `${need}×`;
       const tip = plan ? `${g.name}: ${have} von ${need} vorhanden` : `${need}× ${g.name}`;
       const kindsTxt = g.label ? ` ${g.label}` : "";
@@ -1859,7 +1884,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const facs = f.factories.filter((x) => x.owner === p);
       const stock = facs.reduce((s, x) => s + total(x.storage), 0);
       const carried = f.carried[p] || [];
-      const colors = carried.filter(([res]) => category(res) === 1).map(([res]) => crystalColor(res));
+      const colors = isTerr() ? [] : carried.filter(([res]) => category(res) === 1).map(([res]) => crystalColor(res));
       const isWinner = fi === last && R.outcome && (R.outcome.type === "winner" || R.outcome.type === "points") && R.outcome.player === p;
       const turn = fi < last && f.current === p && f.alive[p];
       const div = document.createElement("div");
@@ -2118,11 +2143,23 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       grain: "Ball (Kat 3, Kreis) in der Farbe seiner Region. Nach 3 Runden wieder da.",
       barrel: "Kat 4 (Dreieck, ab 6 Spielern)",
     };
+    // Gebietsmodus: eigene Erklaerungen (kein Abbauen, keine Beute), Rohstoffe weiss bis besessen.
+    const terr = isTerr();
+    const textTerr = {
+      king: "König: färbt wie jede Figur seinen Weg. Fällt er, ist der Spieler raus.",
+      factory: "Fabrik: die einzige des Spielers, auf seiner Startecke. Hier erscheinen neue Figuren; am Zugende sammelt sie die Fläche aller mit ihr verbundenen Felder. Betritt ein Gegner sie, wird sie zerstört.",
+      pill: "Lager an der Fabrik: Summe je Kategorie (Raute Kat 1, Quadrat Kat 2, Kreis Kat 3) in der Farbe des Besitzers.",
+      crystal: "Kat 1 (Raute), Hauptrohstoff. Weiß, solange das Feld niemandem gehört; sobald es einem Spieler gehört, in dessen Farbe. Die Fabrik sammelt ihn am Zugende, wenn das Feld mit ihr verbunden ist (er wird nie leergebaut).",
+      ingot: "Quader (Kat 2, Quadrat): weiß, bis das Feld jemandem gehört, dann in dessen Farbe.",
+      grain: "Ball (Kat 3, Kreis): weiß, bis das Feld jemandem gehört, dann in dessen Farbe.",
+    };
+    const shown = terr ? items.filter(([k]) => k !== "loot" && k !== "barrel") : items;
     const dl = $("legend");
     dl.innerHTML = "";
     const saved = geo;
-    for (let [kind, text] of items) {
+    for (let [kind, text] of shown) {
       if (!view3d && text2d[kind]) text = text2d[kind];
+      if (terr && textTerr[kind]) text = textTerr[kind];
       const dt = document.createElement("dt");
       const c = document.createElement("canvas");
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -2147,11 +2184,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         geo = { W: 38 };
         if (kind === "factory") drawFactory(20, 34, PLAYER[2].color, null);
         geo = { W: 30 };
-        if (kind === "pill") drawPill(20, 13, [PLAYER[0].color], [[2, "5", PLAYER[0].color], [3, "7", PLAYER[1].color]], 2);
+        if (kind === "pill") {
+          if (terr) drawPill(20, 13, [], [[1, "9", PLAYER[0].color], [2, "5", PLAYER[0].color], [3, "7", PLAYER[0].color]], 0);
+          else drawPill(20, 13, [PLAYER[0].color], [[2, "5", PLAYER[0].color], [3, "7", PLAYER[1].color]], 2);
+        }
         geo = { W: 46 };
-        if (kind === "crystal") drawCrystal(20, 34, 22, PLAYER[3].color);
-        if (kind === "ingot") drawIngot(20, 28, 24, PLAYER[0].color);
-        if (kind === "grain") drawGrain(20, 32, 24, PLAYER[1].color);
+        if (kind === "crystal") drawCrystal(20, 34, 22, terr ? RES_NEUTRAL : PLAYER[3].color);
+        if (kind === "ingot") drawIngot(20, 28, 24, terr ? RES_NEUTRAL : PLAYER[0].color);
+        if (kind === "grain") drawGrain(20, 32, 24, terr ? RES_NEUTRAL : PLAYER[1].color);
         if (kind === "barrel") drawBarrel(20, 34, 40);
         if (kind === "loot") drawLoot(20, 28);
         if (kind === "land") {
@@ -2180,10 +2220,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (kind === "unit2") drawUnit(20, 20, PLAYER[1].color, { level: 3, range: 3, perks: {} });
     if (kind === "unitCards") drawUnit(18, 21, PLAYER[4].color, { level: 2, range: 3, perks: { lance: true, diagonal: true, horse: true, extra_range: 1, card_levels: 1 } });
     if (kind === "factory") drawFactory(20, 20, PLAYER[2].color, null);
-    if (kind === "pill") { geo = { W: 30, flat: true, square: true, U: 30 }; drawPill(20, 13, [PLAYER[0].color], [[2, "5", PLAYER[0].color], [3, "7", PLAYER[1].color]], 2); }
-    if (kind === "crystal") flatGlyph(1, 20, 20, 9, PLAYER[3].color);
-    if (kind === "ingot") flatGlyph(2, 20, 20, 9, PLAYER[0].color);
-    if (kind === "grain") flatGlyph(3, 20, 20, 9, PLAYER[1].color);
+    if (kind === "pill") {
+      geo = { W: 30, flat: true, square: true, U: 30 };
+      if (isTerr()) drawPill(20, 13, [], [[1, "9", PLAYER[0].color], [2, "5", PLAYER[0].color], [3, "7", PLAYER[0].color]], 0);
+      else drawPill(20, 13, [PLAYER[0].color], [[2, "5", PLAYER[0].color], [3, "7", PLAYER[1].color]], 2);
+    }
+    if (kind === "crystal") flatGlyph(1, 20, 20, 9, isTerr() ? RES_NEUTRAL : PLAYER[3].color);
+    if (kind === "ingot") flatGlyph(2, 20, 20, 9, isTerr() ? RES_NEUTRAL : PLAYER[0].color);
+    if (kind === "grain") flatGlyph(3, 20, 20, 9, isTerr() ? RES_NEUTRAL : PLAYER[1].color);
     if (kind === "barrel") flatGlyph(4, 20, 20, 9, "#9a6a3c");
     if (kind === "loot") drawLoot(20, 22);
     if (kind === "land") {
@@ -2427,28 +2471,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const RULE_GROUPS = [
     { title: "Brett", fields: [
       { key: "side", label: "Seitenlänge", ph: () => "10", hint: () => { const [a, b] = sideRange(menuPlayers()); return `Felder je Kante, bei ${menuPlayers()} Spielern ${a} bis ${b}.`; } },
-      { key: "min_factory_distance", label: "Mindestabstand zwischen Fabriken", ph: () => "3", hint: () => "in Schritten, 2 oder 3" },
-    ] },
-    { title: "Nachwachsen der Rohstoffe", note: "Ein abgebautes Vorkommen ist weg. Die Zahl sagt, nach wie vielen Runden es wieder da ist; 0 = nie.", fields: [
-      { key: "regrow_cat1", label: "Kat 1 (Kristalle der Farben)", ph: () => "20" },
-      { key: "regrow_cat2", label: "Kat 2", ph: () => "5" },
-      { key: "regrow_cat3", label: "Kat 3", ph: () => "3" },
-      { key: "regrow_cat4", label: "Kat 4 (nur ab 6 Spielern)", ph: () => "2" },
     ] },
     { title: "Ende und Wertung", fields: [
-      { key: "score_after", label: "Wertung nach Runde", ph: () => "100", hint: () => "Hat bis dahin niemand gewonnen, zählen Figurenstufen + Fabriken + Farben. 0 = keine Wertung." },
+      { key: "score_after", label: "Wertung nach Runde", ph: () => "100", hint: () => "Hat bis dahin kein König gewonnen, zählen eigene Felder + Summe der Figurenstufen. 0 = keine Wertung." },
       { key: "max_rounds", label: "Unentschieden nach Runde", ph: () => "300", hint: () => "Nur wichtig, wenn die Wertung ausgeschaltet ist." },
     ] },
     { title: "Karten", fields: [
       { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
-      { key: "card_target_near", label: "Figurenkarten nur nahe am Zahlfeld", check: true },
     ] },
-    { title: "Rollen der Kategorien (neu)", note: "Kat 1 baut Fabriken und gibt Stufen. Kat 2 kauft Bauern: Rekrut liegt immer im Markt, kostet nur Kat 2, die Fabrik bleibt stehen. Kat 3 kauft Spezialzüge (Lanze, Sprungfeder, Pferd, Läuferschlag, Lange Beine); Lanze, Sprungfeder, Pferd und Läuferschlag gehen auch auf den König. Die Karten im Markt kommen zum Rekruten dazu.", fields: [
-      { key: "kat_roles", label: "Rollen einschalten", check: true },
-      { key: "pawn_cost", label: "Kat 2 für einen Bauern", ph: () => "4", hint: () => "Einheiten einer Region, nur mit den Rollen." },
-    ] },
-    { title: "Gebietsmodus (neu)", note: "Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld: Bauer ab Fläche, Stufe 2 mit Fläche + Kat 1, Stufe 3 zusätzlich Kat 2, Stufe 4 zusätzlich Kat 3 (alles wird verbraucht). Karten liegen neben der Fabrik und wirken auf die nächste Figur. Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Nachwachsen, Ausbau und Rollen gelten hier nicht.", fields: [
-      { key: "territory", label: "Gebietsmodus einschalten", check: true },
+    { title: "Gebiet", wide: true, grid: true, note: "Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld: Bauer ab Fläche, Stufe 2 mit Fläche + Kat 1, Stufe 3 zusätzlich Kat 2, Stufe 4 zusätzlich Kat 3 (alles wird verbraucht). Karten liegen neben der Fabrik und wirken auf die nächste Figur. Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Rohstoffe sind weiß, bis das Feld jemandem gehört; dann haben sie dessen Farbe.", fields: [
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
       { key: "terr_area", label: "Fläche für Stufe 2", ph: () => "150" },
       { key: "terr_area_step", label: "Mehr Fläche je weitere Stufe", ph: () => "50", hint: () => "Stufe 3 kostet so viel mehr als Stufe 2, Stufe 4 das Doppelte (Standard 150 / 200 / 250)." },
@@ -2462,43 +2493,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_enclose_edge", label: "Brettrand zählt als Wand", ph: () => "0", hint: () => "0 = eine neutrale Fläche am Brettrand wird nie umschlossen; 1 = der Rand ist eine Wand (ein „L“ aus der Ecke holt ein Quadrat)" },
       { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "16", hint: () => "Preise der Karten (Kat 2 und 3) mal diese Zahl. Pferd kostet so 32 Kat 2 und 32 Kat 3." },
     ] },
-    { title: "Stufen der Fabriken", fields: [
-      { key: "upgrade_step", label: "Einheiten je Stufe", ph: () => "10", hint: () => "Je so viele Einheiten ab Kat 2 im Lager steigt die Stufe der kommenden Figur." },
-      { key: "upgrade_region_min", label: "Einheiten je Region", ph: () => "3", hint: () => "So viele einer Regionsfarbe müssen im Lager liegen, damit die Region zählt." },
-      { key: "max_upgrades", label: "Höchste Ausbaustufe", ph: () => "2" },
-    ] },
-    { title: "Erweitert: Rohstoffe auf der Karte", details: true, wide: true, fields: [
-      { key: "yield_per_round", label: "Ertrag je Vorkommen und Runde", ph: () => "1" },
-      { key: "deposit_stock", label: "Vorrat je Vorkommen", ph: () => "0", hint: () => "0 = unerschöpflich" },
-      { key: "cat1_cells", label: "Kat-1-Felder je Ecke", ph: () => "1" },
-      { key: "cat1_distance", label: "Abstand der eigenen Kat-1-Felder zum Start", ph: () => "2" },
-      { key: "center_colors", label: "Zentrumsfarben", ph: () => String(Math.ceil(menuPlayers() / 2)), hint: () => "Neutrale Kat-1-Farben um die Mitte, höchstens 8" },
-      { key: "center_radius", label: "Radius der Mitte", ph: () => "2" },
-      { key: "center_cells", label: "Felder je Zentrumsfarbe", ph: () => "3" },
-      { key: "center_mix", label: "Mischfelder in der Mitte", ph: () => "1" },
-      { key: "mid_cat1", label: "Kat-1-Felder je Spieler im Zwischenring", ph: () => "1" },
-    ] },
   ];
-  const PRESETS = {
-    pc: {
-      note: "Wie bisher: Rohstoffe wachsen nach (Kat 1 nach 20, Kat 2 nach 5, Kat 3 nach 3 Runden), nach Runde 100 entscheidet die Wertung.",
-      rules: {},
-    },
-    roles: {
-      note: "Wie Computerspiel, aber mit den Rollen der Kategorien: Rekrut (Kat 2) liegt immer im Markt, Spezialzüge kosten nur Kat 3, Lanze, Sprungfeder, Pferd und Läuferschlag gehen auch auf den König.",
-      rules: { kat_roles: 1 },
-    },
-    territory: {
-      note: "Weißes Brett, eine Fabrik, Land färben und abtrennen, Figuren aus Fläche und Rohstoffen bauen. Nur der König entscheidet; zerstörte Fabrik = keine neuen Figuren.",
-      rules: { territory: 1 },
-    },
-    board: {
-      note: "Nichts wächst nach: jedes Vorkommen wird genau einmal abgebaut. So ließe sich das Spiel auf einem echten Brett mit Plättchen spielen; es endet, wenn keiner mehr gewinnen kann, spätestens mit der Wertung.",
-      rules: { regrow_cat1: 0, regrow_cat2: 0, regrow_cat3: 0, regrow_cat4: 0 },
-    },
-  };
+  const MENU_NOTE = "Version 1: Gebietsmodus. Weißes Brett, eine Fabrik, Land färben und abtrennen, Figuren aus Fläche und Rohstoffen bauen. Nur der König entscheidet. Dies ist der Referenzstand; die älteren Spielarten sind nicht mehr wählbar.";
   const MENU_KEY = "spacevitan-menu-v1";
-  let preset = "pc";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
   function buildMenu() {
@@ -2516,7 +2513,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         box.appendChild(p);
       }
       let inner = box;
-      if (g.details) {
+      if (g.details || g.grid) {
         inner = document.createElement("div");
         inner.className = "inner";
         box.appendChild(inner);
@@ -2545,8 +2542,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         }
         input.id = `rule_${f.key}`;
         label.htmlFor = input.id;
-        input.addEventListener("input", () => { markCustom(); refreshMenu(); });
-        input.addEventListener("change", () => { markCustom(); refreshMenu(); });
+        input.addEventListener("input", refreshMenu);
+        input.addEventListener("change", refreshMenu);
         inner.appendChild(label);
       }
       host.appendChild(box);
@@ -2567,43 +2564,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (small) small.textContent = f.hint ? f.hint() : "";
       }
     }
-    const kat4 = $("rule_regrow_cat4");
-    if (kat4) kat4.disabled = menuPlayers() < 6;
   }
-  function markCustom() {
-    if (preset === "custom") return;
-    preset = "custom";
-    syncPresetButtons();
-  }
-  function syncPresetButtons() {
-    for (const b of document.querySelectorAll(".preset[data-preset]")) {
-      b.setAttribute("aria-pressed", String(b.dataset.preset === preset));
-    }
-    $("presetNote").textContent = preset === "custom"
-      ? "Eigene Einstellungen. Die Vorlagen oben setzen die Regelfelder zurück und füllen sie neu."
-      : PRESETS[preset].note;
-  }
+  /** Zuruecksetzen: alle Regelfelder leer, dann gelten die Standardwerte der Version 1. */
   function clearRuleFields() {
     for (const input of ruleInputs()) {
       if (input.type === "checkbox") input.checked = false;
       else input.value = "";
     }
-  }
-  function applyPreset(name) {
-    clearRuleFields();
-    for (const [key, value] of Object.entries(PRESETS[name].rules)) {
-      const input = $(`rule_${key}`);
-      if (!input) continue;
-      if (input.type === "checkbox") input.checked = Boolean(value);
-      else input.value = String(value);
-    }
-    preset = name;
-    syncPresetButtons();
     refreshMenu();
   }
   /** Text `name=wert,...` fuer den Spielkern aus den belegten Feldern. */
   function ruleText() {
-    const parts = [];
+    const parts = ["territory=1"]; // Version 1 ist immer der Gebietsmodus
     for (const input of ruleInputs()) {
       if (input.disabled) continue;
       const key = input.dataset.rule;
@@ -2640,7 +2612,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         else if (input.value.trim() !== "") rules[input.dataset.rule] = input.value.trim();
       }
       localStorage.setItem(MENU_KEY, JSON.stringify({
-        players: $("setPlayers").value, self: $("setSelf").value, opp: $("setOpp").value, preset, rules,
+        players: $("setPlayers").value, self: $("setSelf").value, opp: $("setOpp").value, rules,
       }));
     } catch (err) { /* Speicher gesperrt: dann eben ohne Merken */ }
   }
@@ -2658,7 +2630,6 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (input.type === "checkbox") input.checked = true;
         else input.value = String(v);
       }
-      preset = ["pc", "board", "roles", "territory", "custom"].includes(saved.preset) ? saved.preset : "pc";
     } catch (err) { /* kaputter Eintrag: Voreinstellungen */ }
   }
   function openMenu(canGoBack) {
@@ -2670,7 +2641,6 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     $("menuStart").textContent = canGoBack ? "Neue Partie starten" : "Partie starten";
     showMenuError("");
     refreshMenu();
-    syncPresetButtons();
     window.scrollTo(0, 0);
   }
   function closeMenu() {
@@ -2996,12 +2966,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (R) { layout(); renderPanel(); requestAnimationFrame(draw); }
     scheduleBots();
   });
-  for (const b of document.querySelectorAll(".preset[data-preset]")) {
-    b.addEventListener("click", () => applyPreset(b.dataset.preset));
-  }
   $("menuReset").addEventListener("click", () => {
     $("setPlayers").value = "2"; $("setSelf").value = "2"; $("setOpp").value = "3"; $("setSeed").value = "";
-    applyPreset("pc");
+    clearRuleFields();
   });
   $("file").addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
@@ -3091,7 +3058,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   buildMenu();
   loadMenu();
   refreshMenu();
-  syncPresetButtons();
+  $("presetNote").textContent = MENU_NOTE;
   $("viewPick").hidden = false;
   if (games.length) {
     selectGame(0, busiestFrame(games[0].replay));

@@ -80,13 +80,24 @@ python3 viewer/build.py spacevitan.html --wasm spacevitan.wasm --standalone
 
 Die entstandene `spacevitan.html` laesst sich per Doppelklick im Browser oeffnen.
 
+**Version 1:** Der Browser zeigt nur noch den Gebietsmodus (Abschnitt "Gebietsmodus" unten) und
+heisst "Spacevitan Version 1". Das ist der Referenzstand (Git-Tag `v1`); spaetere Aenderungen
+bauen darauf auf. Die aelteren Spielarten (Abbauen mit Nachwachsen, Brettspiel, Rollen) sind im
+Menue nicht mehr waehlbar, bleiben aber im Spielkern und in der CLI (`--rule ...` ohne
+`territory=1`) erhalten. Gespeicherte Menue-Staende aelterer Seiten werden ignoriert, soweit ihre
+Felder weggefallen sind.
+
 **Startmenue:** *Spielen* oeffnet zuerst ein Menue; eine Partie beginnt erst mit *Partie
-starten*. Dort stehen Spielerzahl, Bots, Seed und alle Regeln aus der Tabelle unten (Brettgroesse,
-Nachwachsen je Kategorie, Wertung, Kartenzahl, Stufen, Rohstoffe auf der Karte). Leere Felder
-gelten als Standard. Zwei Vorlagen fuellen die Felder: *Computerspiel* (wie bisher) und
-*Brettspiel* (nichts waechst nach). Die Einstellungen merkt sich der Browser. Technisch schickt
-die Seite sie als Text `name=wert,...` an `sv_set_rules` (`crates/web`); die Namen sind dieselben
-wie bei `--rule`. Die Regeln der laufenden Partie stehen in der Zusammenfassung.
+starten*. Dort stehen Spielerzahl (2 bis 4), Bots, Seed, Brettgroesse, Wertung, Kartenzahl und alle
+Gebiets-Werte (Preise, Wieder anbinden, Umschliessen, Brettrand, Kartenpreis). Leere Felder gelten
+als Standard, *Alles zuruecksetzen* leert sie. Die Einstellungen merkt sich der Browser. Technisch
+schickt die Seite sie als Text `territory=1,name=wert,...` an `sv_set_rules` (`crates/web`); die
+Namen sind dieselben wie bei `--rule`. Die Regeln der laufenden Partie stehen in der Zusammenfassung.
+
+**Farben:** Spielfelder haben die Farbe ihres Besitzers. Rohstoffe sind **weiss**, solange das Feld
+niemandem gehoert; sobald es einem Spieler gehoert, nehmen sie dessen Farbe an (Lager an der
+Fabrik: Summe je Kategorie in der Farbe des Besitzers). Das ist nur Anzeige: Preise und Lager
+zaehlen im Gebietsmodus nach Kategorie.
 
 **Wege vorplanen (Premoves):** Eigene Figur anklicken, dann mit der Maus ueber das Zielfeld
 fahren und **Shift** halten: der kuerzeste freie Weg wird gestrichelt gezeigt. **Shift+Klick**
@@ -233,9 +244,9 @@ Was daraus folgt:
 - Der Koenig bekommt Karten: In 8 Zweierpartien gingen 12 von 73 Kaeufen (16 %) an den Koenig,
   vor allem Sprungfeder, Lanze und Pferd.
 
-### Vorlage "Brettspiel" (nichts waechst nach)
+### Spielart "Brettspiel" (nichts waechst nach; im Browser nicht mehr im Menue)
 
-Im Startmenue setzt sie `regrow_cat1..4=0`: jedes Vorkommen wird einmal abgebaut, so liesse sich
+Mit `--rule regrow_cat1=0,regrow_cat2=0,regrow_cat3=0,regrow_cat4=0` (frueher eine Vorlage im Startmenue): jedes Vorkommen wird einmal abgebaut, so liesse sich
 das Spiel mit Plaettchen auf einem echten Brett spielen. Gemessen (Seeds ab 5000, sonst Standard):
 
 | Bots | Partien | Remis | erst durch Wertung | Runden im Schnitt |
@@ -250,7 +261,7 @@ erstarrt die starke KI also wieder oefter (Gleichstand in der Wertung, Stufe 3 k
 Naheliegende Abhilfe, noch nicht gebaut: das Spiel in die Wertung schicken, sobald mehrere Runden
 lang nichts geschlagen oder gebaut wurde, statt nach einer festen Rundenzahl.
 
-### Gebietsmodus (`territory=1`, Vorlage "Gebiet (neu)")
+### Gebietsmodus (`territory=1`, im Browser "Version 1")
 
 Ein eigener Regelsatz neben dem alten Spiel (nichts davon aendert sich, wenn `territory` aus ist).
 Gedacht als Vereinfachung: kein Abbauen, keine Fabrikbauten, keine Kartenmaerkte mit Farbzwang.
