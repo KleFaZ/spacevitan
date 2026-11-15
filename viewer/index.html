@@ -1,4 +1,4 @@
-<title>Spacevitan Version 1</title>
+<title>Spacevitan Version 1.1</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -83,6 +83,35 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
   padding: 8px 10px; font-size: 0.82rem; box-shadow: 0 6px 18px rgb(0 0 0 / 0.16);
 }
 .tip b { font-family: var(--font-data); font-weight: 500; }
+/* Fabrik-Karte (Gebietsmodus, beim Spielen): Bau, Wartezeit, Karten, neben der Fabrik */
+.faccard { position: absolute; z-index: 3; width: min(252px, calc(100% - 12px)); max-height: calc(100% - 12px); overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgb(0 0 0 / 0.2); font-size: 0.8rem; line-height: 1.3; }
+.faccard[hidden] { display: none; }
+.faccard .fc-head { display: flex; align-items: center; gap: 8px; padding: 7px 9px; cursor: pointer; }
+.faccard .fc-dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: var(--muted); }
+.faccard.ready .fc-dot { background: #2f9e55; box-shadow: 0 0 0 3px rgb(47 158 85 / 0.25); }
+.faccard.blocked .fc-dot { background: #d99a1c; }
+.faccard .fc-sum { flex: 1; min-width: 0; }
+.faccard .fc-sum b { display: block; font-size: 0.84rem; }
+.faccard .fc-sum small { display: block; color: var(--muted); }
+.faccard .fc-tog { flex: none; color: var(--muted); font-size: 0.8rem; }
+.faccard .fc-body { padding: 8px 10px 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.faccard .fc-h { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; }
+.faccard .fc-levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.faccard .fc-lv { border: 1px solid var(--line); border-radius: 8px; padding: 4px 2px; background: var(--surface); color: var(--ink); text-align: center; cursor: pointer; font: inherit; line-height: 1.2; }
+.faccard .fc-lv b { display: block; font-size: 0.95rem; }
+.faccard .fc-lv small { display: block; color: var(--muted); font-size: 0.68rem; }
+.faccard .fc-lv.ok { border-color: #2f9e55; }
+.faccard .fc-lv.ok small { color: #1f7a3f; font-weight: 650; }
+.faccard .fc-lv.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.faccard .fc-lv:disabled { cursor: default; opacity: 0.65; }
+.faccard .fc-build { width: 100%; padding: 7px 10px; cursor: pointer; font-weight: 650; }
+.faccard .fc-build:disabled { cursor: default; opacity: 0.55; }
+.faccard .fc-cards { display: flex; flex-direction: column; gap: 5px; }
+.faccard .fc-card { text-align: left; padding: 5px 8px; cursor: pointer; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.faccard .fc-card small { display: block; color: var(--muted); }
+.faccard .fc-card:hover:not(:disabled) { border-color: var(--accent); }
+.faccard p { margin: 0; }
+.faccard .muted { color: var(--muted); }
 .tip ul { margin: 4px 0 0; padding-left: 16px; }
 
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
@@ -223,7 +252,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
 <header class="top">
   <div class="brand">
-    <h1>Spacevitan <span>Version 1</span></h1>
+    <h1>Spacevitan <span>Version 1.1</span></h1>
     <div class="tabs" role="group" aria-label="Modus">
       <button id="modePlay" type="button" aria-pressed="false">Spielen</button>
       <button id="modeView" type="button" aria-pressed="true">Partien ansehen</button>
@@ -241,7 +270,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 <section class="menu" id="menu" hidden aria-label="Neue Partie einrichten">
   <form id="setup" novalidate>
     <div class="menuhead">
-      <h2>Neue Partie · Version 1</h2>
+      <h2>Neue Partie · Version 1.1</h2>
       <div class="presets" role="group" aria-label="Einstellungen">
         <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
       </div>
@@ -255,6 +284,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
             <option value="2" selected>2 (Quadrat, gegenüber)</option>
             <option value="3">3 (Dreieck)</option>
             <option value="4">4 (Quadrat)</option>
+            <option value="5">5 (Sechseck-Brett)</option>
+            <option value="6">6 (Sechseck-Brett)</option>
+            <option value="7">7 (Sechseck-Brett)</option>
+            <option value="8">8 (Sechseck-Brett)</option>
           </select>
         </label>
         <label for="setSelf"><span>Spieler A</span>
@@ -282,6 +315,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     <div class="board-wrap">
       <canvas id="board" aria-label="Isometrisches Spielbrett"></canvas>
       <div id="tip" class="tip" hidden></div>
+      <div id="facCard" class="faccard" hidden></div>
     </div>
     <div class="controls">
       <div class="btns">
@@ -619,6 +653,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     canvas.style.height = cssH + "px";
     geo = { U, W, thick, ox, oy, cssW, cssH, dpr, square, flat, side: R.side };
     canvas.setAttribute("aria-label", flat ? "Spielbrett von oben" : "Isometrisches Spielbrett");
+    if (typeof renderFactoryCard === "function" && live) renderFactoryCard();
   }
   /** 2D: Zellmitte in Feldeinheiten; beim Quadrat steht Reihe 1 unten (wie bei lichess), A links unten. */
   function flatXY(x, y, square, side) {
@@ -1374,6 +1409,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
 
+    // Fabrik bereit zum Bauen: gruener Rahmen
+    if (facState && facState.R === R && facState.fi === fi && facState.ready) outlineCell(facState.fac.cell, "#2f9e55", 0.22);
+
     drawRoutes(f);
 
     // Objekte sammeln und nach Tiefe sortieren
@@ -1633,6 +1671,46 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return parts.join(" + ");
   }
   const scoreNote = () => (isTerr() ? "Land + Figurenstufen" : "Figurenstufen + Fabriken + Farben");
+  /** Einkommen am Ende des eigenen Zugs: Flaeche = verbundene Felder, dazu terr_yield je Vorkommen darauf. */
+  function terrIncome(f, p) {
+    const inc = { area: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+    if (!f.land || !f.anchored[p]) return inc;
+    const y = (R.config && R.config.terr_yield) || 1;
+    for (let c = 0; c < f.land.length; c++) {
+      if (f.land[c] !== p || !f.linked[c]) continue;
+      inc.area++;
+      for (const res of liveDeposits(f, c)) inc[category(res)] += y;
+    }
+    return inc;
+  }
+  /** Was fuer eine Stufe schon da ist und wie viele eigene Zugenden es bei dem Einkommen noch dauert. */
+  function terrLevelStatus(level, area, storage, inc) {
+    const pr = terrPrice(level), needs = [];
+    const add = (kind, have, need, rate) => {
+      if (!need) return;
+      const miss = Math.max(0, need - have);
+      needs.push({ kind, have, need, miss, rounds: miss === 0 ? 0 : rate > 0 ? Math.ceil(miss / rate) : Infinity });
+    };
+    add(0, area, pr.area, inc.area);
+    add(1, catUnits(storage, 1), pr.k1, inc[1]);
+    add(2, catUnits(storage, 2), pr.k2, inc[2]);
+    add(3, catUnits(storage, 3), pr.k3, inc[3]);
+    const rounds = needs.reduce((m, n) => Math.max(m, n.rounds), 0);
+    return { level, price: pr, needs, rounds, ok: rounds === 0 };
+  }
+  const roundsText = (n) => (n === 0 ? "bereit" : !Number.isFinite(n) ? "nie" : n === 1 ? "in 1 Runde" : `in ${n} Runden`);
+  const roundsShort = (n) => (n === 0 ? "bereit" : !Number.isFinite(n) ? "nie" : `${n} Rd.`);
+  const KAT_NAME = { 0: "Fläche", 1: "Kat 1", 2: "Kat 2", 3: "Kat 3" };
+  /** Was fehlt, und warum es vielleicht nie kommt (kein Vorkommen der Kategorie am verbundenen Land). */
+  function missingText(st) {
+    const bits = st.needs.filter((n) => n.miss > 0).map((n) => `${n.miss} ${KAT_NAME[n.kind]}${Number.isFinite(n.rounds) ? "" : " (kein Einkommen)"}`);
+    return bits.join(", ");
+  }
+  function incomeText(inc) {
+    const bits = [`+${inc.area} Fläche`];
+    for (const c of [1, 2, 3]) if (inc[c]) bits.push(`+${inc[c]} Kat ${c}`);
+    return bits.join(", ") + ".";
+  }
   function renderTerritoryStock(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
     const rows = [];
@@ -1650,23 +1728,175 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const what = kind ? `Kat ${kind}` : "Fläche";
       return `<span class="req${ok ? " ok" : ""}" title="${what}: ${have} von ${need}">${mark}${Math.min(have, need)}/${need}</span>`;
     };
+    const inc = terrIncome(f, p);
+    rows.push(`<div class="loc"><b>Einkommen je Runde</b><span class="sub">${incomeText(inc)} Am Ende deines Zugs, bei der jetzigen Fläche.</span></div>`);
     for (let level = 1; level <= terrMaxLevel(); level++) {
       const pr = terrPrice(level);
+      const st = terrLevelStatus(level, area, fac.storage, inc);
       const bits = [req(null, area, pr.area)];
-      let ok = area >= pr.area;
       for (const c of [1, 2, 3]) {
         const need = pr["k" + c];
         if (!need) continue;
-        const have = catUnits(fac.storage, c);
-        bits.push(req(c, have, need));
-        ok = ok && have >= need;
+        bits.push(req(c, catUnits(fac.storage, c), need));
       }
-      rows.push(`<div class="loc ladder${ok ? " ok" : ""}"><b>Stufe ${level} · ${unitTitle(level)}${ok ? " – bezahlbar" : ""}</b><div class="res">${bits.join("")}</div></div>`);
+      const wait = st.ok ? "bezahlbar" : `${roundsText(st.rounds)}${Number.isFinite(st.rounds) ? "" : ": kein Einkommen an " + st.needs.filter((n) => !Number.isFinite(n.rounds)).map((n) => KAT_NAME[n.kind]).join(", ")}`;
+      rows.push(`<div class="loc ladder${st.ok ? " ok" : ""}"><b>Stufe ${level} · ${unitTitle(level)} – ${wait}</b><div class="res">${bits.join("")}</div></div>`);
     }
     const sc = (f.stored_card || [])[p];
     rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – wirkt auf die nächste gebaute Figur.` : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit)."}</span></div>`);
     return rows;
   }
+
+  // ----- Fabrik-Karte (Gebietsmodus, beim Spielen) ----------------------------------------------
+  // Zeigt neben der Fabrik: welche Figur gerade gebaut werden kann (Klick auf die Fabrik baut sie, die
+  // Stufe waehlt man in der Karte, auch kleinere), wie lange es bis zur naechsten Stufe dauert und welche
+  // Karten man jetzt kaufen kann.
+  let facPick = null;   // von Hand gewaehlte Stufe (null = die hoechste bezahlbare)
+  let facState = null;  // zuletzt berechnete Daten; draw() und der Klick auf die Fabrik lesen sie
+  let facOpen = false;  // ausgeklappt (Klick auf die Leiste); ein Klick aufs Brett klappt wieder zu
+  const terrCardPrice = (c) => [c.cost.k2 ? `${c.cost.k2} Kat 2` : "", c.cost.k3 ? `${c.cost.k3} Kat 3` : ""].filter(Boolean).join(" + ");
+  function factoryInfo(f, p) {
+    const fac = f.factories.find((x) => x.owner === p);
+    if (!fac) return null;
+    const area = (f.area || [])[p] || 0, inc = terrIncome(f, p);
+    const levels = [];
+    for (let l = 1; l <= terrMaxLevel(); l++) levels.push(terrLevelStatus(l, area, fac.storage, inc));
+    const best = levels.reduce((b, st) => (st.ok ? st.level : b), 0);
+    const pick = facPick && levels[facPick - 1] && levels[facPick - 1].ok ? facPick : best || null;
+    const free = !f.pieces.some((x) => x.cell === fac.cell);
+    const next = levels.find((st) => !st.ok) || null;
+    return { R, fi, p, fac, area, inc, levels, best, pick, free, next, ready: false };
+  }
+  function facBuild() {
+    if (!canAct() || !facState || !facState.pick || !facState.free) return;
+    const i = live.legal.findIndex((a) => a.type === "build_unit" && a.level === facState.pick);
+    if (i < 0) { routeNote = "Diese Figur lässt sich gerade nicht bauen."; renderTurnBox(); return; }
+    facPick = null;
+    humanAct(i);
+  }
+  /** Klick auf die eigene Fabrik: baut die gewaehlte Figur; sonst sagt er, warum nicht. true = Klick verbraucht. */
+  function facClick(cell) {
+    if (!facState || facState.R !== R || facState.fac.cell !== cell) return false;
+    const st = facState;
+    if (!st.pick) {
+      routeNote = st.levels[0] ? `Noch nicht genug für einen Bauern: ${missingText(st.levels[0])}.` : "";
+    } else if (!st.free) {
+      routeNote = "Die Fabrik ist besetzt: zieh die Figur von der Fabrik, dann kannst du bauen.";
+    } else {
+      facBuild();
+      return true;
+    }
+    renderTurnBox();
+    return true;
+  }
+  function renderFactoryCard() {
+    const card = $("facCard");
+    facState = null;
+    const f = R && R.frames[fi];
+    if (!f || !geo || !isTerr() || mode !== "play" || !live || R !== liveR || live.watch || live.outcome || fi !== R.frames.length - 1) {
+      card.hidden = true;
+      return;
+    }
+    const p = focusPlayer(f);
+    const info = p === undefined || p === null || !f.alive[p] ? null : factoryInfo(f, p);
+    if (!info) { card.hidden = true; return; }
+    const acting = canAct();
+    info.ready = acting && info.free && !!info.pick;
+    facState = info;
+    const open = facOpen;
+    const { levels, pick, next, inc } = info;
+    // Karten, die jetzt kaufbar sind (Index in der Liste der erlaubten Zuege)
+    const buyable = [];
+    if (acting) {
+      for (const c of R.market || []) {
+        const i = live.legal.findIndex((a) => a.type === "buy" && a.card === c.key);
+        if (i >= 0) buyable.push([c, i]);
+      }
+    }
+    // Kopfzeile: der Stand in einem Satz
+    let title, sub, cls = "";
+    if (pick && !info.free) { title = "Fabrik besetzt"; sub = `${unitTitle(pick)} (Stufe ${pick}) wäre bezahlbar – Figur von der Fabrik ziehen`; cls = "blocked"; }
+    else if (pick) { title = `${unitTitle(pick)} (Stufe ${pick}) bereit`; sub = next ? `Stufe ${next.level} ${roundsText(next.rounds)}` : "höchste Stufe erreichbar"; cls = "ready"; }
+    else { title = `Bauer ${roundsText(levels[0].rounds)}`; sub = `Einkommen ${incomeText(inc).replace(/\.$/, "")} je Runde`; }
+    if (buyable.length) sub += ` · ${buyable.length} ${buyable.length === 1 ? "Karte" : "Karten"} kaufbar`;
+    const stockCards = (f.stored_card || [])[info.p];
+    let body = "";
+    if (open) {
+      const chips = levels.map((st) => {
+        const sel = st.level === pick;
+        return `<button type="button" class="fc-lv${st.ok ? " ok" : ""}${sel ? " sel" : ""}" data-lv="${st.level}" ${st.ok ? "" : "disabled"} ` +
+          `title="${escapeHtml(`${unitTitle(st.level)} (Stufe ${st.level}): ${terrPriceText(st.level)}${st.ok ? "" : ` – es fehlt: ${missingText(st)}`}`)}">` +
+          `<b>${st.level}</b>${unitTitle(st.level)}<small>${roundsShort(st.rounds)}</small></button>`;
+      }).join("");
+      const pickSt = pick ? levels[pick - 1] : null;
+      const buildLabel = !pick ? "Noch keine Figur bezahlbar" : !info.free ? "Fabrik besetzt" : !acting ? `${unitTitle(pick)} (Stufe ${pick}) – du bist nicht am Zug` : `${unitTitle(pick)} (Stufe ${pick}) bauen`;
+      let nextLine;
+      if (!next) nextLine = "Höhere Stufe gibt es nicht.";
+      else if (Number.isFinite(next.rounds)) nextLine = `Nächste Stufe: ${unitTitle(next.level)} (${next.level}) ${roundsText(next.rounds)}. Es fehlt: ${missingText(next)}.`;
+      else nextLine = `Nächste Stufe: ${unitTitle(next.level)} (${next.level}) kommt nicht: ${missingText(next)}. Verbinde Land mit passenden Vorkommen.`;
+      // Karten: nur, was jetzt kaufbar ist
+      const buys = buyable.map(([c, i]) => `<button type="button" class="fc-card" data-buy="${i}" title="${escapeHtml(c.text.replace(/ Preis je Reichweite der Figur\./, ""))}"><b>${escapeHtml(c.name)}</b><small>${escapeHtml(terrCardPrice(c))}</small></button>`);
+      let cardsNote = "";
+      if (!(R.market || []).length) cardsNote = "In dieser Partie gibt es keine Karten.";
+      else if (!acting) cardsNote = "Karten kaufst du, wenn du am Zug bist.";
+      else if (f.bought_this_turn) cardsNote = "In diesem Zug hast du schon eine Karte gekauft.";
+      else if (!buys.length) cardsNote = "Gerade ist keine Karte bezahlbar (der Markt unter dem Brett zeigt, was fehlt).";
+      body = `<div class="fc-body">` +
+        `<p class="muted">Einkommen je Runde: ${escapeHtml(incomeText(inc))}</p>` +
+        `<div><p class="fc-h">Figur bauen · Klick auf die Fabrik</p><div class="fc-levels">${chips}</div></div>` +
+        `<button type="button" class="btn primary fc-build" data-act="build" ${info.ready ? "" : "disabled"}>${escapeHtml(buildLabel)}</button>` +
+        (pickSt ? `<p class="muted">Kostet ${escapeHtml(terrPriceText(pick))}.</p>` : "") +
+        `<p>${escapeHtml(nextLine)}</p>` +
+        `<div><p class="fc-h">Karten${stockCards ? ` · liegt bereit: ${escapeHtml(CARD(stockCards).name)}` : ""}</p>` +
+        (buys.length ? `<div class="fc-cards">${buys.join("")}</div>` : "") +
+        (cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : "") + `</div></div>`;
+    }
+    card.className = `faccard ${cls}`;
+    card.innerHTML = `<div class="fc-head" data-act="toggle" role="button" tabindex="0" aria-expanded="${open}"><span class="fc-dot"></span>` +
+      `<span class="fc-sum"><b>${escapeHtml(title)}</b><small>${escapeHtml(sub)}</small></span><span class="fc-tog">${open ? "▾" : "▸"}</span></div>${body}`;
+    card.hidden = false;
+    placeFactoryCard(card, info);
+  }
+  /** Platz neben der Fabrik waehlen, an dem die Karte moeglichst wenig verdeckt (Figuren, Felder). */
+  function placeFactoryCard(card, info) {
+    const W = geo.cssW, H = geo.cssH, cw = card.offsetWidth, ch = card.offsetHeight;
+    const f = R.frames[fi];
+    const at = (cell) => { const [x, y] = R.board.cells[cell]; return iso(x, y); };
+    const [fx, fy] = at(info.fac.cell);
+    const g = geo.U * 0.55;
+    const clampX = (x) => Math.max(6, Math.min(W - cw - 6, x));
+    const clampY = (y) => Math.max(6, Math.min(H - ch - 6, y));
+    const cands = [
+      [fx + g, fy - ch / 2], [fx - g - cw, fy - ch / 2], [fx - cw / 2, fy - g - ch], [fx - cw / 2, fy + g],
+      [fx + g, fy - ch - g * 0.2], [fx - g - cw, fy - ch - g * 0.2], [fx + g, fy + g * 0.2], [fx - g - cw, fy + g * 0.2],
+      [6, 6], [W - cw - 6, 6], [6, H - ch - 6], [W - cw - 6, H - ch - 6],
+    ].map(([x, y]) => [clampX(x), clampY(y)]);
+    const pieceCells = f.pieces.map((q) => at(q.cell));
+    const cellPts = R.board.cells.map((_, c) => at(c));
+    let best = null;
+    for (const [x, y] of cands) {
+      const inside = ([px, py]) => px > x && px < x + cw && py > y && py < y + ch;
+      let score = 0;
+      if (inside([fx, fy])) score += 1000;
+      for (const pt of pieceCells) if (inside(pt)) score += 50;
+      for (const pt of cellPts) if (inside(pt)) score += 2;
+      score += Math.hypot(x + cw / 2 - fx, y + ch / 2 - fy) * 0.02;
+      if (!best || score < best.score) best = { score, x, y };
+    }
+    card.style.left = Math.round(best.x) + "px";
+    card.style.top = Math.round(best.y) + "px";
+  }
+  $("facCard").addEventListener("click", (ev) => {
+    const t = ev.target.closest("[data-lv],[data-buy],[data-act]");
+    if (!t) return;
+    if (t.dataset.lv) { facPick = Number(t.dataset.lv); renderFactoryCard(); requestAnimationFrame(draw); return; }
+    if (t.dataset.buy) { humanAct(Number(t.dataset.buy)); return; }
+    if (t.dataset.act === "build") { facBuild(); return; }
+    if (t.dataset.act === "toggle") { facOpen = !facOpen; renderFactoryCard(); }
+  });
+  /** Ein Klick (oder Esc) aufs Brett klappt die Karte wieder zu, damit sie keine Felder verdeckt. */
+  function facClose() { if (facOpen) { facOpen = false; renderFactoryCard(); } }
+  canvas.addEventListener("pointerdown", facClose);
   function renderStock(f) {
     const p = focusPlayer(f);
     const box = $("stockBox");
@@ -1967,6 +2197,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     $("scrub").value = String(fi);
     $("play").setAttribute("aria-label", playing ? "Anhalten" : "Abspielen");
     $("playIcon").setAttribute("d", playing ? "M5 4h4v12H5zM11 4h4v12h-4z" : "M6 4v12l10-6z");
+    renderFactoryCard();
     renderTurnBox();
   }
   function boardText() {
@@ -2271,6 +2502,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (i >= 0) { humanAct(i); return; }
     }
     const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
+    if (!piece && cell !== null && isTerr() && facClick(cell)) return;
     selected = piece && destinations(piece.id).length ? piece.id : null;
     renderTurnBox();
     requestAnimationFrame(draw);
@@ -2494,7 +2726,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "16", hint: () => "Preise der Karten (Kat 2 und 3) mal diese Zahl. Pferd kostet so 32 Kat 2 und 32 Kat 3." },
     ] },
   ];
-  const MENU_NOTE = "Version 1: Gebietsmodus. Weißes Brett, eine Fabrik, Land färben und abtrennen, Figuren aus Fläche und Rohstoffen bauen. Nur der König entscheidet. Dies ist der Referenzstand; die älteren Spielarten sind nicht mehr wählbar.";
+  const MENU_NOTE = "Version 1.1 (Regeln wie Version 1, neu: Fabrik-Karte am Brett): Gebietsmodus. Weißes Brett, eine Fabrik, Land färben und abtrennen, Figuren aus Fläche und Rohstoffen bauen. Nur der König entscheidet. Dies ist der Referenzstand; die älteren Spielarten sind nicht mehr wählbar.";
   const MENU_KEY = "spacevitan-menu-v1";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
@@ -2756,6 +2988,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const blocked = f.pieces.some((x) => x.cell === fac.cell);
     const afford = ((f.area || [])[me] || 0) >= terrPrice(1).area;
     if (blocked && afford) return "Die Fabrik ist besetzt: zieh die Figur von der Fabrik, dann kannst du bauen.";
+    if (facState && facState.R === R && facState.ready) return `Deine Fabrik ist bereit: ein Klick auf sie baut ${unitTitle(facState.pick)} (Stufe ${facState.pick}). Die Stufe wählst du in der Fabrik-Karte am Brett.`;
     const stuck = f.pieces.filter((x) => x.owner === me && helpless(f, x)).length;
     const note = stuck ? ` ${stuck} deiner Figuren ${stuck === 1 ? "ist" : "sind"} vom Land abgeschnitten (blass): sie färben nichts und können nicht schlagen.` : "";
     return `Tippe eine Figur an: das Land färbt sich auf dem ganzen Weg. Was nicht mehr an der Fabrik hängt, ist nichts wert.${note}`;
@@ -3019,6 +3252,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   document.addEventListener("keydown", (e) => {
     if (!R) return;
     if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
+    if (e.key === "Escape") facClose();
     if (e.key === "Escape" && mode === "play" && (routes.length || ctrlPath || selected !== null)) {
       selected = null;
       cancelRoutes(routes.length || ctrlPath ? "Route abgebrochen." : "");

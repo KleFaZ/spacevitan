@@ -88,11 +88,20 @@ Menue nicht mehr waehlbar, bleiben aber im Spielkern und in der CLI (`--rule ...
 Felder weggefallen sind.
 
 **Startmenue:** *Spielen* oeffnet zuerst ein Menue; eine Partie beginnt erst mit *Partie
-starten*. Dort stehen Spielerzahl (2 bis 4), Bots, Seed, Brettgroesse, Wertung, Kartenzahl und alle
+starten*. Dort stehen Spielerzahl (2 bis 8; ab 5 ein Sechseck-Brett), Bots, Seed, Brettgroesse, Wertung, Kartenzahl und alle
 Gebiets-Werte (Preise, Wieder anbinden, Umschliessen, Brettrand, Kartenpreis). Leere Felder gelten
 als Standard, *Alles zuruecksetzen* leert sie. Die Einstellungen merkt sich der Browser. Technisch
 schickt die Seite sie als Text `territory=1,name=wert,...` an `sv_set_rules` (`crates/web`); die
 Namen sind dieselben wie bei `--rule`. Die Regeln der laufenden Partie stehen in der Zusammenfassung.
+
+**Fabrik-Karte (Version 1.1, nur beim Spielen):** Neben der eigenen Fabrik steht eine kleine Leiste:
+welche Figur gerade gebaut werden kann (gruener Rahmen um die Fabrik), und wie viele Runden es bei
+der aktuellen Flaeche bis zur naechsten Stufe dauert (Flaeche und Rohstoffe, je nach Einkommen aus
+dem verbundenen Land; "nie", wenn dafuer kein Vorkommen angebunden ist). Ein Klick auf die Fabrik
+baut die gewaehlte Figur, vorgewaehlt ist die hoechste bezahlbare. Ein Klick auf die Leiste klappt sie
+auf: dort waehlt man auch eine kleinere Stufe, sieht das Einkommen und die Karten, die jetzt kaufbar
+sind. Ein Klick aufs Brett (oder Esc) klappt sie wieder zu, damit sie keine Felder verdeckt. Die
+Rechnung steht im Viewer (`terrIncome`, `terrLevelStatus`), der Spielkern aendert sich nicht.
 
 **Farben:** Spielfelder haben die Farbe ihres Besitzers. Rohstoffe sind **weiss**, solange das Feld
 niemandem gehoert; sobald es einem Spieler gehoert, nehmen sie dessen Farbe an (Lager an der
