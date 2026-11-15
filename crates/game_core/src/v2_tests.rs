@@ -781,3 +781,29 @@ fn the_area_bot_buys_a_king_boost_and_a_unit_card_in_v2() {
         "die gekaufte Ecke wirkt auf die neue Figur"
     );
 }
+
+#[test]
+fn the_area_bot_clears_a_figure_off_the_factory_when_a_better_one_is_affordable() {
+    let mut g = blank();
+    own_everything(&mut g, P0);
+    let king = king_id(&g, P0);
+    let away = c(&g, 2, 0);
+    g.setup_teleport(king, away);
+    let start = g.map.start_cell(P0);
+    let blocker = g.setup_unit(P0, start, 1, 1);
+    g.state.area[P0.idx()] = 100;
+    assert!(
+        !g.legal_actions()
+            .iter()
+            .any(|a| matches!(a, Action::BuildUnit { .. })),
+        "mit besetzter Fabrik gibt es nichts zu bauen"
+    );
+    let mut bot = AreaBot::new(3);
+    for _ in 0..5 {
+        let a = bot.choose(&g);
+        assert!(
+            matches!(a, Action::Move { piece, .. } if piece == blocker),
+            "die Figur muss von der Fabrik, damit Stufe 2 gebaut werden kann: {a:?}"
+        );
+    }
+}

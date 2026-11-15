@@ -112,7 +112,28 @@ impl AreaBot {
             })
     }
 
-    fn best_by_value(&mut self, g: &Game, me: PlayerId, actions: &[Action]) -> Option<Action> {
+    /// Die Figur auf der eigenen Fabrik samt Wert der Figur, die man danach bauen koennte, wenn
+    /// eine hoehere als jede vorhandene bezahlbar waere (Stufe 1 erst ab Runde 12, wie beim Bauen).
+    fn blocking_piece(
+        g: &Game,
+        me: PlayerId,
+        best_owned: u8,
+    ) -> Option<(crate::ids::PieceId, i64)> {
+        let fac = g.home_factory(me)?;
+        let piece = g.state.piece_at(fac.cell).filter(|p| p.owner == me)?;
+        let level = (best_owned + 1..=g.max_unit_level())
+            .rev()
+            .find(|&l| g.can_afford_unit(me, l) && (l >= 2 || g.state.round >= 12))?;
+        Some((piece.id, UNIT[usize::from(level).min(4)] * 8 / 10))
+    }
+
+    fn best_by_value(
+        &mut self,
+        g: &Game,
+        me: PlayerId,
+        actions: &[Action],
+        freeing: Option<(crate::ids::PieceId, i64)>,
+    ) -> Option<Action> {
         let mut best: Vec<Action> = Vec::new();
         let mut best_value = i64::MIN;
         for &a in actions {
@@ -125,6 +146,11 @@ impl AreaBot {
             // Die Fabrik zu rutschen ist selten sinnvoll; nur wenn die Bewertung es verlangt.
             if matches!(a, Action::ShiftFactory { .. }) {
                 value -= 5;
+            }
+            if let (Some((blocker, bonus)), Action::Move { piece, .. }) = (freeing, a) {
+                if piece == blocker {
+                    value += bonus;
+                }
             }
             match value.cmp(&best_value) {
                 std::cmp::Ordering::Greater => {
@@ -200,7 +226,14 @@ impl Bot for AreaBot {
             .into_iter()
             .filter(|a| !matches!(a, Action::BuildUnit { .. }))
             .collect();
-        if let Some(a) = self.best_by_value(game, me, &moves) {
+        // Steht eine Figur auf der Fabrik und waere eine bessere Figur bezahlbar, lohnt es, sie
+        // wegzuziehen (die Bewertung allein sieht den Gewinn nicht: er kommt erst im naechsten Zug).
+        let freeing = if build.is_none() {
+            Self::blocking_piece(game, me, best_owned)
+        } else {
+            None
+        };
+        if let Some(a) = self.best_by_value(game, me, &moves, freeing) {
             return a;
         }
         legal[0]

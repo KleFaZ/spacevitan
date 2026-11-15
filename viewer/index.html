@@ -1,4 +1,4 @@
-<title>Spacevitan Version 1.1</title>
+<title>Spacevitan Version 2</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -106,6 +106,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .faccard .fc-lv:disabled { cursor: default; opacity: 0.65; }
 .faccard .fc-build { width: 100%; padding: 7px 10px; cursor: pointer; font-weight: 650; }
 .faccard .fc-build:disabled { cursor: default; opacity: 0.55; }
+.faccard .fc-shift { width: 100%; padding: 6px 10px; cursor: pointer; }
 .faccard .fc-cards { display: flex; flex-direction: column; gap: 5px; }
 .faccard .fc-card { text-align: left; padding: 5px 8px; cursor: pointer; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .faccard .fc-card small { display: block; color: var(--muted); }
@@ -174,7 +175,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .market .where.ok { color: #2b7a3f; font-weight: 600; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .market .where.ok { color: #6fcf8a; } }
 :root[data-theme="dark"] .market .where.ok { color: #6fcf8a; }
-.perks { color: var(--muted); font-size: 0.76rem; }
+.perks { color: var(--muted); font-size: 0.76rem; grid-column: 2; }
 details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; margin: 2px 0 6px; }
 .player {
   display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 10px; align-items: center;
@@ -252,7 +253,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
 <header class="top">
   <div class="brand">
-    <h1>Spacevitan <span>Version 1.1</span></h1>
+    <h1>Spacevitan <span>Version 2</span></h1>
     <div class="tabs" role="group" aria-label="Modus">
       <button id="modePlay" type="button" aria-pressed="false">Spielen</button>
       <button id="modeView" type="button" aria-pressed="true">Partien ansehen</button>
@@ -270,7 +271,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 <section class="menu" id="menu" hidden aria-label="Neue Partie einrichten">
   <form id="setup" novalidate>
     <div class="menuhead">
-      <h2>Neue Partie · Version 1.1</h2>
+      <h2>Neue Partie · Version 2</h2>
       <div class="presets" role="group" aria-label="Einstellungen">
         <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
       </div>
@@ -291,10 +292,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           </select>
         </label>
         <label for="setSelf"><span>Spieler A</span>
-          <select id="setSelf"><option value="2" selected>Du</option><option value="3">Bot „stark“</option><option value="0">Bot „gierig“</option></select>
+          <select id="setSelf"><option value="2" selected>Du</option><option value="3">Bot „stark“</option><option value="4">Bot „fläche“</option><option value="0">Bot „gierig“</option></select>
         </label>
         <label for="setOpp"><span>Gegner (alle anderen)</span>
-          <select id="setOpp"><option value="3" selected>Bot „stark“</option><option value="0">Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
+          <select id="setOpp"><option value="3" selected>Bot „stark“</option><option value="4">Bot „fläche“</option><option value="0">Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
         </label>
         <label for="setSeed"><span>Seed (leer = zufällig)</span>
           <input id="setSeed" type="number" min="0" step="1" inputmode="numeric" placeholder="zufällig">
@@ -584,26 +585,45 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function abilityText(p) {
     if (!p) return "";
     const pk = p.perks || {};
+    const exact = !!(R && R.config && R.config.terr_exact);
     if (p.king) {
       const out = [pk.diagonal ? "zieht 1 Feld, auch diagonal" : "zieht 1 Feld (nicht diagonal)"];
+      const kb = kingBoostOf(p);
+      if (kb >= 1) out.push("Boost 1: auch 1 Feld diagonal");
+      if (kb >= 2) out.push("Boost 2: 2 Felder geradeaus");
+      if (kb >= 3) out.push("Boost 3: 2 vor und 1 zur Seite");
       if (pk.lance) out.push("schlägt 2 Felder geradeaus");
       if (pk.spring) out.push("springt über Nachbarfiguren");
       if (pk.horse) out.push("springt auf Felder im Abstand 2");
       out.push("sammelt und baut");
       return out.join(", ");
     }
-    const out = [p.level === 1
-      ? `zieht und schlägt geradeaus bis ${p.range} ${p.range === 1 ? "Feld" : "Felder"}`
-      : `zieht frei bis ${p.range} Felder (um Ecken, nicht durch Figuren)`];
+    const out = exact
+      ? [`zieht genau ${p.range} ${p.range === 1 ? "Feld" : "Felder"} geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld`]
+      : [p.level === 1
+        ? `zieht und schlägt geradeaus bis ${p.range} ${p.range === 1 ? "Feld" : "Felder"}`
+        : `zieht frei bis ${p.range} Felder (um Ecken, nicht durch Figuren)`];
+    if (pk.shorten) out.push(p.range > 1 ? `darf auch nur ${p.range - 1} ${p.range - 1 === 1 ? "Feld" : "Felder"} ziehen` : "Kürzer ohne Wirkung (zieht schon nur 1)");
+    if (pk.bend) out.push("darf einmal um die Ecke gehen");
+    if (pk.hop) out.push("darf über eine Figur springen");
     if (pk.diagonal) out.push("schlägt diagonal");
     if (pk.lance) out.push("schlägt 2 Felder geradeaus");
     if (pk.spring) out.push("springt über Nachbarfiguren");
     if (pk.horse) out.push("springt auf Felder im Abstand 2");
     return out.join(", ");
   }
+  /** Stufe des Königs-Boosts (Version 2) des Spielers, dem die Figur gehoert. */
+  function kingBoostOf(p) {
+    const f = R && R.frames[fi];
+    const pp = f && p && p.owner !== undefined ? (f.player_perks || [])[p.owner] : null;
+    return (pp && pp.king_boost) || 0;
+  }
   function perkText(pk) {
     if (!pk) return "";
     const out = [];
+    if (pk.shorten) out.push("Kürzer");
+    if (pk.bend) out.push("Ecke");
+    if (pk.hop) out.push("Sprung");
     if (pk.diagonal) out.push("Läuferschlag");
     if (pk.lance) out.push("Lanze");
     if (pk.spring) out.push("Sprungfeder");
@@ -841,7 +861,23 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function regrowLeft(f, cell, res) {
     const map = f.regrowMap || (f.regrowMap = new Map((f.regrow || []).map(([c, r, back]) => [c + ":" + r, back])));
     const back = map.get(cell + ":" + res);
-    return back === undefined ? 0 : Math.max(1, back - f.round);
+    return back === undefined ? ripenLeft(f, cell, res) : Math.max(1, back - f.round);
+  }
+  /**
+   * Version 2: wie viele eigene Zugenden es noch dauert, bis ein Vorkommen auf eigenem Land zum ersten Mal
+   * Ertrag bringt (Kat 1 nach 3, Kat 2 nach 10 Runden Besitz; ein Umfaerben setzt die Uhr zurueck).
+   * 0 = reif, oder das Feld gehoert niemandem. Wie ripen_wait im Spielkern; der Ertrag kommt am Ende des
+   * Zugs des Besitzers, hat er in dieser Runde schon gezogen, zaehlt die naechste Runde.
+   */
+  function ripenLeft(f, cell, res) {
+    const need = R.config && R.config.terr_ripen;
+    if (!need || !f.since || !f.land) return 0;
+    const owner = f.land[cell];
+    if (owner === null || owner === undefined || owner < 0) return 0;
+    const n = need[category(res) - 1] || 0;
+    if (!n) return 0;
+    const round = f.round + (owner < f.current ? 1 : 0);
+    return Math.max(0, n - (round - f.since[cell]));
   }
   /** Vorkommen des Feldes ohne verbaute und erschoepfte; abgebaute, die nachwachsen, sind dabei. */
   function liveDeposits(f, cell) {
@@ -952,6 +988,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.closePath();
     ctx.fillStyle = GOLD; ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 1; ctx.stroke();
+    // Version 2: Koenigs-Boost, ein Stern je Stufe auf dem Koerper
+    for (let i = 0; i < (pk.boost || 0); i++) star(cx + (i - (pk.boost - 1) / 2) * rx * 0.62, cy - h * 0.42, W * 0.045);
   }
   /**
    * Figur nach Stufe und Karten: Bauer (Stufe 1), Krieger (2, Helm und Schulterstuecke),
@@ -1077,6 +1115,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ctx.beginPath(); ctx.arc(px, cy + W * 0.075, pr, 0, Math.PI * 2);
       ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
     }
+    // Version 2: Karten Kuerzer, Ecke, Sprung als weisse Abzeichen unter dem Sockel
+    const v2 = ["shorten", "bend", "hop"].filter((k) => pk[k]);
+    const bw = W * 0.075;
+    v2.forEach((kind, i) => {
+      const bx = cx + (i - (v2.length - 1) / 2) * bw * 2.3, by = cy + W * 0.19;
+      ctx.beginPath(); ctx.arc(bx, by, bw, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.stroke();
+      ctx.strokeStyle = "#1c2420"; ctx.fillStyle = "#1c2420"; ctx.lineWidth = Math.max(1.2, bw * 0.2); ctx.lineCap = "round"; ctx.lineJoin = "round";
+      v2Glyph(kind, bx, by, bw * 0.55, bw);
+      ctx.lineCap = "butt";
+    });
   }
   function star(x, y, r) {
     ctx.beginPath();
@@ -1272,6 +1321,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.lineTo(cx + s, cy + s * 0.62); ctx.closePath();
     ctx.fillStyle = "#fffdf2"; ctx.fill(); ctx.lineJoin = "round"; ctx.lineWidth = 1.4; ctx.strokeStyle = "rgba(60,40,0,0.95)"; ctx.stroke();
     perkBadges(cx, cy, r, pk || {});
+    for (let i = 0; i < ((pk && pk.boost) || 0); i++) star(cx + (i - (pk.boost - 1) / 2) * r * 0.42, cy + r * 0.6, r * 0.17);
   }
   function drawUnitFlat(cx, cy, color, p) {
     const U = geo.W, t = Math.min(p.level, 4), pk = p.perks || {};
@@ -1291,6 +1341,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     perkBadges(cx, cy, r, pk);
   }
+  /** Zeichen der Karten von Version 2: Kuerzer (-1), Ecke (L), Sprung (Bogen). Farbe und Strichstaerke setzt der Aufrufer. */
+  function v2Glyph(kind, bx, by, q, br) {
+    if (kind === "shorten") {
+      ctx.font = `700 ${Math.max(8, Math.round(br * 1.05))}px ${cssVar("--font-data") || "monospace"}`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("−1", bx, by + 0.5);
+    } else if (kind === "bend") {
+      ctx.beginPath(); ctx.moveTo(bx - q * 0.6, by - q); ctx.lineTo(bx - q * 0.6, by + q * 0.6); ctx.lineTo(bx + q, by + q * 0.6); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(bx - q, by + q * 0.7); ctx.quadraticCurveTo(bx, by - q * 1.6, bx + q, by + q * 0.7); ctx.stroke();
+    }
+  }
   /** Karten an der Figur als kleine weisse Abzeichen rund um die Marke. */
   function perkBadges(cx, cy, r, pk) {
     const list = [];
@@ -1299,6 +1361,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (pk.spring) list.push("spring");
     if (pk.horse) list.push("horse");
     if (pk.extra_range) list.push("range");
+    if (pk.shorten) list.push("shorten");
+    if (pk.bend) list.push("bend");
+    if (pk.hop) list.push("hop");
     for (let i = 0; i < (pk.card_levels || 0); i++) list.push("star");
     const br = geo.W * 0.1;
     list.forEach((kind, i) => {
@@ -1312,6 +1377,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       else if (kind === "lance") { ctx.beginPath(); ctx.moveTo(bx, by + q); ctx.lineTo(bx, by - q); ctx.moveTo(bx - q * 0.6, by - q * 0.2); ctx.lineTo(bx, by - q); ctx.lineTo(bx + q * 0.6, by - q * 0.2); ctx.stroke(); }
       else if (kind === "spring") { ctx.beginPath(); for (let k = 0; k <= 4; k++) { const xx = bx - q + (k / 4) * 2 * q, yy = by + (k % 2 ? q * 0.6 : -q * 0.6); k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); } ctx.stroke(); }
       else if (kind === "star") star(bx, by, br * 0.85);
+      else if (kind === "shorten" || kind === "bend" || kind === "hop") v2Glyph(kind, bx, by, q, br);
       else {
         ctx.font = `700 ${Math.round(br * (kind === "range" ? 1.0 : 1.3))}px ${cssVar("--font-data") || "monospace"}`;
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1409,6 +1475,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
 
+    // Version 2: Zielfelder fuer "Fabrik ruecken"
+    if (shiftMode && canAct()) {
+      const accent = cssVar("--accent") || "#2f55a4";
+      const mine = f.factories.find((x) => x.owner === f.current);
+      if (mine) outlineCell(mine.cell, "#2f9e55", 0.3);
+      for (const a of shiftTargets()) markCell(a.to, accent);
+    }
+
     // Fabrik bereit zum Bauen: gruener Rahmen
     if (facState && facState.R === R && facState.fi === fi && facState.ready) outlineCell(facState.fac.cell, "#2f9e55", 0.22);
 
@@ -1496,7 +1570,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const [cx, cy] = iso(x, y);
     const color = PLAYER[p.owner].color;
     if (p.king) {
-      drawKing(cx, cy + geo.W * 0.02, color, p.perks);
+      drawKing(cx, cy + geo.W * 0.02, color, { ...p.perks, boost: kingBoostOf(p) });
       // Was der Koenig traegt, als Leiste ueber der Krone.
       const carried = (R.frames[fi].carried || [])[p.owner] || [];
       if (carried.length) {
@@ -1551,6 +1625,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const n = encl.reduce((sum, e) => sum + e.cells.length, 0);
         text += `, umschließt ${n} neutrale${n === 1 ? "s Feld" : " Felder"}`;
       }
+    } else if (a.type === "shift_factory") {
+      text = `Fabrik rückt von ${cellName(prev.fById.get(a.factory).cell)} nach ${cellName(a.to)}`;
     } else if (a.type === "build_unit") {
       text = `Fabrik baut eine Figur: ${unitTitle(a.level)} (Stufe ${a.level}), kostet ${terrPriceText(a.level)}`;
     } else if (a.type === "build") {
@@ -1582,6 +1658,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       case "recruited": return `${playerName(e.owner)} bekommt einen Rekruten auf ${cellName(e.cell)}.`;
       case "deposit_created": return `Neues Kat-1-Vorkommen auf ${cellName(e.cell)} (${colorOwner(e.resource)}).`;
       case "moved": return null;
+      case "factory_shifted": return `Fabrik von ${playerName(e.owner)} rückt von ${cellName(e.from)} nach ${cellName(e.to)}.`;
       case "painted": return `${playerName(e.player)} färbt ${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}: ${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}.`;
       case "cut_off": return `Land von ${playerName(e.from)} abgetrennt (${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}): ${e.to === null ? "wird neutral" : `geht an ${playerName(e.to)}`}.`;
       case "enclosed": return `${playerName(e.player)} umschließt ${e.cells.length} neutrale${e.cells.length === 1 ? "s Feld" : " Felder"}: ${e.cells.length === 1 ? "es geht" : "sie gehen"} an ${playerName(e.player)} (${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}).`;
@@ -1659,6 +1736,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Preis einer Figur im Gebietsmodus (wie unit_price im Spielkern). */
   function terrPrice(level) {
     const c = R.config;
+    if (c.terr_grow >= 2) return { area: c.terr_pawn * Math.pow(c.terr_grow, Math.max(1, level) - 1), k1: 0, k2: 0, k3: 0 };
     if (level <= 1) return { area: c.terr_pawn, k1: 0, k2: 0, k3: 0 };
     return { area: c.terr_area + (c.terr_area_step || 0) * (level - 2), k1: c.terr_k1, k2: level >= 3 ? c.terr_k2 : 0, k3: level >= 4 ? c.terr_k3 : 0 };
   }
@@ -1679,7 +1757,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     for (let c = 0; c < f.land.length; c++) {
       if (f.land[c] !== p || !f.linked[c]) continue;
       inc.area++;
-      for (const res of liveDeposits(f, c)) inc[category(res)] += y;
+      for (const res of liveDeposits(f, c)) if (!ripenLeft(f, c, res)) inc[category(res)] += y;
     }
     return inc;
   }
@@ -1711,6 +1789,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     for (const c of [1, 2, 3]) if (inc[c]) bits.push(`+${inc[c]} Kat ${c}`);
     return bits.join(", ") + ".";
   }
+  /** Version 2: Satz zur Reifezeit der Vorkommen. */
+  function ripenSub() {
+    const r = R.config && R.config.terr_ripen;
+    if (!r || !r.some((n) => n > 0)) return "";
+    const bits = r.map((n, i) => (n > 0 ? `Kat ${i + 1} nach ${n}` : "")).filter(Boolean);
+    return ` – aber erst, wenn das Feld dir ${bits.join(", ")} Runden gehört (die Zahl auf dem Vorkommen zählt herunter; ein Umfärben setzt sie zurück)`;
+  }
   function renderTerritoryStock(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
     const rows = [];
@@ -1720,7 +1805,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     const area = (f.area || [])[p] || 0;
     rows.push(`<div class="loc"><b>Fabrik auf ${cellName(fac.cell)}</b><div class="res"><span>Fläche: <b style="display:inline">${area}</b></span>${resHtml(fac.storage, p)}</div>` +
-      `<span class="sub">Am Ende deines Zugs sammelt sie alle Felder ein, die an ihr hängen (je 1 Fläche), dazu die Rohstoffe auf diesen Feldern. Gebaut wird auf der Fabrik, sie muss frei sein.</span></div>`);
+      `<span class="sub">Am Ende deines Zugs sammelt sie alle Felder ein, die an ihr hängen (je 1 Fläche), dazu die Rohstoffe auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.</span></div>`);
     const color = PLAYER[p].color;
     const req = (kind, have, need) => {
       const ok = have >= need;
@@ -1743,7 +1828,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       rows.push(`<div class="loc ladder${st.ok ? " ok" : ""}"><b>Stufe ${level} · ${unitTitle(level)} – ${wait}</b><div class="res">${bits.join("")}</div></div>`);
     }
     const sc = (f.stored_card || [])[p];
-    rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – wirkt auf die nächste gebaute Figur.` : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit)."}</span></div>`);
+    rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – ${sc === "factory_shift" ? "rückt die Fabrik einmal diagonal (statt eines Zuges)." : "wirkt auf die nächste gebaute Figur."}` : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit)."}</span></div>`);
     return rows;
   }
 
@@ -1754,7 +1839,19 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   let facPick = null;   // von Hand gewaehlte Stufe (null = die hoechste bezahlbare)
   let facState = null;  // zuletzt berechnete Daten; draw() und der Klick auf die Fabrik lesen sie
   let facOpen = false;  // ausgeklappt (Klick auf die Leiste); ein Klick aufs Brett klappt wieder zu
-  const terrCardPrice = (c) => [c.cost.k2 ? `${c.cost.k2} Kat 2` : "", c.cost.k3 ? `${c.cost.k3} Kat 3` : ""].filter(Boolean).join(" + ");
+  let shiftMode = false; // Version 2: "Fabrik ruecken" gewaehlt, das Zielfeld steht noch aus
+  /** Die erlaubten Zuege "Fabrik ruecken" (Karte "Fabrik ruecken" liegt bereit). */
+  const shiftTargets = () => (live && canAct() ? live.legal.filter((a) => a.type === "shift_factory") : []);
+  /** Faktor auf den Kartenpreis: der Koenigs-Boost kostet je Stufe mehr (Grundpreis mal die Stufe, die er braeuchte). */
+  function cardFactor(c, p) {
+    if (c.key !== "king_boost" || p === null || p === undefined) return 1;
+    const pp = (R.frames[fi].player_perks || [])[p];
+    return ((pp && pp.king_boost) || 0) + 1;
+  }
+  const terrCardPrice = (c, p) => {
+    const m = cardFactor(c, p), k = c.cost;
+    return [k.color ? `${k.color * m} Kat 1` : "", k.k2 ? `${k.k2 * m} Kat 2` : "", k.k3 ? `${k.k3 * m} Kat 3` : ""].filter(Boolean).join(" + ");
+  };
   function factoryInfo(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
     if (!fac) return null;
@@ -1801,6 +1898,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const info = p === undefined || p === null || !f.alive[p] ? null : factoryInfo(f, p);
     if (!info) { card.hidden = true; return; }
     const acting = canAct();
+    if (!acting || !shiftTargets().length) shiftMode = false;
     info.ready = acting && info.free && !!info.pick;
     facState = info;
     const open = facOpen;
@@ -1820,6 +1918,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     else { title = `Bauer ${roundsText(levels[0].rounds)}`; sub = `Einkommen ${incomeText(inc).replace(/\.$/, "")} je Runde`; }
     if (buyable.length) sub += ` · ${buyable.length} ${buyable.length === 1 ? "Karte" : "Karten"} kaufbar`;
     const stockCards = (f.stored_card || [])[info.p];
+    const canShift = acting && shiftTargets().length > 0;
+    const shiftStuck = acting && stockCards === "factory_shift" && !canShift;
+    if (canShift) sub += " · Fabrik rücken möglich";
+    else if (shiftStuck) sub += " · Fabrik rücken: kein Zielfeld";
+    if (shiftMode) { title = "Fabrik rücken"; sub = "Klick auf ein markiertes Feld (Esc bricht ab)"; cls = "ready"; }
     let body = "";
     if (open) {
       const chips = levels.map((st) => {
@@ -1835,7 +1938,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       else if (Number.isFinite(next.rounds)) nextLine = `Nächste Stufe: ${unitTitle(next.level)} (${next.level}) ${roundsText(next.rounds)}. Es fehlt: ${missingText(next)}.`;
       else nextLine = `Nächste Stufe: ${unitTitle(next.level)} (${next.level}) kommt nicht: ${missingText(next)}. Verbinde Land mit passenden Vorkommen.`;
       // Karten: nur, was jetzt kaufbar ist
-      const buys = buyable.map(([c, i]) => `<button type="button" class="fc-card" data-buy="${i}" title="${escapeHtml(c.text.replace(/ Preis je Reichweite der Figur\./, ""))}"><b>${escapeHtml(c.name)}</b><small>${escapeHtml(terrCardPrice(c))}</small></button>`);
+      const buys = buyable.map(([c, i]) => `<button type="button" class="fc-card" data-buy="${i}" title="${escapeHtml(c.text.replace(/ Preis je Reichweite der Figur\./, ""))}"><b>${escapeHtml(c.name)}</b><small>${escapeHtml(terrCardPrice(c, info.p))}</small></button>`);
       let cardsNote = "";
       if (!(R.market || []).length) cardsNote = "In dieser Partie gibt es keine Karten.";
       else if (!acting) cardsNote = "Karten kaufst du, wenn du am Zug bist.";
@@ -1849,7 +1952,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         `<p>${escapeHtml(nextLine)}</p>` +
         `<div><p class="fc-h">Karten${stockCards ? ` · liegt bereit: ${escapeHtml(CARD(stockCards).name)}` : ""}</p>` +
         (buys.length ? `<div class="fc-cards">${buys.join("")}</div>` : "") +
-        (cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : "") + `</div></div>`;
+        (cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : "") +
+        (canShift ? `<button type="button" class="btn fc-shift" data-act="shift">${shiftMode ? "Abbrechen" : "Fabrik rücken (statt eines Zuges)"}</button>` : "") +
+        (shiftStuck ? `<p class="muted">Fabrik rücken: kein Zielfeld. Ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett).</p>` : "") + `</div></div>`;
     }
     card.className = `faccard ${cls}`;
     card.innerHTML = `<div class="fc-head" data-act="toggle" role="button" tabindex="0" aria-expanded="${open}"><span class="fc-dot"></span>` +
@@ -1892,6 +1997,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (t.dataset.lv) { facPick = Number(t.dataset.lv); renderFactoryCard(); requestAnimationFrame(draw); return; }
     if (t.dataset.buy) { humanAct(Number(t.dataset.buy)); return; }
     if (t.dataset.act === "build") { facBuild(); return; }
+    if (t.dataset.act === "shift") {
+      shiftMode = !shiftMode;
+      facOpen = false;
+      routeNote = shiftMode ? "Fabrik rücken: wähle ein markiertes Feld (nur diagonal, eigenes verbundenes Land ohne Figur)." : "";
+      renderFactoryCard(); renderTurnBox(); requestAnimationFrame(draw);
+      return;
+    }
     if (t.dataset.act === "toggle") { facOpen = !facOpen; renderFactoryCard(); }
   });
   /** Ein Klick (oder Esc) aufs Brett klappt die Karte wieder zu, damit sie keine Felder verdeckt. */
@@ -2039,7 +2151,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ul.innerHTML = "";
     for (const c of market) {
       const li = document.createElement("li");
-      const cost = costFor(c, minRange);
+      let cost = costFor(c, minRange);
+      const mult = isTerr() ? cardFactor(c, p) : 1;
+      if (mult > 1) cost = { ...cost, color: cost.color * mult, foreign_color: cost.foreign_color * mult, k2: cost.k2 * mult, k3: cost.k3 * mult };
       const best = places.length ? bestPlace(cost, places, own) : null;
       const ready = best && best.plan.missing === 0;
       const cardText = isTerr() ? c.text.replace(/ Preis je Reichweite der Figur\./, "") : c.text;
@@ -2066,7 +2180,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           li.insertAdjacentHTML("beforeend", `<span class="missing">In diesem Zug wurde schon eine Karte gekauft.</span>`);
         } else {
           const miss = best ? shortfall(cost, best.inv, own) : [];
-          const text = best && miss.length
+          const slotFull = isTerr() && c.key !== "king_boost" && (f.stored_card || [])[p];
+          const boostMax = c.key === "king_boost" && cardFactor(c, p) > 3;
+          const text = boostMax ? "Der König hat schon alle drei Boost-Stufen."
+            : slotFull ? "Der Kartenplatz neben der Fabrik ist belegt: erst die liegende Karte mit einer gebauten Figur aufbrauchen."
+            : best && miss.length
             ? `Es fehlt noch: ${miss.join(", ")}.`
             : "Gerade nicht möglich (keine passende Figur oder Fabrik).";
           li.insertAdjacentHTML("beforeend", `<span class="missing">${escapeHtml(text)}</span>`);
@@ -2086,6 +2204,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (c.terr_reconnect === false) extra.push("ohne Wieder-Anbinden");
       if (c.terr_enclose === false) extra.push("ohne Umschließen");
       else if (c.terr_enclose_edge === true) extra.push("Brettrand zählt als Wand");
+      if (c.terr_grow >= 2) {
+        const prices = [1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow, l - 1)).join(" / ");
+        const rp = (c.terr_ripen || []).slice(0, c.terr_cats || 4).map((n, i) => (n ? `Kat ${i + 1} nach ${n}` : "")).filter(Boolean);
+        const v2 = [`Version 2 (${c.terr_exact ? "genau n Felder ziehen" : "Zugweite bis n"})`, ...extra,
+          `Figuren nur aus Fläche: ${prices}`,
+          rp.length ? `Ertrag erst nach ${(c.terr_ripen || []).slice(0, c.terr_cats || 4).filter((n) => n > 0).join(" / ")} Runden Besitz (${rp.map((x) => x.split(" ")[0] + " " + x.split(" ")[1]).join(" / ")})` : "Ertrag sofort",
+          cut, score];
+        return v2.join(" · ");
+      }
       return `Gebietsmodus${extra.length ? ` (${extra.join(", ")})` : ""} · Bauer ${c.terr_pawn} Fläche · Stufe 2: ${a(2)} Fläche + ${c.terr_k1} Kat 1 · Stufe 3: ${a(3)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 · Stufe 4: ${a(4)} Fläche + ${c.terr_k1} Kat 1 + ${c.terr_k2} Kat 2 + ${c.terr_k3} Kat 3 · ${cut} · ${score}`;
     }
     const cats = R.players >= 6 ? 4 : 3;
@@ -2134,6 +2261,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (pp.farming) cardBits.push("Ackerbau");
         if (pp.runes) cardBits.push(`Runen ${pp.runes}/3`);
         if (pp.shards) cardBits.push(`Splitter ${pp.shards}/3`);
+        if (pp.king_boost) cardBits.push(`Königs-Boost ${pp.king_boost}/3`);
         if (pp.cards_bought) cardBits.push(`${pp.cards_bought} Karten gekauft`);
       }
       // Wertung wie im Spielkern: Figurenstufen + Fabriken + Farben (Region/Zentrum) im Besitz.
@@ -2277,7 +2405,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         left = `, noch ${stock - (h ? h[2] : 0)}`;
       }
       const wait = regrowLeft(f, cell, res);
-      const back = wait ? `, abgebaut, wieder da in ${wait} Runde${wait > 1 ? "n" : ""}` : "";
+      const ripening = !(f.regrow || []).some(([c, r]) => c === cell && r === res);
+      const back = !wait ? "" : ripening
+        ? `, reift: erster Ertrag in ${wait} Runde${wait > 1 ? "n" : ""}`
+        : `, abgebaut, wieder da in ${wait} Runde${wait > 1 ? "n" : ""}`;
       return `${RES_NAME[info.category]} (Kat ${info.category}), Farbe: ${home}${left}${back}`;
     });
     const extraHere = (f.extra_deposits || []).find(([c]) => c === cell);
@@ -2384,13 +2515,26 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ingot: "Quader (Kat 2, Quadrat): weiß, bis das Feld jemandem gehört, dann in dessen Farbe.",
       grain: "Ball (Kat 3, Kreis): weiß, bis das Feld jemandem gehört, dann in dessen Farbe.",
     };
-    const shown = terr ? items.filter(([k]) => k !== "loot" && k !== "barrel") : items;
+    const v2 = terr && !!(R.config && R.config.terr_exact);
+    let ttx = textTerr, t2x = text2d;
+    if (v2) {
+      ttx = { ...textTerr,
+        unit1: "Bauer (Stufe 1): zieht genau 1 Feld geradeaus und schlägt dort. Zahl = Stufe, Punkte = Reichweite.",
+        unit2: "Stufe n zieht genau n Felder geradeaus wie ein Turm, nicht durch Figuren. Krieger (2) mit Helm, Ritter (3) mit Helmbusch, Held (4) mit Umhang.",
+        unitCards: "Karten an der Figur (wirken auf die nächste gebaute): −1 = Kürzer (ein Feld weniger), L = Ecke (einmal um die Ecke), Bogen = Sprung (über eine Figur).",
+        crystal: "Kat 1 (Raute). Weiß, solange das Feld niemandem gehört; dann in der Farbe des Besitzers. Der erste Ertrag kommt, wenn dir das Feld 3 Runden gehört (die Zahl auf dem blassen Vorkommen zählt herunter); danach jede Runde, solange es mit der Fabrik verbunden ist. Umfärben setzt die Uhr zurück.",
+        ingot: "Quader (Kat 2, Quadrat): wie Kat 1, aber erst nach 10 Runden Besitz. Rohstoffe sind nur für Karten da.",
+      };
+      t2x = { ...text2d, unit1: ttx.unit1, unit2: ttx.unit2, unitCards: "Karten als weiße Abzeichen: −1 = Kürzer, L = Ecke, Bogen = Sprung." };
+    }
+    const noGrain = v2 && R.config.terr_cats === 2;
+    const shown = terr ? items.filter(([k]) => k !== "loot" && k !== "barrel" && !(noGrain && k === "grain")) : items;
     const dl = $("legend");
     dl.innerHTML = "";
     const saved = geo;
     for (let [kind, text] of shown) {
-      if (!view3d && text2d[kind]) text = text2d[kind];
-      if (terr && textTerr[kind]) text = textTerr[kind];
+      if (!view3d && t2x[kind]) text = t2x[kind];
+      if (terr && ttx[kind]) text = ttx[kind];
       const dt = document.createElement("dt");
       const c = document.createElement("canvas");
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -2411,7 +2555,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (kind === "king") drawKing(20, 34, PLAYER[0].color);
         if (kind === "unit1") drawUnit(20, 33, PLAYER[1].color, { level: 1, range: 1, perks: {} });
         if (kind === "unit2") drawUnit(20, 35, PLAYER[1].color, { level: 3, range: 3, perks: {} });
-        if (kind === "unitCards") drawUnit(22, 35, PLAYER[4].color, { level: 2, range: 3, perks: { lance: true, diagonal: true, horse: true, extra_range: 1, card_levels: 1 } });
+        if (kind === "unitCards") drawUnit(22, 35, PLAYER[4].color, { level: 2, range: 2, perks: v2 ? { shorten: true, bend: true, hop: true } : { lance: true, diagonal: true, horse: true, extra_range: 1, card_levels: 1 } });
         geo = { W: 38 };
         if (kind === "factory") drawFactory(20, 34, PLAYER[2].color, null);
         geo = { W: 30 };
@@ -2444,12 +2588,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
 
   /** Legendenbild in der 2D-Ansicht (Mitte des 40x40-Bildes ist 20/20). */
+  const legendV2 = () => isTerr() && !!(R.config && R.config.terr_exact);
   function legendFlat(kind, lc) {
     geo = { W: 40, flat: true, square: true, U: 40 };
     if (kind === "king") drawKing(20, 20, PLAYER[0].color);
     if (kind === "unit1") drawUnit(20, 20, PLAYER[1].color, { level: 1, range: 1, perks: {} });
     if (kind === "unit2") drawUnit(20, 20, PLAYER[1].color, { level: 3, range: 3, perks: {} });
-    if (kind === "unitCards") drawUnit(18, 21, PLAYER[4].color, { level: 2, range: 3, perks: { lance: true, diagonal: true, horse: true, extra_range: 1, card_levels: 1 } });
+    if (kind === "unitCards") drawUnit(18, 21, PLAYER[4].color, { level: 2, range: 2, perks: legendV2() ? { shorten: true, bend: true, hop: true } : { lance: true, diagonal: true, horse: true, extra_range: 1, card_levels: 1 } });
     if (kind === "factory") drawFactory(20, 20, PLAYER[2].color, null);
     if (kind === "pill") {
       geo = { W: 30, flat: true, square: true, U: 30 };
@@ -2497,6 +2642,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function boardClick(cell) {
     if (!canAct()) return;
     const f = R.frames[fi];
+    if (shiftMode) {
+      const k = cell === null ? -1 : live.legal.findIndex((a) => a.type === "shift_factory" && a.to === cell);
+      shiftMode = false; routeNote = "";
+      if (k >= 0) { humanAct(k); return; }
+      renderFactoryCard();
+    }
     if (cell !== null && selected !== null) {
       const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === cell);
       if (i >= 0) { humanAct(i); return; }
@@ -2624,7 +2775,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (enemyAt(f, a.to, piece.owner) && j !== r.cells.length - 1) return; // unterwegs nie schlagen
         if (j > best) { best = j; bestAction = i; }
       });
-      if (bestAction < 0) { drop("Route abgebrochen: der Weg ist versperrt."); continue; }
+      if (bestAction < 0) {
+        drop(R.config && R.config.terr_exact && !piece.king
+          ? `Route abgebrochen: von hier führt kein erlaubter Zug weiter (Stufe ${piece.level} zieht genau ${piece.range} ${piece.range === 1 ? "Feld" : "Felder"} geradeaus, Ecken nur mit einer Karte).`
+          : "Route abgebrochen: der Weg ist versperrt.");
+        continue;
+      }
       if (best === r.cells.length - 1) {
         routes = routes.filter((x) => x !== r);
         routeNote = "Route beendet: Ziel erreicht.";
@@ -2711,23 +2867,25 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Karten", fields: [
       { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
     ] },
-    { title: "Gebiet", wide: true, grid: true, note: "Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld: Bauer ab Fläche, Stufe 2 mit Fläche + Kat 1, Stufe 3 zusätzlich Kat 2, Stufe 4 zusätzlich Kat 3 (alles wird verbraucht). Karten liegen neben der Fabrik und wirken auf die nächste Figur. Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Rohstoffe sind weiß, bis das Feld jemandem gehört; dann haben sie dessen Farbe.", fields: [
+    { title: "Gebiet", wide: true, grid: true, note: "Version 2. Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) liegen neben der Fabrik und wirken auf die nächste Figur; „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Rohstoffe sind weiß, bis das Feld jemandem gehört; dann haben sie dessen Farbe.", fields: [
+      { key: "terr_v2", label: "Version 2 an (1) oder aus (0)", ph: () => "1", hint: () => "0 = die Regeln der Version 1 (Zugweite bis n, Preise mit Rohstoffen, sofortiger Ertrag)." },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
-      { key: "terr_area", label: "Fläche für Stufe 2", ph: () => "150" },
-      { key: "terr_area_step", label: "Mehr Fläche je weitere Stufe", ph: () => "50", hint: () => "Stufe 3 kostet so viel mehr als Stufe 2, Stufe 4 das Doppelte (Standard 150 / 200 / 250)." },
-      { key: "terr_k1", label: "Kat 1 für Stufe 2 (und höher)", ph: () => "20" },
-      { key: "terr_k2", label: "Kat 2 zusätzlich für Stufe 3", ph: () => "40" },
-      { key: "terr_k3", label: "Kat 3 zusätzlich für Stufe 4", ph: () => "60" },
+      { key: "terr_grow", label: "Preisfaktor je Stufe", ph: () => "2", hint: () => "Stufe n kostet Bauer mal Faktor hoch (n−1): 50 / 100 / 200 / 400. 0 = Preise der Version 1 (nur mit Version 1 sinnvoll)." },
+      { key: "terr_exact", label: "Genau n Felder ziehen", ph: () => "1", hint: () => "1 = Stufe n zieht genau n Felder geradeaus; 0 = bis n Felder frei um Ecken." },
+      { key: "terr_ripen1", label: "Reifezeit Kat 1 (Runden)", ph: () => "3", hint: () => "So lange muss dir das Feld gehören, bevor das Vorkommen zum ersten Mal Ertrag bringt." },
+      { key: "terr_ripen2", label: "Reifezeit Kat 2 (Runden)", ph: () => "10" },
+      { key: "terr_cats", label: "Rohstoffarten", ph: () => "2", hint: () => "2 = nur Kat 1 und Kat 2; die Felder mit Kat 3 und 4 gibt es dann nicht." },
+      { key: "terr_cards", label: "Kartenpreise der Version 2", ph: () => "1", hint: () => "1 = Preise in Kat 1 / Kat 2 für die neuen Karten; 0 = die alten Preise." },
       { key: "terr_yield", label: "Ertrag je Vorkommen und Runde", ph: () => "1" },
       { key: "terr_cut_flips", label: "Abgetrenntes Land fällt an den Gegner", ph: () => "1", hint: () => "1 = an den, der durchtrennt hat; 0 = wird neutral" },
       { key: "terr_reconnect", label: "Wehrlose Figur wieder anbinden", ph: () => "1", hint: () => "1 = steht sie neben ihrem verbundenen Land, ist sie aktiv und färbt ihr Feld; 0 = aus" },
       { key: "terr_enclose", label: "Umschlossene neutrale Fläche", ph: () => "1", hint: () => "1 = ganz umschlossene neutrale Fläche geht an die umschließende Farbe; 0 = aus" },
       { key: "terr_enclose_edge", label: "Brettrand zählt als Wand", ph: () => "0", hint: () => "0 = eine neutrale Fläche am Brettrand wird nie umschlossen; 1 = der Rand ist eine Wand (ein „L“ aus der Ecke holt ein Quadrat)" },
-      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "16", hint: () => "Preise der Karten (Kat 2 und 3) mal diese Zahl. Pferd kostet so 32 Kat 2 und 32 Kat 3." },
+      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "16", hint: () => "Preise der Karten mal diese Zahl durch 16 (Version 2: Ecke 10 Kat 1, Königs-Boost 3 Kat 2 je Stufe)." },
     ] },
   ];
-  const MENU_NOTE = "Version 1.1 (Regeln wie Version 1, neu: Fabrik-Karte am Brett): Gebietsmodus. Weißes Brett, eine Fabrik, Land färben und abtrennen, Figuren aus Fläche und Rohstoffen bauen. Nur der König entscheidet. Dies ist der Referenzstand; die älteren Spielarten sind nicht mehr wählbar.";
-  const MENU_KEY = "spacevitan-menu-v1";
+  const MENU_NOTE = "Version 2 (Versuch, Version 1 bleibt als Referenz): Gebietsmodus. Figuren ziehen genau so viele Felder wie ihre Stufe, gebaut wird nur mit Fläche (50 / 100 / 200 / 400), Rohstoffe reifen 3 / 10 Runden und gibt es für Karten, dazu die Karten „Fabrik rücken“ und „Königs-Boost“. Neuer Bot „fläche“ spielt auf Land und Rohstoffe.";
+  const MENU_KEY = "spacevitan-menu-v2";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
   function buildMenu() {
@@ -2797,7 +2955,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
   }
-  /** Zuruecksetzen: alle Regelfelder leer, dann gelten die Standardwerte der Version 1. */
+  /** Zuruecksetzen: alle Regelfelder leer, dann gelten die Standardwerte der Version 2. */
   function clearRuleFields() {
     for (const input of ruleInputs()) {
       if (input.type === "checkbox") input.checked = false;
@@ -2807,7 +2965,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Text `name=wert,...` fuer den Spielkern aus den belegten Feldern. */
   function ruleText() {
-    const parts = ["territory=1"]; // Version 1 ist immer der Gebietsmodus
+    const parts = ["territory=1", "terr_v2=1"]; // Version 2: Gebietsmodus mit den neuen Regeln (terr_v2=0 im Feld schaltet sie ab)
     for (const input of ruleInputs()) {
       if (input.disabled) continue;
       const key = input.dataset.rule;
@@ -2907,8 +3065,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     R = liveR;
     selected = null; fi = 0; tween = null; hoverCell = null;
     routes = []; ctrlPath = null; routeNote = ""; clearTimeout(premoveTimer);
+    shiftMode = false;
     showPlayError("");
     layout();
+    legend();
     renderPanel();
     requestAnimationFrame(draw);
     scheduleBots();
@@ -2927,6 +3087,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   function humanAct(i) {
     if (!canAct()) return;
+    shiftMode = false;
     try {
       const out = callWasm("sv_apply", i);
       selected = null;
@@ -2977,6 +3138,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (a.type === "buy") {
       return `„${CARD(a.card).name}“${buyWhere(a, f)}`;
     }
+    if (a.type === "shift_factory") return `Fabrik rücken nach ${cellName(a.to)} (Karte „Fabrik rücken“, statt eines Zuges)`;
     if (a.type === "pass") return "Passen";
     return a.type;
   }
@@ -3252,7 +3414,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   document.addEventListener("keydown", (e) => {
     if (!R) return;
     if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
-    if (e.key === "Escape") facClose();
+    if (e.key === "Escape") {
+      facClose();
+      if (shiftMode) { shiftMode = false; routeNote = ""; renderFactoryCard(); renderTurnBox(); }
+    }
     if (e.key === "Escape" && mode === "play" && (routes.length || ctrlPath || selected !== null)) {
       selected = null;
       cancelRoutes(routes.length || ctrlPath ? "Route abgebrochen." : "");

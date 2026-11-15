@@ -55,6 +55,7 @@ neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
 | `stark` | rechnet voraus: eigene Zuege und die gefaehrlichste Antwort der Gegner, mehrere Zuege tief (bei 2 Spielern Alpha-Beta wie bei Schachprogrammen, ab 3 Spielern Best-Reply-Search). Wirtschaft, Koenigssicherheit und das Einkesseln gegnerischer Koenige stecken in der Bewertung. Rechnet mit festem Budget (`--nodes`, Standard 20000 Stellungen pro Zug), also auf jedem Rechner gleich. |
 | `stark-pur` | wie `stark`, kauft aber nie Karten (Vergleichsgegner fuer Kartenmessungen) |
 | `gierig` | feste Faustregeln ohne Vorausschau |
+| `flaeche` | nur Gebietsmodus: spielt auf Land und Rohstoffe statt auf Figurenkampf. Rechnet einen eigenen Zug voraus und bewertet das Ergebnis mit der echten Engine (verbundenes Land, Vorkommen darauf nach Reife gewichtet, Figuren, Bedrohung von Koenig und Fabrik), also sind Abtrennen und Umschliessen schon eingerechnet. Baut nur, wenn die neue Figur besser ist als seine beste; kauft Karten, die der naechsten Figur oder dem Koenig nutzen. 0,1 ms je Zug (`area_bot.rs`) |
 | `zufall` | zufaellige erlaubte Zuege (zum Testen der Regeln) |
 
 Gewichte der Bewertung lassen sich zum Abstimmen ohne Neubau setzen, z. B.
@@ -81,8 +82,13 @@ python3 viewer/build.py spacevitan.html --wasm spacevitan.wasm --standalone
 Die entstandene `spacevitan.html` laesst sich per Doppelklick im Browser oeffnen.
 
 **Version 1:** Der Browser zeigt nur noch den Gebietsmodus (Abschnitt "Gebietsmodus" unten) und
-heisst "Spacevitan Version 1". Das ist der Referenzstand (Git-Tag `v1`); spaetere Aenderungen
-bauen darauf auf. Die aelteren Spielarten (Abbauen mit Nachwachsen, Brettspiel, Rollen) sind im
+heisst "Spacevitan Version 1". Das ist der Referenzstand: Commit `cbe9b53` (und der damals
+veroeffentlichte Link); spaetere Aenderungen bauen darauf auf. Ein Git-Tag `v1` waere die uebliche
+Marke dafuer (ein Tag ist nur ein Name fuer einen Commit), die Sitzungs-Umgebung, in der das hier
+gebaut wird, lehnt das Hochladen von Tags aber ab; wer will, setzt ihn selbst mit
+`git tag v1 cbe9b53 && git push origin v1`. **Version 1.1** (Commit `2971584`) hat dieselben Regeln,
+dazu die Fabrik-Karte am Brett und 5 bis 8 Spieler im Menue. **Version 2** ist ein Regelversuch
+(Abschnitt "Version 2" unten). Die aelteren Spielarten (Abbauen mit Nachwachsen, Brettspiel, Rollen) sind im
 Menue nicht mehr waehlbar, bleiben aber im Spielkern und in der CLI (`--rule ...` ohne
 `territory=1`) erhalten. Gespeicherte Menue-Staende aelterer Seiten werden ignoriert, soweit ihre
 Felder weggefallen sind.
@@ -383,6 +389,48 @@ Was daran auffaellt:
 - **Fabriken fallen fast nie** (0,08 je Partie): Die Bots rennen lieber mit dem Koenig.
 - **Anziehender Vorteil**: A 68 % in der ersten Fassung, jetzt 45 % (je 60 Partien, Rauschen etwa +-9 Punkte).
   Alle Zwischenstufen mit den neuen Preisen lagen bei 50-55 %.
+
+### Version 2 (`terr_v2=1`, im Browser "Version 2")
+
+Ein Regelversuch auf dem Gebietsmodus. **Alles liegt hinter Schaltern in `Config` (Standard aus), Version 1
+bleibt unveraendert** (die Tests der alten Regeln laufen weiter). `terr_v2=1` setzt alle Schalter zusammen,
+jeder laesst sich danach einzeln ueberschreiben (`--rule territory=1,terr_v2=1,terr_ripen2=5`); `terr_v2=0`
+schaltet sie wieder aus. Die Browser-Seite "Version 2" schickt immer `territory=1,terr_v2=1` voraus; im Menue
+steht dazu ein Feld "Version 2 an (1) oder aus (0)".
+
+| Schalter | Version 2 | Wirkung |
+|---|---|---|
+| `terr_grow` | 2 | Figurenpreise nur in Flaeche: Stufe n kostet `terr_pawn` mal `terr_grow` hoch (n-1), also 50 / 100 / 200 / 400. 0 = Preise wie Version 1 (mit `terr_area`, `terr_k1..3`) |
+| `terr_exact` | 1 | Eine Figur der Stufe n zieht **genau n Felder geradeaus** (wie ein Turm, nicht durch Figuren). Das Zielfeld darf ein Gegner sein (wird geschlagen), nie eine eigene Figur. Der Weg faerbt wie bisher. Der Koenig zieht weiter ein Feld |
+| `terr_ripen1..4` | 3, 10, 0, 0 | Ein Vorkommen bringt erst Ertrag, wenn das Feld dem Besitzer so viele Runden gehoert (Kat 1: 3, Kat 2: 10). Umfaerben durch einen Gegner setzt die Uhr zurueck (`State::owned_since`), das eigene Feld noch einmal betreten nicht. Der Ertrag kommt am Ende des Zugs des Besitzers; hat er in dieser Runde schon gezogen, zaehlt die Uhr bis zur naechsten |
+| `terr_cats` | 2 | Nur Kat 1 und Kat 2 gibt es (Kat 3 und 4 entfallen, das Brett hat deutlich weniger Rohstofffelder). Rohstoffe sind nur noch fuer Karten da, nie fuer Figuren |
+| `terr_cards` | 1 | Der Markt kommt aus dem Pool der neuen Karten (`Card::V2`), Preise in Kat 1 und Kat 2 (mal `terr_card_mult` / 16) |
+
+Karten in Version 2 (Preise bei `terr_card_mult=16`; nur eine liegt neben der Fabrik, ausser dem Koenigs-Boost):
+
+| Karte | Preis | Wirkung |
+|---|---|---|
+| Kuerzer (`shorten`) | 6 Kat 1 | Die naechste gebaute Figur darf einen Schritt weniger ziehen (Stufe 3: 3 oder 2 Felder) |
+| Ecke (`bend`) | 10 Kat 1 | Die naechste Figur darf auf ihrem Weg einmal um die Ecke gehen (dann bleibt es bei insgesamt n Feldern) |
+| Sprung (`hop`) | 8 Kat 1 | Die naechste Figur darf auf ihrem Weg ueber eine Figur springen (ein Feld davon zaehlt mit) |
+| Fabrik ruecken (`factory_shift`) | 6 Kat 1 | Statt eines Zuges: die Fabrik rutscht ein Feld diagonal, auf eigenes, mit der Fabrik verbundenes Land ohne Figur (`Action::ShiftFactory`). Nur Quadratbrett. Die Karte bleibt neben der Fabrik liegen, bis sie benutzt wird |
+| Koenigs-Boost (`king_boost`) | 3 Kat 2, mal Stufe | Wirkt sofort und dauerhaft, braucht den Kartenplatz nicht, bis Stufe 3. Stufe 1: der Koenig darf auch ein Feld diagonal. Stufe 2: zusaetzlich zwei Felder gerade. Stufe 3: zusaetzlich zwei vor und eins zur Seite (ein "L"). Die Stufen gelten zusammen. Nur Quadratbrett. Je Stufe teurer (3, 6, 9 Kat 2) |
+
+Pro Zug ist weiter nur **ein** Kartenkauf moeglich. Viewer: ein Zaehler auf dem Vorkommen zeigt die Runden bis
+zum ersten Ertrag (blass bis dahin), Figuren tragen Abzeichen fuer Kuerzer (-1), Ecke (L) und Sprung (Bogen), der
+Koenig einen Stern je Boost-Stufe, "Fabrik ruecken" bedient man ueber die Fabrik-Karte (Knopf, dann ein markiertes
+Feld anklicken; Esc bricht ab). Die Wegplanung mit Shift/Strg bleibt, bricht aber ab, wo kein erlaubter Zug weiterfuehrt.
+
+**Paritaet (Folge von "genau n")**: Auf dem Quadratbrett wechselt ein Zug der Laenge n die Schachbrett-Farbe des
+Feldes genau dann, wenn n ungerade ist. Figuren der Stufe 2 und 4 bleiben also immer auf ihrer Feldfarbe (wie ein
+Laeufer) und koennen nur Figuren schlagen, die auf derselben Farbe stehen; Stufe 1 und 3 wechseln mit jedem Zug. Der
+Koenig (ein Feld) wechselt immer. Ecke und Sprung aendern daran nichts (der Weg hat weiter n Schritte); nur
+**Kuerzer** (n-1 Schritte) bricht die Paritaet, beim Koenig der diagonale Boost-Schritt. Auf dem Sechseckbrett gibt es diese
+Paritaet nicht. Ob das so gewollt ist, ist offen.
+
+**Flaechen-Bot** (`--bots flaeche,...`, im Browser "Bot fläche"): siehe Tabelle der Computergegner. Messung unten.
+
+**Messung** folgt im naechsten Commit.
 
 ## Karten
 
