@@ -361,6 +361,14 @@ struct Stats {
     rebuilds: u64,
     trades: u64,
     traded_area: u64,
+    /// Version 3: Flaechenbonus durch Kat 3, Flaeche der verbundenen Felder (zum Vergleich),
+    /// Summe der verbundenen Kat-3-Felder und Zahl der Zugenden mit Einkommen.
+    bonus_area: u64,
+    field_area: u64,
+    kat3_sum: u64,
+    incomes: u64,
+    /// Zugenden mit 0, 1, ..., 8 oder mehr verbundenen Kat-3-Feldern.
+    kat3_hist: [u64; 9],
     harvested: [u64; 4],
     cut_offs: u64,
     cut_cells: u64,
@@ -516,7 +524,18 @@ fn run() -> Result<(), String> {
                             stats.trades += 1;
                             stats.traded_area += u64::from(*area);
                         }
-                        Event::Income { gained, .. } => {
+                        Event::Income {
+                            gained,
+                            area,
+                            kat3,
+                            bonus,
+                            ..
+                        } => {
+                            stats.bonus_area += u64::from(*bonus);
+                            stats.field_area += u64::from(*area);
+                            stats.kat3_sum += u64::from(*kat3);
+                            stats.kat3_hist[(*kat3 as usize).min(8)] += 1;
+                            stats.incomes += 1;
                             for (res, n) in gained.iter() {
                                 let cat = usize::from(game.map.category(res));
                                 stats.harvested[(cat.max(1) - 1).min(3)] += u64::from(n);
@@ -672,6 +691,27 @@ fn run() -> Result<(), String> {
                 stats.rebuilds as f64 / n,
                 stats.trades as f64 / n,
                 stats.traded_area as f64 / n
+            );
+        }
+        if stats.bonus_area > 0 {
+            println!(
+                "  Kat-3-Bonus: {:.1} Flaeche pro Partie (zusaetzlich zu {:.1} aus den Feldern), im Schnitt {:.2} verbundene Kat-3-Felder je Zugende",
+                stats.bonus_area as f64 / n,
+                stats.field_area as f64 / n,
+                stats.kat3_sum as f64 / stats.incomes.max(1) as f64
+            );
+        }
+        if stats.bonus_area > 0 {
+            let total = stats.incomes.max(1) as f64;
+            let hist: Vec<String> = stats
+                .kat3_hist
+                .iter()
+                .enumerate()
+                .map(|(k, n)| format!("{k}: {:.0} %", *n as f64 * 100.0 / total))
+                .collect();
+            println!(
+                "  Zugenden nach verbundenen Kat-3-Feldern: {}",
+                hist.join(", ")
             );
         }
         let harvest: u64 = stats.harvested.iter().sum();

@@ -1176,6 +1176,8 @@ impl SearchBot {
             }
         }
         v += w.land * linked + w.land_loose * loose;
+        // Version 3: der Flaechenbonus der verbundenen Kat-3-Felder (`2^k` je Runde).
+        v += Game::kat3_bonus(g.connected_kat3(p)).min(2_000) as i32 * w.land;
         if let Some(c) = &conn {
             for piece in st.pieces.values().filter(|x| x.owner == p) {
                 if let PieceKind::Unit { level, .. } = piece.kind {

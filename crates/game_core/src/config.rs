@@ -135,8 +135,13 @@ pub struct Config {
     /// Version 3: Bauzeit in Runden, wenn die Fabrik zerstoert wurde (Neubau ohne Kosten).
     /// Beim Umzug entspricht die Bauzeit der Entfernung zum alten Platz.
     pub terr_rebuild: u32,
-    /// Version 3: Kat 3 laesst sich gegen Flaeche tauschen: `k` Einheiten ergeben `2^k` Flaeche.
+    /// Version 3 (alte Fassung): Kat 3 laesst sich gegen Flaeche tauschen: `k` Einheiten im Lager
+    /// ergeben einmalig `2^k` Flaeche. Geht nur ohne `terr_bonus` (Kat 3 wird dann geerntet).
     pub terr_trade: bool,
+    /// Version 3: Kat 3 wird nicht geerntet, sondern zaehlt als Bonus. Am Ende jedes eigenen Zuges
+    /// bringen die `k` Kat-3-Felder auf dem mit der stehenden Fabrik verbundenen Land zusaetzlich
+    /// `2^k` Flaeche (`k = 0` bringt nichts).
+    pub terr_bonus: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -219,12 +224,14 @@ impl Config {
             terr_move_k2: 0,
             terr_rebuild: 0,
             terr_trade: false,
+            terr_bonus: false,
         }
     }
 
     /// Schaltet die Regeln von Version 3 ein (`on`; sie bauen auf Version 2 auf) oder alles bis
     /// zu Version 1 aus: Erntezaehler je Vorkommen, Umzug und Neubau der Fabrik durch den Koenig,
-    /// weniger Rohstoffe, dazu Kat 3 gegen Flaeche. Einzeln lassen sie sich danach wieder aendern.
+    /// weniger Rohstoffe, dazu Kat 3 als Flaechenbonus (`2^k` je Runde). Einzeln lassen sie sich
+    /// danach wieder aendern.
     pub fn set_v3(&mut self, on: bool) {
         self.set_v2(on);
         self.terr_cycle = on;
@@ -232,7 +239,8 @@ impl Config {
         self.terr_move_k1 = if on { 4 } else { 0 };
         self.terr_move_k2 = if on { 2 } else { 0 };
         self.terr_rebuild = if on { 3 } else { 0 };
-        self.terr_trade = on;
+        self.terr_trade = false;
+        self.terr_bonus = on;
         if on {
             self.terr_cats = 3;
             self.terr_ripen = [3, 10, 10, 0];
@@ -336,6 +344,7 @@ impl Config {
             "terr_move_k2" => self.terr_move_k2 = as_u32(value)?,
             "terr_rebuild" => self.terr_rebuild = as_u32(value)?,
             "terr_trade" => self.terr_trade = value != 0,
+            "terr_bonus" => self.terr_bonus = value != 0,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
             "veins3" => self.veins_per_type[2] = as_u32(value)?,
@@ -479,6 +488,11 @@ impl Config {
         }
         if self.terr_cards > 1 {
             return Err(ConfigError::Invalid("terr_cards: 0 oder 1"));
+        }
+        if self.terr_bonus && self.terr_trade {
+            return Err(ConfigError::Invalid(
+                "terr_bonus und terr_trade gehen nicht zusammen (Kat 3 wird nur eines von beiden)",
+            ));
         }
         if self.terr_move > 1 {
             return Err(ConfigError::Invalid("terr_move: 0 oder 1"));

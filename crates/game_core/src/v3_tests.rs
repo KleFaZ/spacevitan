@@ -1,5 +1,6 @@
 //! Tests fuer die Regeln von Version 3 (`Config::set_v3`): Umzug und Neubau der Fabrik durch den
-//! Koenig, Wehrlosigkeit waehrend des Baus, Erntezaehler je Vorkommen und Kat 3 gegen Flaeche.
+//! Koenig, Wehrlosigkeit waehrend des Baus, Erntezaehler je Vorkommen und Kat 3 als Flaechenbonus
+//! (`2^k` je Runde) oder, in der alten Fassung, zum Tauschen gegen Flaeche.
 //!
 //! Leere Karte, 10x10 Quadrat; A startet auf (0,0), B auf (9,9).
 
@@ -21,9 +22,20 @@ fn v3_config(players: u8) -> Config {
     c
 }
 
+/// Alte Fassung: Kat 3 wird geerntet und gegen `2^k` Flaeche getauscht (statt Rundenbonus).
+fn v3_trade_config() -> Config {
+    let mut c = v3_config(2);
+    c.terr_bonus = false;
+    c.terr_trade = true;
+    c
+}
+
 /// Karte ohne Rohstoffe, dazu die gewuenschten Vorkommen.
 fn with_deposits(deps: &[((i32, i32), ResourceId)]) -> Game {
-    let config = v3_config(2);
+    with_deposits_cfg(v3_config(2), deps)
+}
+
+fn with_deposits_cfg(config: Config, deps: &[((i32, i32), ResourceId)]) -> Game {
     let mut map = Map::generate(&config).expect("Karte");
     map.deposits = vec![Vec::new(); map.board.len()];
     for &((x, y), res) in deps {
@@ -35,6 +47,10 @@ fn with_deposits(deps: &[((i32, i32), ResourceId)]) -> Game {
 
 fn blank() -> Game {
     with_deposits(&[])
+}
+
+fn blank_trade() -> Game {
+    with_deposits_cfg(v3_trade_config(), &[])
 }
 
 fn c(g: &Game, x: i32, y: i32) -> CellId {
@@ -89,7 +105,11 @@ fn storage_of(g: &Game, p: PlayerId, res: ResourceId) -> u32 {
 fn the_v3_switch_builds_on_v2_and_can_be_undone() {
     let mut cfg = Config::new(2, 1);
     cfg.set_all("territory=1,terr_v3=1").unwrap();
-    assert!(cfg.terr_exact && cfg.terr_cards == 1 && cfg.terr_cycle && cfg.terr_trade);
+    assert!(cfg.terr_exact && cfg.terr_cards == 1 && cfg.terr_cycle);
+    assert!(
+        cfg.terr_bonus && !cfg.terr_trade,
+        "Kat 3 ist Rundenbonus, kein Tausch"
+    );
     assert_eq!(cfg.terr_grow, 2);
     assert_eq!(cfg.terr_ripen, [3, 10, 10, 0]);
     assert_eq!((cfg.terr_move, cfg.terr_rebuild), (1, 3));
@@ -102,7 +122,7 @@ fn the_v3_switch_builds_on_v2_and_can_be_undone() {
     });
     // Version 2 bleibt ohne die neuen Regeln.
     cfg.set_all("terr_v2=1").unwrap();
-    assert!(!cfg.terr_cycle && cfg.terr_move == 0 && !cfg.terr_trade);
+    assert!(!cfg.terr_cycle && cfg.terr_move == 0 && !cfg.terr_trade && !cfg.terr_bonus);
     // Einzelne Schalter und Rohstoffmenge lassen sich aendern.
     cfg.set_all("terr_v3=1,terr_rebuild=2,terr_move_k1=7,cells3=4,veins3=2")
         .unwrap();
@@ -112,6 +132,14 @@ fn the_v3_switch_builds_on_v2_and_can_be_undone() {
     let mut bad = cfg.clone();
     bad.terr_rebuild = 0;
     assert!(bad.validate().is_err(), "Umzug ohne Bauzeit ist sinnlos");
+    let mut both = cfg.clone();
+    both.terr_trade = true;
+    assert!(
+        both.validate().is_err(),
+        "Bonus und Tausch schliessen sich aus"
+    );
+    cfg.set_all("terr_bonus=0,terr_trade=1").unwrap();
+    assert!(cfg.validate().is_ok());
 }
 
 #[test]
@@ -161,7 +189,7 @@ fn ready_to_move() -> Game {
 }
 
 #[test]
-fn moving_the_factory_costs_resources_and_takes_as_many_rounds_as_the_distance() {
+fn moving_the_factory_costs_resources_and_takes_half_the_distance_rounded_up() {
     let mut g = ready_to_move();
     assert!(g.legal_actions().contains(&Action::RebuildFactory));
     let old = g.home_factory(P0).unwrap().cell;
@@ -176,18 +204,36 @@ fn moving_the_factory_costs_resources_and_takes_as_many_rounds_as_the_distance()
     );
     assert_ne!(f.cell, old);
     assert_eq!(
-        f.building, 3,
-        "Entfernung 3, nach dem Zugende noch drei Runden"
+        f.building, 2,
+        "Entfernung 3, halbiert und aufgerundet 2 Runden"
     );
     assert!(events.iter().any(|e| matches!(
         e,
-        Event::FactoryRebuilding { rounds: 3, from: Some(from), .. } if *from == old
+        Event::FactoryRebuilding { rounds: 2, from: Some(from), .. } if *from == old
     )));
     // Preis: 4 Kat 1 und 2 Kat 2 aus dem Lager; der Rest zieht mit um.
     assert_eq!(storage_of(&g, P0, typ(&g, 0, 1)), 1);
     assert_eq!(storage_of(&g, P0, typ(&g, 0, 2)), 1);
     assert_eq!(g.state.ledger.spent_on_moves, 6);
     assert_eq!(g.current_player(), P1);
+}
+
+#[test]
+fn the_duration_is_half_the_distance_rounded_up_and_at_least_one() {
+    let g = blank();
+    let from = c(&g, 0, 0);
+    let rounds: Vec<u32> = (0..=9)
+        .map(|x| g.relocation_rounds(from, c(&g, x, 0)))
+        .collect();
+    assert_eq!(rounds, vec![1, 1, 1, 2, 2, 3, 3, 4, 4, 5]);
+    // Quer ueber das Brett (Entfernung 18) sind es 9 Runden.
+    assert_eq!(g.relocation_rounds(from, c(&g, 9, 9)), 9);
+    // Der Plan des Koenigs nennt dieselbe Zahl schon vor dem Zug.
+    let mut g = ready_to_move();
+    let (rounds, price) = g.rebuild_plan(P0).expect("Umzug moeglich");
+    assert_eq!((rounds, price), (2, [4, 2]));
+    g.apply(Action::RebuildFactory).unwrap();
+    assert_eq!(g.home_factory(P0).unwrap().building, rounds);
 }
 
 #[test]
@@ -201,7 +247,7 @@ fn nothing_is_collected_or_built_while_the_factory_is_being_built() {
     assert_eq!(g.connected_count(P0), 0);
     let area = g.state.area[P0.idx()];
     let mut seen = Vec::new();
-    for _ in 0..3 {
+    for _ in 0..2 {
         // B zieht, dann A.
         let a = g.legal_actions()[0];
         g.apply(a).unwrap();
@@ -220,7 +266,7 @@ fn nothing_is_collected_or_built_while_the_factory_is_being_built() {
     }
     assert!(
         !g.rebuilding(P0),
-        "nach drei Runden steht die Fabrik wieder"
+        "nach zwei Runden steht die Fabrik wieder"
     );
     assert!(g.standing_factory(P0).is_some());
 }
@@ -247,7 +293,7 @@ fn the_factory_stands_at_the_end_of_the_nth_turn_after_the_order() {
             break;
         }
     }
-    assert_eq!(stands, Some(3), "Bauzeit 3 = drei eigene Folgezuege");
+    assert_eq!(stands, Some(2), "Bauzeit 2 = zwei eigene Folgezuege");
     assert!(g.standing_factory(P0).is_some());
 }
 
@@ -559,7 +605,92 @@ fn disconnected_fields_do_not_count_down() {
     assert_eq!(g.state.age[c(&g, 8, 8).idx()], 0);
 }
 
-// ----- Kat 3 gegen Flaeche ----------------------------------------------------------------------
+// ----- Kat 3 als Rundenbonus --------------------------------------------------------------------
+
+#[test]
+fn the_bonus_is_two_to_the_k_and_nothing_without_kat_three() {
+    assert_eq!(
+        [0, 1, 2, 3, 5, 10].map(Game::kat3_bonus),
+        [0, 2, 4, 8, 32, 1024]
+    );
+    assert_eq!(Game::kat3_bonus(40), 1 << 20, "gedeckelt");
+}
+
+#[test]
+fn connected_kat_three_fields_add_two_to_the_k_area_every_round() {
+    let g0 = blank();
+    let k3 = typ(&g0, 0, 3);
+    let k1 = typ(&g0, 0, 1);
+    let mut g = with_deposits(&[((1, 0), k3), ((2, 0), k3), ((3, 0), k3), ((2, 0), k1)]);
+    strip(&mut g, P0, 3);
+    assert_eq!(g.connected_kat3(P0), 3);
+    let before = g.state.area[P0.idx()];
+    let mut seen = Vec::new();
+    for round in 1..=4u32 {
+        let events = income(&mut g, P0);
+        // Vier verbundene Felder (0..=3), dazu 2^3 = 8 Bonus, jede Runde, ohne Zaehler.
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::Income {
+                area: 4,
+                kat3: 3,
+                bonus: 8,
+                ..
+            }
+        )));
+        assert_eq!(g.state.area[P0.idx()], before + 12 * round);
+        seen.push(storage_of(&g, P0, k3));
+    }
+    assert_eq!(seen, vec![0; 4], "Kat 3 wird nicht geerntet");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_bonus_needs_connected_land_a_standing_factory_and_ownership() {
+    let g0 = blank();
+    let k3 = typ(&g0, 0, 3);
+    let mut g = with_deposits(&[((1, 0), k3), ((8, 8), k3), ((5, 5), k3)]);
+    strip(&mut g, P0, 2);
+    // Abgetrennt: gehoert A, haengt aber nicht an der Fabrik.
+    paint(&mut g, P0, &[(8, 8)]);
+    // Gehoert B.
+    paint(&mut g, P1, &[(5, 5)]);
+    assert_eq!(g.connected_kat3(P0), 1, "nur das verbundene Feld zaehlt");
+    let before = g.state.area[P0.idx()];
+    income(&mut g, P0);
+    assert_eq!(g.state.area[P0.idx()], before + 3 + 2, "3 Felder + 2^1");
+    // Fabrik im Bau: kein Bonus, kein Ertrag.
+    let fid = g.home_factory(P0).unwrap().id;
+    g.state.factories.get_mut(&fid).unwrap().building = 2;
+    assert_eq!(g.connected_kat3(P0), 0);
+    let before = g.state.area[P0.idx()];
+    income(&mut g, P0);
+    assert_eq!(g.state.area[P0.idx()], before);
+    // Faellt das Feld an den Gegner, zaehlt es fuer ihn.
+    g.state.factories.get_mut(&fid).unwrap().building = 0;
+    let cell = c(&g, 1, 0);
+    g.set_land(cell, Some(P1));
+    assert_eq!(g.connected_kat3(P0), 0);
+}
+
+#[test]
+fn bonus_and_trade_are_alternatives() {
+    // Mit Bonus kommt kein Kat 3 ins Lager, also gibt es nichts zu tauschen.
+    let g0 = blank();
+    let k3 = typ(&g0, 0, 3);
+    let mut g = with_deposits(&[((1, 0), k3)]);
+    strip(&mut g, P0, 2);
+    for _ in 0..12 {
+        income(&mut g, P0);
+    }
+    assert_eq!(storage_of(&g, P0, k3), 0);
+    assert!(!g
+        .legal_actions()
+        .iter()
+        .any(|a| matches!(a, Action::TradeKat3 { .. })));
+}
+
+// ----- Kat 3 gegen Flaeche (alte Fassung, `terr_trade=1`) ---------------------------------------
 
 #[test]
 fn kat_three_is_traded_for_two_to_the_k_area() {
@@ -569,7 +700,7 @@ fn kat_three_is_traded_for_two_to_the_k_area() {
     );
     assert_eq!(Game::trade_area(40), 1 << 20, "gedeckelt");
 
-    let mut g = blank();
+    let mut g = blank_trade();
     assert!(!g
         .legal_actions()
         .iter()
@@ -605,9 +736,9 @@ fn kat_three_is_traded_for_two_to_the_k_area() {
 
 #[test]
 fn kat_three_deposits_are_harvested_into_the_store_after_their_countdown() {
-    let g0 = blank();
+    let g0 = blank_trade();
     let k3 = typ(&g0, 0, 3);
-    let mut g = with_deposits(&[((1, 0), k3)]);
+    let mut g = with_deposits_cfg(v3_trade_config(), &[((1, 0), k3)]);
     strip(&mut g, P0, 2);
     for _ in 0..9 {
         income(&mut g, P0);
@@ -653,7 +784,7 @@ fn the_bots_rebuild_a_destroyed_factory_at_once_and_trade_kat_three_by_a_rule() 
     }
 
     // Fuenf Kat 3 werden getauscht, ein einzelnes nicht (es wartet auf mehr).
-    let mut g = blank();
+    let mut g = blank_trade();
     let k3 = typ(&g, 0, 3);
     stock(&mut g, P0, k3, 1);
     assert!(!g.bot_should_trade(P0));
@@ -676,7 +807,7 @@ fn the_bots_rebuild_a_destroyed_factory_at_once_and_trade_kat_three_by_a_rule() 
     ));
 
     // Wird dadurch eine hoehere Stufe bezahlbar, tauschen sie auch ein einzelnes.
-    let mut g = blank();
+    let mut g = blank_trade();
     stock(&mut g, P0, k3, 1);
     g.state.area[P0.idx()] = 49;
     assert!(g.bot_should_trade(P0), "49 + 2 reicht fuer Stufe 1 (50)");

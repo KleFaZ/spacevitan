@@ -20,6 +20,8 @@ use crate::rng::Rng;
 use crate::state::{Outcome, PieceKind};
 
 const LAND: i64 = 10;
+/// Wert einer Flaeche Kat-3-Bonus je Runde (ein Feld bringt je Runde eine Flaeche und ist 10 wert).
+const BONUS_UNIT: i64 = 12;
 /// Wert eines reifen Vorkommens je Kategorie (Kat 1, Kat 2, ...).
 const DEPOSIT: [i64; 4] = [40, 90, 120, 150];
 /// Wert einer Figur nach Stufe.
@@ -48,12 +50,18 @@ fn standing(g: &Game, p: PlayerId) -> i64 {
             v += LAND;
             for res in g.all_deposits(cell) {
                 let cat = usize::from(g.map.category(res)).clamp(1, 4) - 1;
+                // Kat 3 zaehlt mit Flaechenbonus nur ueber `2^k` unten, nicht als Vorkommen.
+                if g.config.terr_bonus && cat == 2 {
+                    continue;
+                }
                 let need = g.config.terr_ripen[cat].max(1) as i64;
                 let wait = g.ripen_wait(cell, res) as i64;
                 // Reif = voller Wert, frisch gefaerbt ein gutes Drittel.
                 v += DEPOSIT[cat] * (35 + 65 * (need - wait) / need) / 100;
             }
         }
+        // Flaechenbonus: jede Runde `2^k` Flaeche zusaetzlich, das verdoppelt sich je Kat-3-Feld.
+        v += BONUS_UNIT * i64::from(Game::kat3_bonus(g.connected_kat3(p)).min(2_000));
     } else {
         v += g.land_count(p) as i64 * LAND;
     }

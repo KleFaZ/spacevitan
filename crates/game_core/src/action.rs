@@ -179,9 +179,13 @@ pub enum Event {
         area: u32,
     },
     /// Gebiet: die Fabrik hat Flaeche und Rohstoffe der zusammenhaengenden Felder eingesammelt.
+    /// Version 3 mit `terr_bonus`: `kat3` verbundene Kat-3-Felder brachten zusaetzlich `bonus`
+    /// Flaeche (`2^kat3`; `area` ist dann nur die Flaeche der verbundenen Felder).
     Income {
         player: PlayerId,
         area: u32,
+        kat3: u32,
+        bonus: u32,
         gained: Inventory,
     },
 }

@@ -318,11 +318,18 @@ impl Game {
 
     // ----- Version 3: Umzug, Neubau und Kat 3 ----------------------------------------------------
 
+    /// Bauzeit eines Umzugs von `from` nach `to` in Runden: die halbe Entfernung (Schritte ueber
+    /// Nachbarfelder), aufgerundet, mindestens 1.
+    pub fn relocation_rounds(&self, from: CellId, to: CellId) -> u32 {
+        let d = self.map.board.distances_from(from)[to.idx()];
+        d.div_ceil(2).max(1)
+    }
+
     /// Was der Koenig mit `RebuildFactory` taete: (Bauzeit in Runden, Kosten Kat 1 und Kat 2).
     /// `None`, wenn er hier nicht bauen darf. Steht eine Fabrik, muss das Feld des Koenigs mit ihr
-    /// verbunden sein, die Bauzeit ist die Entfernung zum alten Platz und das Lager muss den Preis
-    /// hergeben; nach einer Zerstoerung geht es nur auf eigenem Land, fest `terr_rebuild` Runden und
-    /// ohne Kosten.
+    /// verbunden sein, die Bauzeit ist `relocation_rounds` und das Lager muss den Preis hergeben;
+    /// nach einer Zerstoerung geht es nur auf eigenem Land, fest `terr_rebuild` Runden und ohne
+    /// Kosten.
     pub fn rebuild_plan(&self, me: PlayerId) -> Option<(u32, [u32; 2])> {
         let c = &self.config;
         if !c.territory || c.terr_move == 0 {
@@ -342,8 +349,7 @@ impl Game {
                 if !self.connected_land(me)?[king.cell.idx()] {
                     return None;
                 }
-                let d = self.map.board.distances_from(f.cell)[king.cell.idx()];
-                Some((d.max(1), price))
+                Some((self.relocation_rounds(f.cell, king.cell), price))
             }
             None => {
                 (self.state.land[king.cell.idx()] == Some(me)).then_some((c.terr_rebuild, [0, 0]))
@@ -399,6 +405,38 @@ impl Game {
     /// Wie viel Flaeche `k` Einheiten Kat 3 ergeben: `2^k` (hoechstens `2^20`).
     pub fn trade_area(k: u32) -> u32 {
         1u32 << k.min(20)
+    }
+
+    /// Version 3: Flaechenbonus je Runde fuer `k` verbundene Kat-3-Felder: `2^k`, ohne Kat 3
+    /// nichts (hoechstens `2^20`).
+    pub fn kat3_bonus(k: u32) -> u32 {
+        if k == 0 {
+            0
+        } else {
+            1u32 << k.min(20)
+        }
+    }
+
+    /// Version 3: wie viele Kat-3-Felder auf dem mit der stehenden Fabrik verbundenen Land von
+    /// `me` liegen (0 ohne `terr_bonus`, ohne stehende Fabrik oder ohne Anbindung).
+    pub fn connected_kat3(&self, me: PlayerId) -> u32 {
+        if !self.config.terr_bonus || self.rebuilding(me) {
+            return 0;
+        }
+        let Some(connected) = self.connected_land(me) else {
+            return 0;
+        };
+        self.map
+            .board
+            .cells()
+            .filter(|c| connected[c.idx()])
+            .map(|c| {
+                self.all_deposits(c)
+                    .into_iter()
+                    .filter(|&r| self.map.category(r) == 3)
+                    .count() as u32
+            })
+            .sum()
     }
 
     /// Kat 3 im Lager der stehenden Fabrik.
@@ -1167,8 +1205,10 @@ impl Game {
         };
         let yield_n = self.config.terr_yield;
         let cycle = self.config.terr_cycle;
+        let bonus_on = self.config.terr_bonus;
         let mut gained = Inventory::new();
         let mut area = 0u32;
+        let mut kat3 = 0u32;
         for cell in self.map.board.cells() {
             if !connected[cell.idx()] {
                 continue;
@@ -1178,6 +1218,11 @@ impl Game {
                 self.state.age[cell.idx()] += 1;
             }
             for res in self.all_deposits(cell) {
+                // Mit Flaechenbonus wird Kat 3 nicht geerntet, sondern nur gezaehlt.
+                if bonus_on && self.map.category(res) == 3 {
+                    kat3 += 1;
+                    continue;
+                }
                 let ready = if cycle {
                     self.harvest_due(cell, res)
                 } else {
@@ -1188,7 +1233,8 @@ impl Game {
                 }
             }
         }
-        self.state.area[actor.idx()] += area;
+        let bonus = Game::kat3_bonus(kat3);
+        self.state.area[actor.idx()] += area + bonus;
         self.state.ledger.created += gained.total();
         let mut copy = gained.clone();
         self.state
@@ -1200,6 +1246,8 @@ impl Game {
         events.push(Event::Income {
             player: actor,
             area,
+            kat3,
+            bonus,
             gained,
         });
     }
