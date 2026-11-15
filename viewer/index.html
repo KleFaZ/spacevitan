@@ -2037,8 +2037,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         `<div><p class="fc-h">Karten${stockCards ? ` · liegt bereit: ${escapeHtml(CARD(stockCards).name)}` : ""}</p>` +
         (buys.length ? `<div class="fc-cards">${buys.join("")}</div>` : "") +
         (cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : "") +
-        (tradeI >= 0 ? `<button type="button" class="btn fc-shift" data-act="trade">${escapeHtml(actionLabel(live.legal[tradeI], f))}</button>` : "") +
-        (moveI >= 0 ? `<button type="button" class="btn fc-shift" data-act="rebuild">${escapeHtml(actionLabel(live.legal[moveI], f))}</button>` : "") +
+        (tradeI >= 0 ? `<button type="button" class="btn fc-shift" data-act="trade">${escapeHtml(actionLabel(live.legal[tradeI], f).split(";")[0])}</button>` : "") +
+        (moveI >= 0 ? `<button type="button" class="btn fc-shift" data-act="rebuild">${escapeHtml(actionLabel(live.legal[moveI], f).split(";")[0])}</button>` : "") +
         (canShift ? `<button type="button" class="btn fc-shift" data-act="shift">${shiftMode ? "Abbrechen" : "Fabrik rücken (statt eines Zuges)"}</button>` : "") +
         (shiftStuck ? `<p class="muted">Fabrik rücken: kein Zielfeld. Ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett).</p>` : "") + `</div></div>`;
     }
