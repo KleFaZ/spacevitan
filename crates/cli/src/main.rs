@@ -48,6 +48,11 @@ Optionen:
                  Felder geradeaus), terr_grow (Flaechenpreis verdoppelt sich, 0 = Version 1),
                  terr_ripen1..4 (Runden bis zum ersten Ertrag), terr_cats (Rohstoffkategorien),
                  terr_cards (1 = neue Karten)
+                 Version 3: terr_v3=1 (baut auf Version 2 auf; Erntezaehler, Umzug der Fabrik,
+                 weniger Rohstoffe, Kat 3 gegen Flaeche), einzeln: terr_cycle (Ernte alle
+                 terr_ripen Runden), terr_move (Umzug), terr_move_k1, terr_move_k2 (Kosten),
+                 terr_rebuild (Bauzeit nach Zerstoerung), terr_trade (Kat 3 -> 2^k Flaeche),
+                 veins2, veins3, cells2, cells3, center_cells, center_mix (Rohstoffmenge)
   --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,
                  z. B. stark,gierig
@@ -353,6 +358,10 @@ struct Stats {
     /// Gebietsmodus: zerstoerte Fabriken, Abtrennungen und abgetrennte Felder, Runde der ersten
     /// gebauten Figur, wer in Runde 20 mehr Land hatte und ob er gewann.
     destroyed: u64,
+    rebuilds: u64,
+    trades: u64,
+    traded_area: u64,
+    harvested: [u64; 4],
     cut_offs: u64,
     cut_cells: u64,
     /// Umschlossene Flaechen und ihre Felder, wieder angebundene Figuren.
@@ -502,6 +511,17 @@ fn run() -> Result<(), String> {
                             }
                         }
                         Event::FactoryDestroyed { .. } => stats.destroyed += 1,
+                        Event::FactoryRebuilding { .. } => stats.rebuilds += 1,
+                        Event::Traded { area, .. } => {
+                            stats.trades += 1;
+                            stats.traded_area += u64::from(*area);
+                        }
+                        Event::Income { gained, .. } => {
+                            for (res, n) in gained.iter() {
+                                let cat = usize::from(game.map.category(res));
+                                stats.harvested[(cat.max(1) - 1).min(3)] += u64::from(n);
+                            }
+                        }
                         Event::CutOff { cells, .. } => {
                             stats.cut_offs += 1;
                             stats.cut_cells += cells.len() as u64;
@@ -646,6 +666,23 @@ fn run() -> Result<(), String> {
             stats.captures as f64 / n,
             stats.cards as f64 / n
         );
+        if stats.rebuilds > 0 || stats.trades > 0 {
+            println!(
+                "  Version 3: {:.2} Fabrik-Neubauten, {:.2} Kat-3-Tausche ({:.1} Flaeche) pro Partie",
+                stats.rebuilds as f64 / n,
+                stats.trades as f64 / n,
+                stats.traded_area as f64 / n
+            );
+        }
+        let harvest: u64 = stats.harvested.iter().sum();
+        if harvest > 0 {
+            println!(
+                "  Ernte pro Partie: {:.1} Kat 1, {:.1} Kat 2, {:.1} Kat 3",
+                stats.harvested[0] as f64 / n,
+                stats.harvested[1] as f64 / n,
+                stats.harvested[2] as f64 / n
+            );
+        }
         if stats.destroyed > 0 || stats.cut_offs > 0 || stats.first_spawn.1 > 0 {
             println!(
                 "  Gebiet: {:.2} Fabriken zerstoert, {:.1} Abtrennungen ({:.1} Felder) pro Partie",

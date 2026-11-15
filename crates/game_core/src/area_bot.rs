@@ -176,9 +176,20 @@ impl Bot for AreaBot {
             return legal[0];
         }
         let me = game.current_player();
+        // Version 3: Kat 3 tauschen und eine zerstoerte Fabrik sofort neu bauen; freiwillig zieht
+        // dieser Bot nicht um.
+        if game.bot_should_trade(me) {
+            if let Some(&t) = legal.iter().find(|a| matches!(a, Action::TradeKat3 { .. })) {
+                return t;
+            }
+        }
+        if game.home_factory(me).is_none() && legal.contains(&Action::RebuildFactory) {
+            return Action::RebuildFactory;
+        }
         let (buys, rest): (Vec<Action>, Vec<Action>) = legal
             .iter()
             .copied()
+            .filter(|a| !matches!(a, Action::RebuildFactory | Action::TradeKat3 { .. }))
             .partition(|a| matches!(a, Action::BuyCard { .. }));
 
         // Eine Figur bauen, wenn sie hoeher ist als jede, die er schon hat (oder er gar keine
@@ -236,6 +247,10 @@ impl Bot for AreaBot {
         if let Some(a) = self.best_by_value(game, me, &moves, freeing) {
             return a;
         }
-        legal[0]
+        legal
+            .iter()
+            .copied()
+            .find(|a| !matches!(a, Action::RebuildFactory | Action::TradeKat3 { .. }))
+            .unwrap_or(legal[0])
     }
 }

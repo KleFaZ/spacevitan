@@ -144,6 +144,9 @@ pub struct Factory {
     pub owner: PlayerId,
     pub cell: CellId,
     pub storage: Inventory,
+    /// Version 3: so viele eigene Zugenden dauert es noch, bis die Fabrik steht (0 = sie steht).
+    /// Solange sie nicht steht, sammelt sie nichts, baut nichts und das Land ist nicht verbunden.
+    pub building: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +165,10 @@ pub struct Ledger {
     pub created: u64,
     /// Beim Aufloesen einer Fabrik in eine Figur uebergegangen.
     pub consumed_by_spawns: u64,
+    /// Version 3: beim Umzug der Fabrik bezahlt.
+    pub spent_on_moves: u64,
+    /// Version 3: Kat 3 gegen Flaeche getauscht.
+    pub traded: u64,
     /// Mit einem ausgeschiedenen Spieler verschwunden (Gepaeck und Fabrikenlager).
     pub vanished: u64,
     /// Fuer Karten bezahlt.
@@ -210,6 +217,9 @@ pub struct State {
     /// Gebietsmodus: seit welcher Runde das Feld dem jetzigen Besitzer gehoert (Reifezeit der
     /// Vorkommen, siehe `Config::terr_ripen`). Neutrale Felder tragen die Runde ihrer Freigabe.
     pub owned_since: Vec<u32>,
+    /// Version 3: wie oft das Feld seit der letzten Umfaerbung bei stehender Fabrik und
+    /// verbundenem Land geerntet wurde (Erntezaehler, siehe `Config::terr_cycle`).
+    pub age: Vec<u32>,
     pub(crate) occupant: Vec<Option<PieceId>>,
     pub(crate) factory_at: Vec<Option<FactoryId>>,
     next_piece: u32,
@@ -242,6 +252,7 @@ impl State {
             area: vec![0; players],
             stored_card: vec![None; players],
             owned_since: vec![1; cells],
+            age: vec![0; cells],
             occupant: vec![None; cells],
             factory_at: vec![None; cells],
             next_piece: 0,
@@ -304,6 +315,7 @@ impl State {
                 owner,
                 cell,
                 storage: Inventory::new(),
+                building: 0,
             },
         );
         id

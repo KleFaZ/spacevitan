@@ -97,10 +97,25 @@ impl Game {
         self.factories_of(player).next()
     }
 
+    /// Die stehende Fabrik des Spielers: eine, die nicht gerade (neu) gebaut wird.
+    pub fn standing_factory(&self, player: PlayerId) -> Option<&Factory> {
+        self.home_factory(player).filter(|f| f.building == 0)
+    }
+
+    /// Wird die Fabrik des Spielers gerade neu gebaut? Dann sammelt sie nichts, sein Land ist
+    /// nicht verbunden (alle Figuren sind wehrlos) und der Koenig darf sich nicht bewegen.
+    pub fn rebuilding(&self, player: PlayerId) -> bool {
+        self.home_factory(player).is_some_and(|f| f.building > 0)
+    }
+
     /// Felder, die ueber eigene Felder mit der Fabrik des Spielers zusammenhaengen. `None`, wenn
-    /// er keine Fabrik hat: dann gibt es keinen Zusammenhang, auf den es ankaeme.
+    /// er keine Fabrik hat: dann gibt es keinen Zusammenhang, auf den es ankaeme. Steht die Fabrik
+    /// noch nicht (Neubau), ist nichts verbunden.
     pub fn connected_land(&self, player: PlayerId) -> Option<Vec<bool>> {
         let factory = self.home_factory(player)?;
+        if factory.building > 0 {
+            return Some(vec![false; self.map.board.len()]);
+        }
         let mut seen = vec![false; self.map.board.len()];
         if self.state.land[factory.cell.idx()] != Some(player) {
             return Some(seen);
@@ -202,7 +217,7 @@ impl Game {
 
     /// Kann der Spieler jetzt eine Figur dieser Stufe bezahlen?
     pub fn can_afford_unit(&self, player: PlayerId, level: u8) -> bool {
-        let Some(f) = self.home_factory(player) else {
+        let Some(f) = self.standing_factory(player) else {
             return false;
         };
         let price = self.unit_price(level);
@@ -255,7 +270,7 @@ impl Game {
 
     /// Was `player` fuer `card` aus dem Lager seiner Fabrik zahlen wuerde.
     pub fn territory_card_payment(&self, player: PlayerId, card: Card) -> Option<Inventory> {
-        let f = self.home_factory(player)?;
+        let f = self.standing_factory(player)?;
         plan_by_category(
             &f.storage,
             &self.map,
@@ -264,7 +279,7 @@ impl Game {
     }
 
     pub(crate) fn territory_build_actions(&self, me: PlayerId) -> Vec<Action> {
-        let Some(f) = self.home_factory(me) else {
+        let Some(f) = self.standing_factory(me) else {
             return Vec::new();
         };
         if self.state.piece_at(f.cell).is_some() {
@@ -284,7 +299,7 @@ impl Game {
         if self.state.bought_this_turn || self.state.market.is_empty() {
             return out;
         }
-        let Some(f) = self.home_factory(me) else {
+        let Some(f) = self.standing_factory(me) else {
             return out;
         };
         for &card in &self.state.market {
@@ -301,6 +316,160 @@ impl Game {
         out
     }
 
+    // ----- Version 3: Umzug, Neubau und Kat 3 ----------------------------------------------------
+
+    /// Was der Koenig mit `RebuildFactory` taete: (Bauzeit in Runden, Kosten Kat 1 und Kat 2).
+    /// `None`, wenn er hier nicht bauen darf. Steht eine Fabrik, muss das Feld des Koenigs mit ihr
+    /// verbunden sein, die Bauzeit ist die Entfernung zum alten Platz und das Lager muss den Preis
+    /// hergeben; nach einer Zerstoerung geht es nur auf eigenem Land, fest `terr_rebuild` Runden und
+    /// ohne Kosten.
+    pub fn rebuild_plan(&self, me: PlayerId) -> Option<(u32, [u32; 2])> {
+        let c = &self.config;
+        if !c.territory || c.terr_move == 0 {
+            return None;
+        }
+        let king = self.king(me)?;
+        if self.state.factory_at(king.cell).is_some() {
+            return None;
+        }
+        match self.home_factory(me) {
+            Some(f) => {
+                if f.building > 0 {
+                    return None;
+                }
+                let price = [c.terr_move_k1, c.terr_move_k2];
+                plan_by_category(&f.storage, &self.map, [price[0], price[1], 0])?;
+                if !self.connected_land(me)?[king.cell.idx()] {
+                    return None;
+                }
+                let d = self.map.board.distances_from(f.cell)[king.cell.idx()];
+                Some((d.max(1), price))
+            }
+            None => {
+                (self.state.land[king.cell.idx()] == Some(me)).then_some((c.terr_rebuild, [0, 0]))
+            }
+        }
+    }
+
+    pub(crate) fn territory_rebuild_actions(&self, me: PlayerId) -> Vec<Action> {
+        if self.rebuild_plan(me).is_some() {
+            vec![Action::RebuildFactory]
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub(crate) fn do_rebuild_factory(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
+        let (rounds, price) = self.rebuild_plan(actor).expect("Neubau ist erlaubt");
+        let to = self.king(actor).expect("Koenig lebt").cell;
+        let map = std::sync::Arc::clone(&self.map);
+        let (fid, from) = match self.home_factory(actor).map(|f| (f.id, f.cell)) {
+            Some((fid, from)) => {
+                let storage = &mut self
+                    .state
+                    .factories
+                    .get_mut(&fid)
+                    .expect("Fabrik existiert")
+                    .storage;
+                let mut spent = 0;
+                for (i, n) in price.into_iter().enumerate() {
+                    spent += take_category(storage, &map, i as u8 + 1, n).total();
+                }
+                self.state.ledger.spent_on_moves += spent;
+                self.state.move_factory(fid, to);
+                (fid, Some(from))
+            }
+            None => (self.state.insert_factory(actor, to), None),
+        };
+        // Der Zug endet gleich mit dem Zugende, das schon einen Schritt zaehlt.
+        self.state
+            .factories
+            .get_mut(&fid)
+            .expect("Fabrik existiert")
+            .building = rounds + 1;
+        events.push(Event::FactoryRebuilding {
+            factory: fid,
+            owner: actor,
+            from,
+            to,
+            rounds,
+        });
+    }
+
+    /// Wie viel Flaeche `k` Einheiten Kat 3 ergeben: `2^k` (hoechstens `2^20`).
+    pub fn trade_area(k: u32) -> u32 {
+        1u32 << k.min(20)
+    }
+
+    /// Kat 3 im Lager der stehenden Fabrik.
+    pub fn tradable_kat3(&self, me: PlayerId) -> u32 {
+        if !self.config.terr_trade {
+            return 0;
+        }
+        self.standing_factory(me)
+            .map_or(0, |f| self.category_units(&f.storage, 3))
+    }
+
+    /// Faustregel der Bots: jetzt Kat 3 tauschen? Ja, wenn dadurch eine hoehere Stufe bezahlbar
+    /// wird, bei fuenf oder mehr Stueck (mehr bringt wenig) oder kurz vor der Wertung.
+    pub fn bot_should_trade(&self, me: PlayerId) -> bool {
+        let k = self.tradable_kat3(me);
+        if k == 0 {
+            return false;
+        }
+        let Some(f) = self.standing_factory(me) else {
+            return false;
+        };
+        let area_now = self.state.area[me.idx()];
+        let area_after = area_now.saturating_add(Game::trade_area(k));
+        let best = |area: u32| {
+            (1..=self.max_unit_level())
+                .filter(|&l| {
+                    let p = self.unit_price(l);
+                    area >= p.area
+                        && self.category_units(&f.storage, 1) >= p.k1
+                        && self.category_units(&f.storage, 2) >= p.k2
+                })
+                .max()
+                .unwrap_or(0)
+        };
+        let late = self.config.score_after > 0 && self.state.round + 10 >= self.config.score_after;
+        best(area_after) > best(area_now) || k >= 5 || late
+    }
+
+    pub(crate) fn territory_trade_actions(&self, me: PlayerId) -> Vec<Action> {
+        match (self.standing_factory(me), self.tradable_kat3(me)) {
+            (Some(f), n) if n > 0 => vec![Action::TradeKat3 { factory: f.id }],
+            _ => Vec::new(),
+        }
+    }
+
+    pub(crate) fn do_trade_kat3(
+        &mut self,
+        actor: PlayerId,
+        fid: FactoryId,
+        events: &mut Vec<Event>,
+    ) {
+        let map = std::sync::Arc::clone(&self.map);
+        let have = self.category_units(&self.state.factories[&fid].storage, 3);
+        let storage = &mut self
+            .state
+            .factories
+            .get_mut(&fid)
+            .expect("Fabrik existiert")
+            .storage;
+        let taken = take_category(storage, &map, 3, have).total();
+        let count = taken as u32;
+        let area = Game::trade_area(count);
+        self.state.ledger.traded += taken;
+        self.state.area[actor.idx()] += area;
+        events.push(Event::Traded {
+            player: actor,
+            count,
+            area,
+        });
+    }
+
     // ----- Version 2: Fabrik ruecken ------------------------------------------------------------
 
     /// Felder, auf die die Fabrik mit der Karte "Fabrik ruecken" rutschen darf: die vier
@@ -314,7 +483,8 @@ impl Game {
         if board.kind() != crate::board::GridKind::Square {
             return Vec::new();
         }
-        let (Some(f), Some(connected)) = (self.home_factory(me), self.connected_land(me)) else {
+        let (Some(f), Some(connected)) = (self.standing_factory(me), self.connected_land(me))
+        else {
             return Vec::new();
         };
         let (x, y) = board.coord(f.cell);
@@ -332,7 +502,7 @@ impl Game {
     }
 
     pub(crate) fn factory_shift_actions(&self, me: PlayerId) -> Vec<Action> {
-        let Some(f) = self.home_factory(me) else {
+        let Some(f) = self.standing_factory(me) else {
             return Vec::new();
         };
         self.factory_shift_targets(me)
@@ -728,6 +898,7 @@ impl Game {
         if self.state.land[cell.idx()] != owner {
             self.state.land[cell.idx()] = owner;
             self.state.owned_since[cell.idx()] = self.state.round;
+            self.state.age[cell.idx()] = 0;
         }
     }
 
@@ -745,7 +916,7 @@ impl Game {
     /// Flaechen, Wiederanbinden faerbt Felder unter abgetrennten Figuren (und kann dabei fremdes
     /// Land durchtrennen). Wiederholt, bis nichts mehr passiert; jede Figur wird je Zug hoechstens
     /// einmal wieder angebunden, damit es sicher endet.
-    fn territory_settle(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
+    pub(crate) fn territory_settle(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
         let mut done: Vec<PieceId> = Vec::new();
         let limit = self.map.board.len() + self.state.pieces.len() + 4;
         for _ in 0..limit {
@@ -879,10 +1050,10 @@ impl Game {
 
     /// Land, das nicht mehr mit der Fabrik seines Besitzers zusammenhaengt, geht an `actor`
     /// (oder wird neutral).
-    fn cut_off(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
+    pub(crate) fn cut_off(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
         for p in 0..self.config.players {
             let player = PlayerId(p);
-            if player == actor || !self.state.alive[player.idx()] {
+            if player == actor || !self.state.alive[player.idx()] || self.rebuilding(player) {
                 continue;
             }
             let Some(connected) = self.connected_land(player) else {
@@ -937,15 +1108,65 @@ impl Game {
         need.saturating_sub(held)
     }
 
+    /// Version 3: Erntezeit in Runden (`terr_ripen` der Kategorie), 0 = jede Runde.
+    pub fn harvest_period(&self, res: crate::ids::ResourceId) -> u32 {
+        let cat = usize::from(self.map.category(res));
+        self.config
+            .terr_ripen
+            .get(cat.wrapping_sub(1))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Version 3: ist das Vorkommen nach dem jetzigen Stand des Erntezaehlers dran?
+    fn harvest_due(&self, cell: CellId, res: crate::ids::ResourceId) -> bool {
+        match self.harvest_period(res) {
+            0 => true,
+            p => self.state.age[cell.idx()].is_multiple_of(p),
+        }
+    }
+
+    /// Version 3: wie viele Ernten das Vorkommen noch bis zur naechsten Ernte braucht (1 = die
+    /// naechste Runde mit stehender Fabrik). Ein frisch geernteter oder umgefaerbter Zaehler steht
+    /// wieder auf der vollen Zeit.
+    pub fn harvest_in(&self, cell: CellId, res: crate::ids::ResourceId) -> u32 {
+        match self.harvest_period(res) {
+            0 => 1,
+            p => p - self.state.age[cell.idx()] % p,
+        }
+    }
+
     /// Ende des eigenen Zuges: die Fabrik sammelt die verbundenen Felder ein.
     pub(crate) fn territory_income(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
-        let Some(connected) = self.connected_land(actor) else {
-            return;
-        };
         let Some(fid) = self.home_factory(actor).map(|f| f.id) else {
             return;
         };
+        // Version 3: eine Fabrik im Bau zaehlt ihre Runden herunter und sammelt nichts.
+        if self.rebuilding(actor) {
+            let f = self
+                .state
+                .factories
+                .get_mut(&fid)
+                .expect("Fabrik existiert");
+            f.building -= 1;
+            if f.building == 0 {
+                events.push(Event::FactoryStands {
+                    factory: fid,
+                    owner: actor,
+                    cell: f.cell,
+                });
+                // Das Land ist wieder verbunden: wartende Figuren binden sich sofort wieder an.
+                if self.alive_players().len() > 1 {
+                    self.territory_settle(actor, events);
+                }
+            }
+            return;
+        }
+        let Some(connected) = self.connected_land(actor) else {
+            return;
+        };
         let yield_n = self.config.terr_yield;
+        let cycle = self.config.terr_cycle;
         let mut gained = Inventory::new();
         let mut area = 0u32;
         for cell in self.map.board.cells() {
@@ -953,8 +1174,16 @@ impl Game {
                 continue;
             }
             area += 1;
+            if cycle {
+                self.state.age[cell.idx()] += 1;
+            }
             for res in self.all_deposits(cell) {
-                if self.ripen_wait(cell, res) == 0 {
+                let ready = if cycle {
+                    self.harvest_due(cell, res)
+                } else {
+                    self.ripen_wait(cell, res) == 0
+                };
+                if ready {
                     gained.add(res, yield_n);
                 }
             }
@@ -1115,6 +1344,17 @@ impl Game {
         for f in st.factories.values() {
             if st.land[f.cell.idx()] != Some(f.owner) {
                 return Err(format!("{:?} steht auf fremdem oder neutralem Land", f.id));
+            }
+            if f.building > 0 {
+                if self.config.terr_move == 0 {
+                    return Err(format!("{:?} wird gebaut, ohne Umzugsregel", f.id));
+                }
+                if self.king(f.owner).map(|k| k.cell) != Some(f.cell) {
+                    return Err(format!(
+                        "{:?} im Bau, aber der Koenig steht nicht auf dem Bauplatz",
+                        f.id
+                    ));
+                }
             }
         }
         if !st.loot.is_empty() || st.carried.iter().any(|c| !c.is_empty()) {

@@ -123,6 +123,20 @@ pub struct Config {
     /// Version 2: 1 = Kartensatz von Version 2 (Kuerzer, Ecke, Sprung, Fabrik ruecken,
     /// Koenigs-Boost), 0 = Karten wie in Version 1.
     pub terr_cards: u32,
+    /// Version 3: Jedes vom Besitzer geerntete Feld hat einen Erntezaehler. Ein Vorkommen der
+    /// Kategorie 1 bis 4 wird alle `terr_ripen` Runden einmal geerntet (der Zaehler laeuft nur
+    /// bei stehender Fabrik und verbundenem Feld und faengt beim Umfaerben von vorn an).
+    pub terr_cycle: bool,
+    /// Version 3: 1 = der Koenig darf die Fabrik versetzen und nach einer Zerstoerung neu bauen.
+    pub terr_move: u32,
+    /// Version 3: Kosten des Umzugs aus dem Lager der Fabrik, Kat 1 und Kat 2.
+    pub terr_move_k1: u32,
+    pub terr_move_k2: u32,
+    /// Version 3: Bauzeit in Runden, wenn die Fabrik zerstoert wurde (Neubau ohne Kosten).
+    /// Beim Umzug entspricht die Bauzeit der Entfernung zum alten Platz.
+    pub terr_rebuild: u32,
+    /// Version 3: Kat 3 laesst sich gegen Flaeche tauschen: `k` Einheiten ergeben `2^k` Flaeche.
+    pub terr_trade: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -199,6 +213,41 @@ impl Config {
             terr_ripen: [0; MAX_CATEGORIES],
             terr_cats: 0,
             terr_cards: 0,
+            terr_cycle: false,
+            terr_move: 0,
+            terr_move_k1: 0,
+            terr_move_k2: 0,
+            terr_rebuild: 0,
+            terr_trade: false,
+        }
+    }
+
+    /// Schaltet die Regeln von Version 3 ein (`on`; sie bauen auf Version 2 auf) oder alles bis
+    /// zu Version 1 aus: Erntezaehler je Vorkommen, Umzug und Neubau der Fabrik durch den Koenig,
+    /// weniger Rohstoffe, dazu Kat 3 gegen Flaeche. Einzeln lassen sie sich danach wieder aendern.
+    pub fn set_v3(&mut self, on: bool) {
+        self.set_v2(on);
+        self.terr_cycle = on;
+        self.terr_move = u32::from(on);
+        self.terr_move_k1 = if on { 4 } else { 0 };
+        self.terr_move_k2 = if on { 2 } else { 0 };
+        self.terr_rebuild = if on { 3 } else { 0 };
+        self.terr_trade = on;
+        if on {
+            self.terr_cats = 3;
+            self.terr_ripen = [3, 10, 10, 0];
+            // Deutlich weniger Rohstoffe als Version 2: je Ecke ein Kat-1-Feld, ein Kat-2-Feld
+            // und eine Kat-3-Ader mit zwei Feldern, dazu zwei Zentrums-Felder Kat 1.
+            self.veins_per_type = [1, 1, 1, 1];
+            self.cells_per_type = [1, 1, 2, 2];
+            self.center_cells = 2;
+            self.center_mix = 0;
+        } else {
+            let d = Config::new(self.players, self.seed);
+            self.veins_per_type = d.veins_per_type;
+            self.cells_per_type = d.cells_per_type;
+            self.center_cells = d.center_cells;
+            self.center_mix = d.center_mix;
         }
     }
 
@@ -280,6 +329,18 @@ impl Config {
             "terr_ripen4" => self.terr_ripen[3] = as_u32(value)?,
             "terr_cats" => self.terr_cats = as_u32(value)?,
             "terr_cards" => self.terr_cards = as_u32(value)?,
+            "terr_v3" => self.set_v3(value != 0),
+            "terr_cycle" => self.terr_cycle = value != 0,
+            "terr_move" => self.terr_move = as_u32(value)?,
+            "terr_move_k1" => self.terr_move_k1 = as_u32(value)?,
+            "terr_move_k2" => self.terr_move_k2 = as_u32(value)?,
+            "terr_rebuild" => self.terr_rebuild = as_u32(value)?,
+            "terr_trade" => self.terr_trade = value != 0,
+            "veins1" => self.veins_per_type[0] = as_u32(value)?,
+            "veins2" => self.veins_per_type[1] = as_u32(value)?,
+            "veins3" => self.veins_per_type[2] = as_u32(value)?,
+            "cells2" => self.cells_per_type[1] = as_u32(value)?,
+            "cells3" => self.cells_per_type[2] = as_u32(value)?,
             other => return Err(format!("unbekannte Regel '{other}'")),
         }
         Ok(())
@@ -418,6 +479,14 @@ impl Config {
         }
         if self.terr_cards > 1 {
             return Err(ConfigError::Invalid("terr_cards: 0 oder 1"));
+        }
+        if self.terr_move > 1 {
+            return Err(ConfigError::Invalid("terr_move: 0 oder 1"));
+        }
+        if self.terr_move == 1 && self.terr_rebuild == 0 {
+            return Err(ConfigError::Invalid(
+                "terr_rebuild: mit terr_move mindestens 1 Runde",
+            ));
         }
         if self.center_colors > 8 {
             return Err(ConfigError::Invalid("hoechstens 8 Zentrumsfarben"));

@@ -92,6 +92,12 @@ impl GreedyBot {
             _ => None,
         };
 
+        // 0. Version 3: Kat 3 tauschen ist keine Aktion, der Zug geht danach weiter.
+        if game.bot_should_trade(me) {
+            if let Some(a) = legal.iter().find(|a| matches!(a, Action::TradeKat3 { .. })) {
+                return *a;
+            }
+        }
         // 1. Gegnerischen Koenig schlagen.
         if let Some(a) = legal
             .iter()
@@ -112,6 +118,10 @@ impl GreedyBot {
             if let Some(a) = self.rng.pick(&safe) {
                 return *a;
             }
+        }
+        // 2b. Version 3: ist die Fabrik zerstoert, baut der Koenig sie sofort wieder.
+        if game.home_factory(me).is_none() && legal.contains(&Action::RebuildFactory) {
+            return Action::RebuildFactory;
         }
         // 3. Die teuerste Figur bauen.
         let best_build = legal
@@ -170,7 +180,13 @@ impl GreedyBot {
         if let Some(a) = self.best_by(&moves, score) {
             return a;
         }
-        *self.rng.pick(legal).expect("mindestens eine Aktion")
+        let plain: Vec<Action> = legal
+            .iter()
+            .copied()
+            .filter(|a| !matches!(a, Action::RebuildFactory | Action::TradeKat3 { .. }))
+            .collect();
+        let pool = if plain.is_empty() { legal } else { &plain[..] };
+        *self.rng.pick(pool).expect("mindestens eine Aktion")
     }
 }
 

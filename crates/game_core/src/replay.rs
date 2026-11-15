@@ -121,6 +121,10 @@ pub fn action_json(action: &Action) -> String {
             r#"{{"type":"shift_factory","factory":{},"to":{}}}"#,
             factory.0, to.0
         ),
+        Action::RebuildFactory => r#"{"type":"rebuild_factory"}"#.to_string(),
+        Action::TradeKat3 { factory } => {
+            format!(r#"{{"type":"trade","factory":{}}}"#, factory.0)
+        }
         Action::Pass => r#"{"type":"pass"}"#.to_string(),
         Action::BuyCard { card, from, target } => format!(
             r#"{{"type":"buy","card":{},"from":{},"target":{}}}"#,
@@ -280,6 +284,36 @@ pub fn event_json(event: &Event) -> String {
             r#"{{"type":"factory_shifted","factory":{},"owner":{},"from":{},"to":{}}}"#,
             factory.0, owner.0, from.0, to.0
         ),
+        Event::FactoryRebuilding {
+            factory,
+            owner,
+            from,
+            to,
+            rounds,
+        } => format!(
+            r#"{{"type":"factory_rebuilding","factory":{},"owner":{},"from":{},"to":{},"rounds":{}}}"#,
+            factory.0,
+            owner.0,
+            from.map_or("null".to_string(), |c| c.0.to_string()),
+            to.0,
+            rounds
+        ),
+        Event::FactoryStands {
+            factory,
+            owner,
+            cell,
+        } => format!(
+            r#"{{"type":"factory_stands","factory":{},"owner":{},"cell":{}}}"#,
+            factory.0, owner.0, cell.0
+        ),
+        Event::Traded {
+            player,
+            count,
+            area,
+        } => format!(
+            r#"{{"type":"traded","player":{},"count":{},"area":{}}}"#,
+            player.0, count, area
+        ),
         Event::Income {
             player,
             area,
@@ -345,7 +379,7 @@ pub fn state_json(game: &Game) -> String {
         let level = game.spawn_preview(f).map_or(0, |(l, _, _)| l);
         let (units, kinds) = game.upgrade_stock(&f.storage);
         format!(
-            r#"{{"id":{},"owner":{},"cell":{},"storage":{},"level":{},"upgrade":{},"upgrade_units":{},"upgrade_kinds":{}}}"#,
+            r#"{{"id":{},"owner":{},"cell":{},"storage":{},"level":{},"upgrade":{},"upgrade_units":{},"upgrade_kinds":{},"building":{}}}"#,
             f.id.0,
             f.owner.0,
             f.cell.0,
@@ -353,7 +387,8 @@ pub fn state_json(game: &Game) -> String {
             level,
             game.upgrade_level(&f.storage),
             units,
-            kinds
+            kinds,
+            f.building
         )
     });
     let loot = list(st.loot.iter(), |(cell, inv)| {
@@ -362,10 +397,11 @@ pub fn state_json(game: &Game) -> String {
     let territory = if game.config.territory {
         let connected = (0..game.config.players).map(|p| game.connected_count(PlayerId(p)));
         format!(
-            r#","land":{},"since":{},"area":{},"stored_card":{},"connected":{}"#,
+            r#","land":{},"since":{},"age":{},"area":{},"stored_card":{},"connected":{}"#,
             list(st.land.iter(), |o| o
                 .map_or("-1".to_string(), |p| p.0.to_string())),
             list(st.owned_since.iter(), |n| n.to_string()),
+            list(st.age.iter(), |n| n.to_string()),
             list(st.area.iter(), |n| n.to_string()),
             list(st.stored_card.iter(), |c| c
                 .map_or("null".to_string(), |c| esc(c.key()))),
@@ -430,7 +466,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -462,7 +498,13 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_grow,
         list(c.terr_ripen.iter(), |n| n.to_string()),
         c.terr_cats,
-        c.terr_cards
+        c.terr_cards,
+        c.terr_cycle,
+        c.terr_move,
+        c.terr_move_k1,
+        c.terr_move_k2,
+        c.terr_rebuild,
+        c.terr_trade
     );
     format!(
         r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{}"#,

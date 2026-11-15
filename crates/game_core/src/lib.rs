@@ -34,5 +34,7 @@ pub mod session;
 mod territory_tests;
 #[cfg(test)]
 mod v2_tests;
+#[cfg(test)]
+mod v3_tests;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

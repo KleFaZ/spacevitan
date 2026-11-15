@@ -401,9 +401,20 @@ impl SearchBot {
         self.aborted = false;
         self.killers.clear();
 
-        let (buys, mut moves): (Vec<Action>, Vec<Action>) = game
-            .legal_actions()
+        // Version 3: Kat 3 tauschen und die zerstoerte Fabrik neu bauen entscheidet eine Faustregel.
+        let me = game.current_player();
+        let legal = game.legal_actions();
+        if game.home_factory(me).is_none() && legal.contains(&Action::RebuildFactory) {
+            return Action::RebuildFactory;
+        }
+        if game.bot_should_trade(me) {
+            if let Some(&t) = legal.iter().find(|a| matches!(a, Action::TradeKat3 { .. })) {
+                return t;
+            }
+        }
+        let (buys, mut moves): (Vec<Action>, Vec<Action>) = legal
             .into_iter()
+            .filter(|a| !matches!(a, Action::RebuildFactory | Action::TradeKat3 { .. }))
             .partition(|a| matches!(a, Action::BuyCard { .. }));
         if moves.is_empty() {
             moves.push(Action::Pass);
@@ -532,7 +543,12 @@ impl SearchBot {
         let moves: Vec<Action> = game
             .legal_actions()
             .into_iter()
-            .filter(|a| !matches!(a, Action::BuyCard { .. }))
+            .filter(|a| {
+                !matches!(
+                    a,
+                    Action::BuyCard { .. } | Action::RebuildFactory | Action::TradeKat3 { .. }
+                )
+            })
             .collect();
         let without = self.probe(game, moves, probe_depth, share);
         let mut best: Option<(i32, Action)> = None;
@@ -626,7 +642,12 @@ impl SearchBot {
         let moves: Vec<Action> = g
             .legal_actions_for(self.root)
             .into_iter()
-            .filter(|a| !matches!(a, Action::BuyCard { .. }))
+            .filter(|a| {
+                !matches!(
+                    a,
+                    Action::BuyCard { .. } | Action::RebuildFactory | Action::TradeKat3 { .. }
+                )
+            })
             .collect();
         let moves = self.ordered(g, self.root, moves, ply);
         let mut best = -INF;
@@ -783,7 +804,12 @@ impl SearchBot {
             }
             for a in g.legal_actions_for(who) {
                 // Kaeufe der Gegner sieht die Suche nicht voraus (Naeherung, spart viel Zeit).
-                if a == Action::Pass || matches!(a, Action::BuyCard { .. }) {
+                if a == Action::Pass
+                    || matches!(
+                        a,
+                        Action::BuyCard { .. } | Action::RebuildFactory | Action::TradeKat3 { .. }
+                    )
+                {
                     continue;
                 }
                 if captures_only && !self.captures_from(g, &a, self.root) {
@@ -892,6 +918,8 @@ impl SearchBot {
             Action::BuildUnit { level, .. } => 50_000 + level as i32,
             Action::BuyCard { .. } => 45_000,
             Action::ShiftFactory { .. } => 10_000,
+            Action::RebuildFactory => 5_000,
+            Action::TradeKat3 { .. } => 45_000,
             Action::Pass => -100_000,
         }
     }

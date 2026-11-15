@@ -178,6 +178,10 @@ impl Game {
         let mut out: Vec<CellId> = Vec::new();
 
         let exact = self.config.territory && self.config.terr_exact;
+        // Version 3: Der Koenig baut die Fabrik und darf sich dabei nicht bewegen.
+        if self.config.territory && piece.is_king() && self.rebuilding(owner) {
+            return out;
+        }
         match &piece.kind {
             PieceKind::King => {
                 for n in board.neighbors(piece.cell) {
@@ -435,10 +439,12 @@ impl Game {
         if self.config.territory {
             actions.extend(self.territory_build_actions(me));
             actions.extend(self.factory_shift_actions(me));
+            actions.extend(self.territory_rebuild_actions(me));
             if actions.is_empty() {
                 actions.push(Action::Pass);
             }
             actions.extend(self.buy_actions(me));
+            actions.extend(self.territory_trade_actions(me));
             return actions;
         }
 
@@ -732,6 +738,8 @@ impl Game {
                     return IllegalReason::CannotShiftThere;
                 }
             }
+            Action::RebuildFactory => return IllegalReason::CannotRebuildHere,
+            Action::TradeKat3 { .. } => return IllegalReason::NothingToTrade,
             Action::Pass => return IllegalReason::PassNotAllowed,
             Action::BuyCard { card, from, target } => {
                 if !self.state.market.contains(&card) {
@@ -786,6 +794,13 @@ impl Game {
             }
             Action::ShiftFactory { factory, to } => {
                 self.do_shift_factory(actor, factory, to, &mut events)
+            }
+            Action::RebuildFactory => self.do_rebuild_factory(actor, &mut events),
+            Action::TradeKat3 { factory } => {
+                // Tauschen ist keine Aktion: der Spieler bleibt am Zug.
+                self.do_trade_kat3(actor, factory, &mut events);
+                self.state.turns_played += 1;
+                return events;
             }
             Action::Pass => events.push(Event::Passed { player: actor }),
             Action::BuyCard { card, from, target } => {
@@ -1597,7 +1612,12 @@ impl Game {
                 .sum::<u64>()
             + st.loot.values().map(Inventory::total).sum::<u64>();
         let l = st.ledger;
-        let booked = in_play + l.consumed_by_spawns + l.vanished + l.spent_on_cards;
+        let booked = in_play
+            + l.consumed_by_spawns
+            + l.vanished
+            + l.spent_on_cards
+            + l.spent_on_moves
+            + l.traded;
         if booked != l.created {
             return Err(format!(
                 "Rohstoffe stimmen nicht: erzeugt {} aber verbucht {booked} ({l:?}, im Spiel {in_play})",

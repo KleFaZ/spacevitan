@@ -29,6 +29,13 @@ pub enum Action {
     /// Version 2: die Fabrik rueckt mit der Karte "Fabrik ruecken" ein Feld diagonal auf `to`.
     /// Das ist die Aktion des Zuges.
     ShiftFactory { factory: FactoryId, to: CellId },
+    /// Version 3: der Koenig baut die Fabrik auf seinem Feld neu. Steht schon eine Fabrik, wird sie
+    /// abgebaut und ihr Lager zieht um (Kosten, Bauzeit = Entfernung); sonst (zerstoert) dauert es
+    /// fest `terr_rebuild` Runden und kostet nichts. Der Koenig darf sich dabei nicht bewegen.
+    RebuildFactory,
+    /// Version 3: alles Kat 3 im Lager der Fabrik gegen Flaeche tauschen (`k` Stueck ergeben
+    /// `2^k`). Das ist keine Aktion: der Spieler bleibt am Zug.
+    TradeKat3 { factory: FactoryId },
     /// Eine Karte aus dem Markt kaufen (hoechstens einmal pro Zug, zusaetzlich zur Aktion).
     /// `target`: die Figur oder der Koenig, auf die die Karte wirkt.
     BuyCard {
@@ -150,6 +157,27 @@ pub enum Event {
         from: CellId,
         to: CellId,
     },
+    /// Version 3: die Fabrik wird neu gebaut. `from` ist der alte Platz (`None` nach einer
+    /// Zerstoerung), `rounds` die Bauzeit.
+    FactoryRebuilding {
+        factory: FactoryId,
+        owner: PlayerId,
+        from: Option<CellId>,
+        to: CellId,
+        rounds: u32,
+    },
+    /// Version 3: die neu gebaute Fabrik steht und sammelt wieder.
+    FactoryStands {
+        factory: FactoryId,
+        owner: PlayerId,
+        cell: CellId,
+    },
+    /// Version 3: Kat 3 gegen Flaeche getauscht.
+    Traded {
+        player: PlayerId,
+        count: u32,
+        area: u32,
+    },
     /// Gebiet: die Fabrik hat Flaeche und Rohstoffe der zusammenhaengenden Felder eingesammelt.
     Income {
         player: PlayerId,
@@ -187,6 +215,10 @@ pub enum IllegalReason {
     CannotShiftThere,
     /// Gebiet: neben der Fabrik liegt schon eine Karte.
     CardSlotFull,
+    /// Version 3: hier darf die Fabrik nicht (neu) gebaut werden, oder sie kostet zu viel.
+    CannotRebuildHere,
+    /// Version 3: kein Kat 3 im Lager der Fabrik oder keine stehende Fabrik.
+    NothingToTrade,
     /// Sollte nie vorkommen: die Aktion ist unzulaessig, aber keine Einzelregel erklaert es.
     Unspecified,
 }
@@ -223,6 +255,10 @@ impl std::fmt::Display for IllegalReason {
             IllegalReason::NoFactoryShiftCard => "neben der Fabrik liegt keine Karte Fabrik rücken",
             IllegalReason::CannotShiftThere => "dorthin kann die Fabrik nicht rücken",
             IllegalReason::CardSlotFull => "neben der Fabrik liegt schon eine Karte",
+            IllegalReason::CannotRebuildHere => {
+                "hier kann die Fabrik nicht neu gebaut werden (Feld, Lager oder Bauzeit)"
+            }
+            IllegalReason::NothingToTrade => "kein Kat 3 zum Tauschen im Lager der Fabrik",
             IllegalReason::Unspecified => "unzulaessige Aktion",
         };
         write!(f, "{text}")
