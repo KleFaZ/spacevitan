@@ -430,7 +430,36 @@ Paritaet nicht. Ob das so gewollt ist, ist offen.
 
 **Flaechen-Bot** (`--bots flaeche,...`, im Browser "Bot fläche"): siehe Tabelle der Computergegner. Messung unten.
 
-**Messung** folgt im naechsten Commit.
+**Messung** (2 Spieler, Seeds ab 100, je 40 Partien, `stark` mit `--nodes 4000` gegen `flaeche` je 20 Partien pro Sitz,
+`stark` gegen `stark` 20 Partien mit Standardbudget; "Wertung" = nicht durch einen gefallenen Koenig entschieden,
+sondern nach Runde 100). Das sind Stresstests der Regeln, keine Spielspass-Tests, und mit 20 bis 40 Partien rauscht
+jede Zahl um 8 bis 15 Prozentpunkte:
+
+| Paarung | Version 1 | Version 2 |
+|---|---|---|
+| `flaeche` gegen `gierig` (beide Sitze, 80 Partien) | 74 % `flaeche`, 43 Runden | 92 % `flaeche`, 49 Runden |
+| `stark` gegen `flaeche` (beide Sitze, 40 Partien) | 88 % `stark`, 34 Runden | 68 % `stark`, 52 Runden |
+| `flaeche` gegen `flaeche` | A 40 %, 36 Runden | A 48 %, 60 Runden, 16 von 40 nach Wertung |
+| `gierig` gegen `gierig` | A 45 %, 45 Runden | A 50 %, 77 Runden, 10 von 40 nach Wertung |
+| `stark` gegen `stark` (20 Partien) | A 80 %, 40 Runden | A 50 %, 87 Runden, 14 von 20 nach Wertung |
+
+Was daran auffaellt (die Zahlen sind Hinweise, keine Beweise):
+
+- **`flaeche` schlaegt `gierig` klar, `stark` schlaegt `flaeche` aber trotzdem.** In Version 2 ist der Abstand zu `stark`
+  kleiner (88 % auf 68 %): Land und Rohstoffe zaehlen dort mehr, reiner Figurenkampf weniger. Der Bot ist also
+  brauchbar als "Wirtschaftsspieler", aber nicht der beste Gegner; er rechnet nur einen Zug voraus.
+- **Version 2 ist langsamer**: Partien dauern gut doppelt so lang (`stark` gegen `stark`: 40 auf 87 Runden), und
+  14 von 20 enden erst in der Wertung. Genau n Felder und die Wartezeit auf Rohstoffe nehmen dem Koenig-Jagen die
+  Schnelligkeit; es werden auch weniger Figuren geschlagen (2,3 statt 3,1 je Partie bei `stark` gegen `stark`).
+- **Der Vorteil des ersten Spielers ist weg** (`stark`: 80 % auf 50 %), vermutlich weil das frueh geschlossene
+  Umschliessen (Version 1: wer die Taschen zuerst schliesst, gewinnt) durch "genau n" schwerer wird. Offen, nicht
+  untersucht; mit 20 Partien auch gut Zufall.
+- **Karten werden gekauft** (3 bis 8 je Partie, beide Spieler zusammen; in Version 1 fast nie), weil die Rohstoffe jetzt
+  nur dafuer da sind. Welche, ist nicht ausgewertet; `stark` kennt die neuen Karten nicht gezielt (seine Bewertung hat
+  keinen Wert fuer Ecke, Sprung, Kuerzer, Fabrik ruecken).
+- **Der Flaechen-Bot hat in einer 3-Spieler-Partie 441 Flaeche ungenutzt gehortet**, weil eine Figur auf der Fabrik stand.
+  Das ist behoben (die Figur wird weggezogen, wenn eine bessere bezahlbar waere), kostete aber in der Messung gegen
+  `gierig` etwas (97 % auf 92 %).
 
 ## Karten
 
