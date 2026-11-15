@@ -55,6 +55,16 @@ pub enum Card {
     Runestone,
     /// Set: der dritte Sternsplitter legt ein Kat-1-Vorkommen der eigenen Farbe unter den Koenig.
     Starshard,
+    /// Version 2, Figur: darf einen Schritt weniger ziehen (Stufe 3: 3 oder 2 Felder).
+    Shorten,
+    /// Version 2, Figur: darf auf dem Weg einmal um die Ecke gehen.
+    Bend,
+    /// Version 2, Figur: darf auf dem Weg ueber eine Figur springen.
+    Hop,
+    /// Version 2: die Fabrik darf einmal ein Feld diagonal rutschen (eigenes, verbundenes Land).
+    FactoryShift,
+    /// Version 2: der Koenig bekommt einen Boost (Stufe 1 bis 3), sofort und dauerhaft.
+    KingBoost,
 }
 
 /// Worauf eine Karte wirkt.
@@ -137,11 +147,28 @@ impl Card {
             Card::Farming => "farming",
             Card::Runestone => "runestone",
             Card::Starshard => "starshard",
+            Card::Shorten => "shorten",
+            Card::Bend => "bend",
+            Card::Hop => "hop",
+            Card::FactoryShift => "factory_shift",
+            Card::KingBoost => "king_boost",
         }
     }
 
+    /// Die Karten von Version 2 (nur im Gebietsmodus mit `terr_cards=1`).
+    pub const V2: [Card; 5] = [
+        Card::Shorten,
+        Card::Bend,
+        Card::Hop,
+        Card::FactoryShift,
+        Card::KingBoost,
+    ];
+
     pub fn from_key(key: &str) -> Option<Card> {
-        Card::ALL.into_iter().find(|c| c.key() == key)
+        Card::ALL
+            .into_iter()
+            .chain(Card::V2)
+            .find(|c| c.key() == key)
     }
 
     pub fn name(self) -> &'static str {
@@ -160,6 +187,11 @@ impl Card {
             Card::Farming => "Ackerbau",
             Card::Runestone => "Runenstein",
             Card::Starshard => "Sternsplitter",
+            Card::Shorten => "Kürzer",
+            Card::Bend => "Ecke",
+            Card::Hop => "Sprung",
+            Card::FactoryShift => "Fabrik rücken",
+            Card::KingBoost => "Königs-Boost",
         }
     }
 
@@ -186,6 +218,15 @@ impl Card {
             Card::Runestone => "Set: der dritte Runenstein gibt einer Figur Stufe +2.",
             Card::Starshard => {
                 "Set: der dritte Sternsplitter legt ein Kat-1-Vorkommen deiner Farbe unter den König."
+            }
+            Card::Shorten => "Die nächste Figur darf einen Schritt weniger ziehen (Stufe 3: 3 oder 2 Felder).",
+            Card::Bend => "Die nächste Figur darf auf ihrem Weg einmal um die Ecke gehen.",
+            Card::Hop => "Die nächste Figur darf auf ihrem Weg über eine Figur springen.",
+            Card::FactoryShift => {
+                "Deine Fabrik rückt einmal ein Feld diagonal (auf eigenes, verbundenes Land). Statt eines Zuges."
+            }
+            Card::KingBoost => {
+                "Dein König wird besser: Stufe 1 auch diagonal, Stufe 2 zwei Felder gerade, Stufe 3 zwei vor und eins zur Seite."
             }
         }
     }
@@ -214,6 +255,10 @@ impl Card {
             // Stufe-2-Figur kosten mit Ausbildung 8 + 12 = 20.
             Card::Runestone => cost(0, 3, 3, 3, 1),
             Card::Starshard => cost(0, 2, 2, 2, 1),
+            // Version 2 hat eigene Preise (`Card::v2_price`); diese Zahlen sind nur ein Platzhalter.
+            Card::Shorten | Card::Bend | Card::Hop | Card::FactoryShift | Card::KingBoost => {
+                cost(1, 0, 0, 0, 0)
+            }
         }
     }
 
@@ -275,6 +320,19 @@ impl Card {
         )
     }
 
+    /// Version 2: Preis in Einheiten Kat 1 und Kat 2 (bei Kartenfaktor 16; der Koenigs-Boost
+    /// kostet je Stufe mehr, siehe `Game::territory_card_price_for`).
+    pub fn v2_price(self) -> [u32; 2] {
+        match self {
+            Card::Shorten => [6, 0],
+            Card::Bend => [10, 0],
+            Card::Hop => [8, 0],
+            Card::FactoryShift => [6, 0],
+            Card::KingBoost => [0, 3],
+            _ => [0, 0],
+        }
+    }
+
     pub fn target(self) -> CardTarget {
         match self {
             Card::Training
@@ -283,6 +341,9 @@ impl Card {
             | Card::Lance
             | Card::Spring
             | Card::Horse
+            | Card::Shorten
+            | Card::Bend
+            | Card::Hop
             | Card::Runestone => CardTarget::Unit,
             _ => CardTarget::Player,
         }
@@ -296,7 +357,7 @@ impl Card {
     /// Ist die Karte auf diesem Gitter sinnvoll? Diagonalen gibt es nur im Quadratgitter.
     pub fn available_on(self, grid: GridKind) -> bool {
         match self {
-            Card::DiagonalStrike => grid == GridKind::Square,
+            Card::DiagonalStrike | Card::FactoryShift | Card::KingBoost => grid == GridKind::Square,
             _ => true,
         }
     }
@@ -336,10 +397,13 @@ pub const TERRITORY_POOL: [Card; 5] = [
     Card::Horse,
 ];
 
-/// Markt im Gebietsmodus: `size` verschiedene Karten aus `TERRITORY_POOL`, sortiert.
-pub fn draw_market_territory(seed: u64, size: usize, grid: GridKind) -> Vec<Card> {
-    let mut deck: Vec<Card> = TERRITORY_POOL
-        .into_iter()
+/// Markt im Gebietsmodus: `size` verschiedene Karten aus `TERRITORY_POOL` (mit `v2` aus
+/// `Card::V2`), sortiert.
+pub fn draw_market_territory(seed: u64, size: usize, grid: GridKind, v2: bool) -> Vec<Card> {
+    let pool: &[Card] = if v2 { &Card::V2 } else { &TERRITORY_POOL };
+    let mut deck: Vec<Card> = pool
+        .iter()
+        .copied()
         .filter(|c| c.available_on(grid))
         .collect();
     let mut rng = Rng::new(seed ^ 0x6b61_7274_656e_0002);

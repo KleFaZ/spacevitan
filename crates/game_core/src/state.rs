@@ -89,6 +89,12 @@ pub struct Perks {
     pub spring: bool,
     /// Springt auf jedes Feld im Abstand 2 (Pferd).
     pub horse: bool,
+    /// Version 2: darf einen Schritt weniger ziehen (Kuerzer).
+    pub shorten: bool,
+    /// Version 2: darf auf dem Weg einmal um die Ecke gehen (Ecke).
+    pub bend: bool,
+    /// Version 2: darf auf dem Weg ueber eine Figur springen (Sprung).
+    pub hop: bool,
 }
 
 impl Perks {
@@ -119,7 +125,12 @@ pub struct PlayerPerks {
     pub shards: u8,
     /// Wie viele Karten der Spieler insgesamt gekauft hat (Statistik).
     pub cards_bought: u32,
+    /// Version 2: Stufe des Koenigs-Boosts (0 bis `MAX_KING_BOOST`).
+    pub king_boost: u8,
 }
+
+/// Hoechste Stufe des Koenigs-Boosts.
+pub const MAX_KING_BOOST: u8 = 3;
 
 impl Piece {
     pub fn is_king(&self) -> bool {
@@ -196,6 +207,9 @@ pub struct State {
     pub area: Vec<u32>,
     /// Gebietsmodus: die Karte neben der Fabrik, die auf die naechste Figur wirkt.
     pub stored_card: Vec<Option<Card>>,
+    /// Gebietsmodus: seit welcher Runde das Feld dem jetzigen Besitzer gehoert (Reifezeit der
+    /// Vorkommen, siehe `Config::terr_ripen`). Neutrale Felder tragen die Runde ihrer Freigabe.
+    pub owned_since: Vec<u32>,
     pub(crate) occupant: Vec<Option<PieceId>>,
     pub(crate) factory_at: Vec<Option<FactoryId>>,
     next_piece: u32,
@@ -227,6 +241,7 @@ impl State {
             land: vec![None; cells],
             area: vec![0; players],
             stored_card: vec![None; players],
+            owned_since: vec![1; cells],
             occupant: vec![None; cells],
             factory_at: vec![None; cells],
             next_piece: 0,
@@ -292,6 +307,18 @@ impl State {
             },
         );
         id
+    }
+
+    /// Setzt die Fabrik auf ein anderes (freies) Feld; Lager und Nummer bleiben.
+    pub(crate) fn move_factory(&mut self, id: FactoryId, to: CellId) {
+        let factory = self.factories.get_mut(&id).expect("Fabrik existiert");
+        assert!(
+            self.factory_at[to.idx()].is_none(),
+            "Feld {to:?} hat schon eine Fabrik"
+        );
+        self.factory_at[factory.cell.idx()] = None;
+        factory.cell = to;
+        self.factory_at[to.idx()] = Some(id);
     }
 
     pub(crate) fn remove_factory(&mut self, id: FactoryId) -> Option<Factory> {

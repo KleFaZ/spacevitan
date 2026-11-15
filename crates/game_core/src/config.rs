@@ -108,6 +108,21 @@ pub struct Config {
     pub terr_reconnect: bool,
     /// Gebiet: Kartenpreise sind die alten Kat-2/3-Preise mal diese Zahl (nur nach Kategorie).
     pub terr_card_mult: u32,
+    /// Version 2: Figuren ziehen geradeaus und genau so viele Felder, wie ihre Stufe angibt
+    /// (wie ein Turm mit festem Schritt); Karten erlauben eine Ecke, einen Sprung oder einen
+    /// Schritt weniger.
+    pub terr_exact: bool,
+    /// Version 2: Stufen kosten nur Flaeche und verdoppeln sich je Stufe (Stufe n kostet
+    /// `terr_pawn * terr_grow^(n-1)`). 0 = Preise wie in Version 1.
+    pub terr_grow: u32,
+    /// Version 2: Ein Vorkommen der Kategorie 1 bis 4 gibt erst Ertrag, wenn das Feld so viele
+    /// Runden dem Besitzer gehoert (0 = sofort). Ein umgefaerbtes Feld faengt von vorn an.
+    pub terr_ripen: [u32; MAX_CATEGORIES],
+    /// Version 2: Es gibt hoechstens so viele Rohstoffkategorien (0 = wie sonst 3 oder 4).
+    pub terr_cats: u32,
+    /// Version 2: 1 = Kartensatz von Version 2 (Kuerzer, Ecke, Sprung, Fabrik ruecken,
+    /// Koenigs-Boost), 0 = Karten wie in Version 1.
+    pub terr_cards: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,7 +194,27 @@ impl Config {
             terr_enclose_edge: false,
             terr_reconnect: true,
             terr_card_mult: 16,
+            terr_exact: false,
+            terr_grow: 0,
+            terr_ripen: [0; MAX_CATEGORIES],
+            terr_cats: 0,
+            terr_cards: 0,
         }
+    }
+
+    /// Schaltet alle Regeln von Version 2 auf einmal ein (`on`) oder aus: genau-n-Bewegung,
+    /// Flaechenpreise 50/100/200/400, Reifezeit 3 und 10 Runden, nur zwei Rohstoffkategorien und
+    /// der neue Kartensatz. Einzeln lassen sie sich danach wieder aendern.
+    pub fn set_v2(&mut self, on: bool) {
+        self.terr_exact = on;
+        self.terr_grow = if on { 2 } else { 0 };
+        self.terr_ripen = if on {
+            [3, 10, 0, 0]
+        } else {
+            [0; MAX_CATEGORIES]
+        };
+        self.terr_cats = if on { 2 } else { 0 };
+        self.terr_cards = u32::from(on);
     }
 
     /// Zwei Karten je Spieler bis 4 Spieler, ab 5 Spielern eine je Spieler.
@@ -236,6 +271,15 @@ impl Config {
             "terr_enclose_edge" => self.terr_enclose_edge = value != 0,
             "terr_reconnect" => self.terr_reconnect = value != 0,
             "terr_card_mult" => self.terr_card_mult = as_u32(value)?,
+            "terr_v2" => self.set_v2(value != 0),
+            "terr_exact" => self.terr_exact = value != 0,
+            "terr_grow" => self.terr_grow = as_u32(value)?,
+            "terr_ripen1" => self.terr_ripen[0] = as_u32(value)?,
+            "terr_ripen2" => self.terr_ripen[1] = as_u32(value)?,
+            "terr_ripen3" => self.terr_ripen[2] = as_u32(value)?,
+            "terr_ripen4" => self.terr_ripen[3] = as_u32(value)?,
+            "terr_cats" => self.terr_cats = as_u32(value)?,
+            "terr_cards" => self.terr_cards = as_u32(value)?,
             other => return Err(format!("unbekannte Regel '{other}'")),
         }
         Ok(())
@@ -362,6 +406,19 @@ impl Config {
                 "terr_pawn, terr_area, terr_yield und terr_card_mult muessen mindestens 1 sein",
             ));
         }
+        if self.terr_cats == 1 || self.terr_cats > MAX_CATEGORIES as u32 {
+            return Err(ConfigError::Invalid(
+                "terr_cats: 0 oder eine Zahl von 2 bis 4",
+            ));
+        }
+        if self.terr_grow == 1 {
+            return Err(ConfigError::Invalid(
+                "terr_grow: 0 (Preise wie Version 1) oder mindestens 2",
+            ));
+        }
+        if self.terr_cards > 1 {
+            return Err(ConfigError::Invalid("terr_cards: 0 oder 1"));
+        }
         if self.center_colors > 8 {
             return Err(ConfigError::Invalid("hoechstens 8 Zentrumsfarben"));
         }
@@ -402,10 +459,10 @@ impl Config {
     /// Anzahl Rohstoffkategorien: 3 bis 5 Ecken, ab 6 Ecken kommt Kat 4 dazu.
     /// (Ob bei 7 und 8 Spielern weitere folgen, ist im Regelwerk noch offen.)
     pub fn category_count(&self) -> u8 {
-        if self.corner_count() >= 6 {
-            4
-        } else {
-            3
+        let base = if self.corner_count() >= 6 { 4 } else { 3 };
+        match self.terr_cats {
+            0 => base,
+            n => base.min(n.min(MAX_CATEGORIES as u32) as u8),
         }
     }
 }

@@ -2,6 +2,7 @@
 
 use game_core::action::{Action, Event};
 use game_core::ai::{SearchBot, SearchParams, Weights};
+use game_core::area_bot::AreaBot;
 use game_core::bot::{play_out_with, Bot, GreedyBot, RandomBot};
 use game_core::cards::Card;
 use game_core::cards::CardTarget;
@@ -43,7 +44,12 @@ Optionen:
                  Gebietsmodus: territory=1 (weisses Brett, Land faerben), terr_pawn,
                  terr_area, terr_area_step, terr_k1, terr_k2, terr_k3, terr_yield, terr_cut_flips, terr_enclose, terr_enclose_edge, terr_reconnect,
                  terr_card_mult
-  --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), gierig oder zufall,
+                 Version 2: terr_v2=1 schaltet alles auf einmal ein, einzeln: terr_exact (genau n
+                 Felder geradeaus), terr_grow (Flaechenpreis verdoppelt sich, 0 = Version 1),
+                 terr_ripen1..4 (Runden bis zum ersten Ertrag), terr_cats (Rohstoffkategorien),
+                 terr_cards (1 = neue Karten)
+  --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
+                 und Rohstoffe), gierig oder zufall,
                  z. B. stark,gierig
                  (Standard: gierig)
   --nodes N      Rechenbudget von \"stark\": Stellungen pro Zug (Standard 20000)
@@ -209,6 +215,7 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                         .without_cards();
                     Ok(Box::new(bot) as Box<dyn Bot>)
                 }
+                "flaeche" | "area" => Ok(Box::new(AreaBot::new(bot_seed)) as Box<dyn Bot>),
                 "gierig" | "greedy" => Ok(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
                 "zufall" | "random" => Ok(Box::new(RandomBot::new(bot_seed)) as Box<dyn Bot>),
                 other => Err(format!(

@@ -26,6 +26,9 @@ pub enum Action {
     /// Gebietsmodus: an der Fabrik eine Figur der Stufe `level` bauen. Sie erscheint auf dem
     /// Fabrikfeld (das dafuer frei sein muss), die Fabrik bleibt stehen.
     BuildUnit { factory: FactoryId, level: u8 },
+    /// Version 2: die Fabrik rueckt mit der Karte "Fabrik ruecken" ein Feld diagonal auf `to`.
+    /// Das ist die Aktion des Zuges.
+    ShiftFactory { factory: FactoryId, to: CellId },
     /// Eine Karte aus dem Markt kaufen (hoechstens einmal pro Zug, zusaetzlich zur Aktion).
     /// `target`: die Figur oder der Koenig, auf die die Karte wirkt.
     BuyCard {
@@ -140,6 +143,13 @@ pub enum Event {
         owner: PlayerId,
         cell: CellId,
     },
+    /// Version 2: die Fabrik ist mit der Karte auf ein anderes Feld gerueckt.
+    FactoryShifted {
+        factory: FactoryId,
+        owner: PlayerId,
+        from: CellId,
+        to: CellId,
+    },
     /// Gebiet: die Fabrik hat Flaeche und Rohstoffe der zusammenhaengenden Felder eingesammelt.
     Income {
         player: PlayerId,
@@ -171,6 +181,10 @@ pub enum IllegalReason {
     InvalidCardTarget,
     /// Gebiet: Flaeche oder Rohstoffe reichen fuer diese Stufe nicht.
     CannotAffordUnit,
+    /// Version 2: neben der Fabrik liegt keine Karte "Fabrik ruecken".
+    NoFactoryShiftCard,
+    /// Version 2: dorthin darf die Fabrik nicht rutschen.
+    CannotShiftThere,
     /// Gebiet: neben der Fabrik liegt schon eine Karte.
     CardSlotFull,
     /// Sollte nie vorkommen: die Aktion ist unzulaessig, aber keine Einzelregel erklaert es.
@@ -206,6 +220,8 @@ impl std::fmt::Display for IllegalReason {
             IllegalReason::CannotAffordUnit => {
                 "Flaeche oder Rohstoffe reichen fuer diese Stufe nicht"
             }
+            IllegalReason::NoFactoryShiftCard => "neben der Fabrik liegt keine Karte Fabrik rücken",
+            IllegalReason::CannotShiftThere => "dorthin kann die Fabrik nicht rücken",
             IllegalReason::CardSlotFull => "neben der Fabrik liegt schon eine Karte",
             IllegalReason::Unspecified => "unzulaessige Aktion",
         };

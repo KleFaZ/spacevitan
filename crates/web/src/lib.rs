@@ -4,7 +4,8 @@
 //! `{"error": "..."}`) im Ausgabepuffer, den JavaScript ueber `sv_out_ptr` und `sv_out_len`
 //! aus dem Speicher liest. Rueckgabewert 0 = in Ordnung, 1 = Fehler.
 //!
-//! Platzarten: 0 = gierig, 1 = zufall, 2 = Mensch, 3 = stark (rechnet voraus).
+//! Platzarten: 0 = gierig, 1 = zufall, 2 = Mensch, 3 = stark (rechnet voraus), 4 = flaeche
+//! (Gebietsmodus: Land und Rohstoffe).
 //! `sv_new_game`: Spieler A ist ein Mensch, alle anderen haben die Art `opponent`
 //! (2 = alle Spieler an einem Geraet). `sv_new_game_seats`: auch Spieler A frei waehlbar,
 //! z. B. lauter Bots zum Zuschauen.
@@ -67,6 +68,7 @@ fn seat_kind(code: u32) -> Result<SeatKind, String> {
         1 => Ok(SeatKind::Random),
         2 => Ok(SeatKind::Human),
         3 => Ok(SeatKind::Strong),
+        4 => Ok(SeatKind::Area),
         other => Err(format!("Unbekannte Gegnerart {other}")),
     }
 }
@@ -290,6 +292,26 @@ mod tests {
         assert!(out().contains("\"human_to_move\":false"));
         assert_eq!(sv_bot_step(), 0, "{}", out());
         assert!(out().contains("\"human_to_move\":true"));
+    }
+
+    #[test]
+    fn the_area_bot_can_take_a_seat_and_version_2_rules_reach_the_game() {
+        assert_eq!(set_rules("territory=1,terr_v2=1"), 0, "{}", out());
+        assert_eq!(sv_new_game_seats(2, 5, 0, 0, 4, 4), 0, "{}", out());
+        let json = out();
+        assert!(
+            json.contains("\"seats\":[\"flaeche\",\"flaeche\"]"),
+            "{json}"
+        );
+        assert!(json.contains("\"terr_ripen\":[3,10,0,0]"), "{json}");
+        assert!(json.contains("\"terr_exact\":true"));
+        let mut steps = 0;
+        while !out().contains("\"outcome\":{") {
+            assert_eq!(sv_bot_step(), 0, "{}", out());
+            steps += 1;
+            assert!(steps < 5000, "Partie endet nicht");
+        }
+        assert_eq!(set_rules(""), 0);
     }
 
     #[test]

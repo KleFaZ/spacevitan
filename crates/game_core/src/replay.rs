@@ -117,6 +117,10 @@ pub fn action_json(action: &Action) -> String {
                 factory.0, level
             )
         }
+        Action::ShiftFactory { factory, to } => format!(
+            r#"{{"type":"shift_factory","factory":{},"to":{}}}"#,
+            factory.0, to.0
+        ),
         Action::Pass => r#"{"type":"pass"}"#.to_string(),
         Action::BuyCard { card, from, target } => format!(
             r#"{{"type":"buy","card":{},"from":{},"target":{}}}"#,
@@ -267,6 +271,15 @@ pub fn event_json(event: &Event) -> String {
             to.map_or("null".to_string(), |p| p.0.to_string()),
             list(cells.iter(), |c| c.0.to_string())
         ),
+        Event::FactoryShifted {
+            factory,
+            owner,
+            from,
+            to,
+        } => format!(
+            r#"{{"type":"factory_shifted","factory":{},"owner":{},"from":{},"to":{}}}"#,
+            factory.0, owner.0, from.0, to.0
+        ),
         Event::Income {
             player,
             area,
@@ -285,8 +298,16 @@ pub fn state_json(game: &Game) -> String {
     let st = &game.state;
     let perks = |pk: &crate::state::Perks| {
         format!(
-            r#""perks":{{"diagonal":{},"extra_range":{},"card_levels":{},"lance":{},"spring":{},"horse":{}}}"#,
-            pk.diagonal, pk.extra_range, pk.card_levels, pk.lance, pk.spring, pk.horse
+            r#""perks":{{"diagonal":{},"extra_range":{},"card_levels":{},"lance":{},"spring":{},"horse":{},"shorten":{},"bend":{},"hop":{}}}"#,
+            pk.diagonal,
+            pk.extra_range,
+            pk.card_levels,
+            pk.lance,
+            pk.spring,
+            pk.horse,
+            pk.shorten,
+            pk.bend,
+            pk.hop
         )
     };
     let pieces = list(st.pieces.values(), |p| match &p.kind {
@@ -314,8 +335,8 @@ pub fn state_json(game: &Game) -> String {
     });
     let player_perks = list(st.player_perks.iter(), |pp| {
         format!(
-            r#"{{"mining":{},"farming":{},"runes":{},"shards":{},"cards_bought":{}}}"#,
-            pp.mining, pp.farming, pp.runes, pp.shards, pp.cards_bought
+            r#"{{"mining":{},"farming":{},"runes":{},"shards":{},"cards_bought":{},"king_boost":{}}}"#,
+            pp.mining, pp.farming, pp.runes, pp.shards, pp.cards_bought, pp.king_boost
         )
     });
     let factories = list(st.factories.values(), |f| {
@@ -341,9 +362,10 @@ pub fn state_json(game: &Game) -> String {
     let territory = if game.config.territory {
         let connected = (0..game.config.players).map(|p| game.connected_count(PlayerId(p)));
         format!(
-            r#","land":{},"area":{},"stored_card":{},"connected":{}"#,
+            r#","land":{},"since":{},"area":{},"stored_card":{},"connected":{}"#,
             list(st.land.iter(), |o| o
                 .map_or("-1".to_string(), |p| p.0.to_string())),
+            list(st.owned_since.iter(), |n| n.to_string()),
             list(st.area.iter(), |n| n.to_string()),
             list(st.stored_card.iter(), |c| c
                 .map_or("null".to_string(), |c| esc(c.key()))),
@@ -408,7 +430,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -435,7 +457,12 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_enclose,
         c.terr_enclose_edge,
         c.terr_reconnect,
-        c.terr_card_mult
+        c.terr_card_mult,
+        c.terr_exact,
+        c.terr_grow,
+        list(c.terr_ripen.iter(), |n| n.to_string()),
+        c.terr_cats,
+        c.terr_cards
     );
     format!(
         r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{}"#,

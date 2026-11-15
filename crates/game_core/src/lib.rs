@@ -5,6 +5,7 @@
 
 pub mod action;
 pub mod ai;
+pub mod area_bot;
 pub mod board;
 pub mod bot;
 pub mod cards;
@@ -31,5 +32,7 @@ mod roles_tests;
 pub mod session;
 #[cfg(test)]
 mod territory_tests;
+#[cfg(test)]
+mod v2_tests;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

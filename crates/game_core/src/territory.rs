@@ -151,6 +151,18 @@ impl Game {
 
     pub fn unit_price(&self, level: u8) -> UnitPrice {
         let c = &self.config;
+        if c.terr_grow >= 2 {
+            // Version 2: nur Flaeche, jede Stufe `terr_grow` mal so teuer wie die davor.
+            let steps = u32::from(level.max(1)) - 1;
+            return UnitPrice {
+                area: c
+                    .terr_pawn
+                    .saturating_mul(c.terr_grow.saturating_pow(steps)),
+                k1: 0,
+                k2: 0,
+                k3: 0,
+            };
+        }
         match level {
             0 | 1 => UnitPrice {
                 area: c.terr_pawn,
@@ -200,10 +212,16 @@ impl Game {
             && self.category_units(&f.storage, 3) >= price.k3
     }
 
-    /// Kartenpreis nach Kategorien (Kat 1, 2, 3): die alten Preise, Kat 2 und 3 mal `terr_card_mult`.
+    /// Kartenpreis nach Kategorien (Kat 1, 2, 3): die alten Preise, Kat 2 und 3 mal `terr_card_mult`;
+    /// mit dem Kartensatz von Version 2 deren eigene Preise (Kartenfaktor 16 = Grundpreis).
     pub fn territory_card_price(&self, card: Card) -> [u32; 3] {
-        let old = card.cost();
         let m = self.config.terr_card_mult;
+        if self.config.terr_cards == 1 {
+            let scale = |n: u32| if n == 0 { 0 } else { (n * m / 16).max(1) };
+            let [a, b] = card.v2_price();
+            return [scale(a), scale(b), 0];
+        }
+        let old = card.cost();
         [
             (old.color + old.foreign_color) as u32 * m,
             old.k2 as u32 * m,
@@ -211,10 +229,38 @@ impl Game {
         ]
     }
 
+    /// Kartenpreis fuer einen bestimmten Spieler: der Koenigs-Boost kostet je Stufe mehr
+    /// (Grundpreis mal die Stufe, die er bekaeme).
+    pub fn territory_card_price_for(&self, player: PlayerId, card: Card) -> [u32; 3] {
+        let mut price = self.territory_card_price(card);
+        if card == Card::KingBoost {
+            let next = u32::from(self.state.player_perks[player.idx()].king_boost) + 1;
+            for p in price.iter_mut() {
+                *p *= next;
+            }
+        }
+        price
+    }
+
+    /// Kann der Spieler die Karte jetzt ueberhaupt aufnehmen? Der Koenigs-Boost wirkt sofort und
+    /// braucht den Kartenplatz nicht, dafuer hoechstens drei Stufen; alle anderen Karten
+    /// brauchen den freien Platz neben der Fabrik.
+    pub fn territory_card_takeable(&self, player: PlayerId, card: Card) -> bool {
+        if card == Card::KingBoost {
+            self.state.player_perks[player.idx()].king_boost < crate::state::MAX_KING_BOOST
+        } else {
+            self.state.stored_card[player.idx()].is_none()
+        }
+    }
+
     /// Was `player` fuer `card` aus dem Lager seiner Fabrik zahlen wuerde.
     pub fn territory_card_payment(&self, player: PlayerId, card: Card) -> Option<Inventory> {
         let f = self.home_factory(player)?;
-        plan_by_category(&f.storage, &self.map, self.territory_card_price(card))
+        plan_by_category(
+            &f.storage,
+            &self.map,
+            self.territory_card_price_for(player, card),
+        )
     }
 
     pub(crate) fn territory_build_actions(&self, me: PlayerId) -> Vec<Action> {
@@ -235,17 +281,16 @@ impl Game {
 
     pub(crate) fn territory_buy_actions(&self, me: PlayerId) -> Vec<Action> {
         let mut out = Vec::new();
-        if self.state.bought_this_turn
-            || self.state.market.is_empty()
-            || self.state.stored_card[me.idx()].is_some()
-        {
+        if self.state.bought_this_turn || self.state.market.is_empty() {
             return out;
         }
         let Some(f) = self.home_factory(me) else {
             return out;
         };
         for &card in &self.state.market {
-            if self.territory_card_payment(me, card).is_some() {
+            if self.territory_card_takeable(me, card)
+                && self.territory_card_payment(me, card).is_some()
+            {
                 out.push(Action::BuyCard {
                     card,
                     from: PaySource::Factory(f.id),
@@ -254,6 +299,64 @@ impl Game {
             }
         }
         out
+    }
+
+    // ----- Version 2: Fabrik ruecken ------------------------------------------------------------
+
+    /// Felder, auf die die Fabrik mit der Karte "Fabrik ruecken" rutschen darf: die vier
+    /// Diagonalfelder (nur im Quadratgitter), wenn sie eigenes Land sind, das mit der Fabrik
+    /// zusammenhaengt, und frei von Figuren. So bleibt der Zusammenhang des Landes erhalten.
+    pub fn factory_shift_targets(&self, me: PlayerId) -> Vec<CellId> {
+        if self.state.stored_card[me.idx()] != Some(Card::FactoryShift) {
+            return Vec::new();
+        }
+        let board = &self.map.board;
+        if board.kind() != crate::board::GridKind::Square {
+            return Vec::new();
+        }
+        let (Some(f), Some(connected)) = (self.home_factory(me), self.connected_land(me)) else {
+            return Vec::new();
+        };
+        let (x, y) = board.coord(f.cell);
+        let mut out: Vec<CellId> = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+            .into_iter()
+            .filter_map(|(dx, dy)| board.cell_at(x + dx, y + dy))
+            .filter(|c| {
+                connected[c.idx()]
+                    && self.state.piece_at(*c).is_none()
+                    && self.state.factory_at(*c).is_none()
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    pub(crate) fn factory_shift_actions(&self, me: PlayerId) -> Vec<Action> {
+        let Some(f) = self.home_factory(me) else {
+            return Vec::new();
+        };
+        self.factory_shift_targets(me)
+            .into_iter()
+            .map(|to| Action::ShiftFactory { factory: f.id, to })
+            .collect()
+    }
+
+    pub(crate) fn do_shift_factory(
+        &mut self,
+        actor: PlayerId,
+        fid: FactoryId,
+        to: CellId,
+        events: &mut Vec<Event>,
+    ) {
+        let from = self.state.factories[&fid].cell;
+        self.state.stored_card[actor.idx()] = None;
+        self.state.move_factory(fid, to);
+        events.push(Event::FactoryShifted {
+            factory: fid,
+            owner: actor,
+            from,
+            to,
+        });
     }
 
     /// Wehrlose Figuren (nicht auf verbundenem Land) duerfen nichts schlagen und keine
@@ -314,6 +417,22 @@ impl Game {
                 if board.neighbors(from).any(|n| n == to) {
                     return vec![to];
                 }
+                if let Some((_, path)) = self
+                    .king_boost_moves(piece)
+                    .into_iter()
+                    .find(|(cell, _)| *cell == to)
+                {
+                    return path;
+                }
+            }
+            PieceKind::Unit { .. } if self.config.terr_exact => {
+                if let Some((_, path)) = self
+                    .exact_moves(piece)
+                    .into_iter()
+                    .find(|(cell, _)| *cell == to)
+                {
+                    return path;
+                }
             }
             PieceKind::Unit {
                 level: 1, range, ..
@@ -341,11 +460,159 @@ impl Game {
         self.jump_path(owner, from, to)
     }
 
+    /// Version 2: alle Zuege einer Einheit mit ihrem gefaerbten Weg. Pro Ziel gilt der Weg mit
+    /// den meisten umzufaerbenden Feldern, bei Gleichstand der mit den kleineren Feldnummern.
+    pub fn exact_moves(&self, piece: &Piece) -> Vec<(CellId, Vec<CellId>)> {
+        let owner = piece.owner;
+        let mut best: std::collections::BTreeMap<CellId, (std::cmp::Reverse<usize>, Vec<CellId>)> =
+            std::collections::BTreeMap::new();
+        self.exact_walk(piece, &mut |to, path| {
+            let gain = path
+                .iter()
+                .filter(|&&c| self.state.land[c.idx()] != Some(owner))
+                .count();
+            let cand = (std::cmp::Reverse(gain), path.to_vec());
+            match best.get(&to) {
+                Some(old) if *old <= cand => {}
+                _ => {
+                    best.insert(to, cand);
+                }
+            }
+        });
+        best.into_iter().map(|(to, (_, path))| (to, path)).collect()
+    }
+
+    /// Geht alle Wege einer Einheit im Modus "genau n Felder" ab und meldet jedes Ziel samt Weg
+    /// (Felder ohne Startfeld). Eine Figur der Stufe n zieht geradeaus genau n Felder; Karten
+    /// erlauben einen Schritt weniger (`shorten`), eine Ecke (`bend`) oder einen Sprung ueber
+    /// eine Figur (`hop`). Ziel darf ein Gegner sein (wird geschlagen), nie eine eigene Figur.
+    pub(crate) fn exact_walk(&self, piece: &Piece, emit: &mut dyn FnMut(CellId, &[CellId])) {
+        let PieceKind::Unit { range, .. } = &piece.kind else {
+            return;
+        };
+        let base = *range + self.charge_bonus(piece.owner);
+        let mut lengths = vec![base as usize];
+        if piece.perks.shorten && base >= 2 {
+            lengths.push(base as usize - 1);
+        }
+        let mut path = Vec::with_capacity(5);
+        for len in lengths {
+            self.walk_from(
+                piece.owner,
+                piece.cell,
+                None,
+                len,
+                piece.perks.bend,
+                piece.perks.hop,
+                &mut path,
+                emit,
+            );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn walk_from(
+        &self,
+        owner: PlayerId,
+        cell: CellId,
+        dir: Option<usize>,
+        left: usize,
+        bend: bool,
+        hop: bool,
+        path: &mut Vec<CellId>,
+        emit: &mut dyn FnMut(CellId, &[CellId]),
+    ) {
+        if left == 0 {
+            return;
+        }
+        let board = &self.map.board;
+        for d in 0..board.dir_count() {
+            let turning = match dir {
+                None => false,
+                Some(prev) if prev == d => false,
+                Some(prev) => {
+                    if !bend || d == board.opposite(prev) {
+                        continue;
+                    }
+                    true
+                }
+            };
+            let Some(next) = board.step(cell, d) else {
+                continue;
+            };
+            let occupant = self.state.piece_at(next);
+            path.push(next);
+            if left == 1 {
+                if !occupant.is_some_and(|p| p.owner == owner) {
+                    emit(next, path);
+                }
+            } else {
+                let bend_left = bend && !turning;
+                match occupant {
+                    None => {
+                        self.walk_from(owner, next, Some(d), left - 1, bend_left, hop, path, emit)
+                    }
+                    Some(_) if hop => {
+                        self.walk_from(owner, next, Some(d), left - 1, bend_left, false, path, emit)
+                    }
+                    Some(_) => {}
+                }
+            }
+            path.pop();
+        }
+    }
+
+    /// Version 2: zusaetzliche Zuege des Koenigs durch den Boost (nur Quadratgitter), je mit
+    /// ihrem gefaerbten Weg. Stufe 1: ein Schritt diagonal. Stufe 2: zwei Felder geradeaus.
+    /// Stufe 3: zwei vor und eins zur Seite (der Weg ist ein L). Die Stufen gelten zusammen.
+    pub fn king_boost_moves(&self, piece: &Piece) -> Vec<(CellId, Vec<CellId>)> {
+        let owner = piece.owner;
+        let boost = self.state.player_perks[owner.idx()].king_boost;
+        let board = &self.map.board;
+        if !piece.is_king() || boost == 0 || board.kind() != crate::board::GridKind::Square {
+            return Vec::new();
+        }
+        let mut out: Vec<(CellId, Vec<CellId>)> = Vec::new();
+        let from = piece.cell;
+        let (x, y) = board.coord(from);
+        let free = |c: CellId| self.state.piece_at(c).is_none();
+        let ok = |c: CellId| !self.own_piece_at(c, owner);
+        for (dx, dy) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
+            if let Some(to) = board.cell_at(x + dx, y + dy).filter(|&c| ok(c)) {
+                out.push((to, self.jump_path(owner, from, to)));
+            }
+        }
+        if boost >= 2 {
+            for dir in 0..board.dir_count() {
+                let line = board.line(from, dir, 2);
+                if line.len() == 2 && free(line[0]) && ok(line[1]) {
+                    out.push((line[1], line));
+                }
+            }
+        }
+        if boost >= 3 {
+            for dir in 0..board.dir_count() {
+                let line = board.line(from, dir, 2);
+                if line.len() < 2 || !free(line[0]) || !free(line[1]) {
+                    continue;
+                }
+                for side in [(dir + 1) % 4, (dir + 3) % 4] {
+                    if let Some(to) = board.step(line[1], side).filter(|&c| ok(c)) {
+                        out.push((to, vec![line[0], line[1], to]));
+                    }
+                }
+            }
+        }
+        out.sort();
+        out.dedup_by_key(|(to, _)| *to);
+        out
+    }
+
     /// Spruenge (Pferd, Sprungfeder, Lanze, Laeuferschlag) faerben eine Bruecke: ein Feld, das
     /// an Start und Ziel grenzt, und das Ziel. Sonst landete die Figur auf einem Inselfeld und
     /// waere sofort wehrlos. Unter mehreren Bruecken gewinnt die mit mehr umzufaerbenden Feldern,
     /// dann die mit der kleineren Nummer.
-    fn jump_path(&self, owner: PlayerId, from: CellId, to: CellId) -> Vec<CellId> {
+    pub(crate) fn jump_path(&self, owner: PlayerId, from: CellId, to: CellId) -> Vec<CellId> {
         let board = &self.map.board;
         if board.neighbors(from).any(|n| n == to) {
             return vec![to];
@@ -456,9 +723,17 @@ impl Game {
         }
     }
 
+    /// Aendert den Besitzer eines Feldes. Wechselt er, faengt die Reifezeit des Feldes neu an.
+    pub(crate) fn set_land(&mut self, cell: CellId, owner: Option<PlayerId>) {
+        if self.state.land[cell.idx()] != owner {
+            self.state.land[cell.idx()] = owner;
+            self.state.owned_since[cell.idx()] = self.state.round;
+        }
+    }
+
     /// Setzt die Farbe eines Feldes; steht dort eine gegnerische Fabrik, ist sie zerstoert.
     fn paint(&mut self, cell: CellId, player: PlayerId, events: &mut Vec<Event>) {
-        self.state.land[cell.idx()] = Some(player);
+        self.set_land(cell, Some(player));
         if let Some(fid) = self.state.factory_at[cell.idx()] {
             if self.state.factories[&fid].owner != player {
                 self.destroy_factory(fid, player, events);
@@ -536,7 +811,7 @@ impl Game {
         for (player, mut cells) in found {
             cells.sort();
             for c in &cells {
-                self.state.land[c.idx()] = Some(player);
+                self.set_land(*c, Some(player));
             }
             events.push(Event::Enclosed { player, cells });
         }
@@ -624,7 +899,7 @@ impl Game {
             }
             let to = self.config.terr_cut_flips.then_some(actor);
             for c in &cells {
-                self.state.land[c.idx()] = to;
+                self.set_land(*c, to);
             }
             events.push(Event::CutOff {
                 from: player,
@@ -636,13 +911,30 @@ impl Game {
 
     /// Land eines ausgeschiedenen Spielers wird neutral.
     pub(crate) fn territory_forget(&mut self, player: PlayerId) {
-        for owner in self.state.land.iter_mut() {
-            if *owner == Some(player) {
-                *owner = None;
+        for cell in self.map.board.cells() {
+            if self.state.land[cell.idx()] == Some(player) {
+                self.set_land(cell, None);
             }
         }
         self.state.area[player.idx()] = 0;
         self.state.stored_card[player.idx()] = None;
+    }
+
+    /// Wie viele Runden das Feld seinem Besitzer noch gehoeren muss, bevor das Vorkommen `res`
+    /// Ertrag gibt (0 = reif). Die Reifezeit steht in `Config::terr_ripen`, je Kategorie.
+    pub fn ripen_wait(&self, cell: CellId, res: crate::ids::ResourceId) -> u32 {
+        let cat = usize::from(self.map.category(res));
+        let need = self
+            .config
+            .terr_ripen
+            .get(cat.wrapping_sub(1))
+            .copied()
+            .unwrap_or(0);
+        let held = self
+            .state
+            .round
+            .saturating_sub(self.state.owned_since[cell.idx()]);
+        need.saturating_sub(held)
     }
 
     /// Ende des eigenen Zuges: die Fabrik sammelt die verbundenen Felder ein.
@@ -662,7 +954,9 @@ impl Game {
             }
             area += 1;
             for res in self.all_deposits(cell) {
-                gained.add(res, yield_n);
+                if self.ripen_wait(cell, res) == 0 {
+                    gained.add(res, yield_n);
+                }
             }
         }
         self.state.area[actor.idx()] += area;
@@ -720,7 +1014,11 @@ impl Game {
             level,
             range: level,
         });
-        if let Some(card) = self.state.stored_card[actor.idx()].take() {
+        // "Fabrik ruecken" bleibt liegen, bis sie benutzt wird; alle anderen Karten wirken auf
+        // die neue Figur.
+        let unit_card = self.state.stored_card[actor.idx()].filter(|&c| c != Card::FactoryShift);
+        if let Some(card) = unit_card {
+            self.state.stored_card[actor.idx()] = None;
             self.apply_card(
                 actor,
                 card,
@@ -756,7 +1054,11 @@ impl Game {
         self.state.ledger.spent_on_cards += paid.total();
         self.state.bought_this_turn = true;
         self.state.player_perks[actor.idx()].cards_bought += 1;
-        self.state.stored_card[actor.idx()] = Some(card);
+        if card == Card::KingBoost {
+            self.apply_card(actor, card, from, None, None, events);
+        } else {
+            self.state.stored_card[actor.idx()] = Some(card);
+        }
         events.push(Event::CardBought {
             player: actor,
             card,
@@ -781,8 +1083,18 @@ impl Game {
     /// Zusatzpruefungen der Invarianten im Gebietsmodus.
     pub(crate) fn territory_check_invariants(&self) -> Result<(), String> {
         let st = &self.state;
-        if st.land.len() != self.map.board.len() {
+        if st.land.len() != self.map.board.len() || st.owned_since.len() != st.land.len() {
             return Err("land hat falsche Laenge".into());
+        }
+        if st.stored_card.contains(&Some(Card::KingBoost)) {
+            return Err("der Koenigs-Boost liegt nicht neben der Fabrik, er wirkt sofort".into());
+        }
+        if st
+            .player_perks
+            .iter()
+            .any(|pp| pp.king_boost > crate::state::MAX_KING_BOOST)
+        {
+            return Err("Koenigs-Boost ueber der hoechsten Stufe".into());
         }
         for p in 0..self.config.players {
             let player = PlayerId(p);

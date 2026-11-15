@@ -6,6 +6,7 @@
 
 use crate::action::{Action, Event};
 use crate::ai::SearchBot;
+use crate::area_bot::AreaBot;
 use crate::bot::{Bot, GreedyBot, RandomBot};
 use crate::config::Config;
 use crate::game::Game;
@@ -20,6 +21,8 @@ pub enum SeatKind {
     Strong,
     Greedy,
     Random,
+    /// Spielt den Gebietsmodus ueber Land und Rohstoffe (`area_bot::AreaBot`).
+    Area,
 }
 
 impl SeatKind {
@@ -29,6 +32,7 @@ impl SeatKind {
             SeatKind::Strong => "stark",
             SeatKind::Greedy => "gierig",
             SeatKind::Random => "zufall",
+            SeatKind::Area => "flaeche",
         }
     }
 }
@@ -77,6 +81,7 @@ impl Session {
                     SeatKind::Strong => Some(Box::new(SearchBot::new(bot_seed)) as Box<dyn Bot>),
                     SeatKind::Greedy => Some(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
                     SeatKind::Random => Some(Box::new(RandomBot::new(bot_seed)) as Box<dyn Bot>),
+                    SeatKind::Area => Some(Box::new(AreaBot::new(bot_seed)) as Box<dyn Bot>),
                 }
             })
             .collect();

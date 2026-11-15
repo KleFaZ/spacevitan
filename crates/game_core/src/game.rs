@@ -43,6 +43,7 @@ impl Game {
                 // Gebietsmodus: die Startecke gehoert dem Spieler und traegt seine einzige Fabrik.
                 let cell = map.start_cell(player);
                 state.land[cell.idx()] = Some(player);
+                state.owned_since[cell.idx()] = 1;
                 state.insert_factory(player, cell);
             }
         }
@@ -53,7 +54,12 @@ impl Game {
             &[]
         };
         state.market = if config.territory {
-            cards::draw_market_territory(config.seed, config.market_size as usize, map.board.kind())
+            cards::draw_market_territory(
+                config.seed,
+                config.market_size as usize,
+                map.board.kind(),
+                config.terr_cards == 1,
+            )
         } else {
             cards::draw_market_with(
                 config.seed,
@@ -171,6 +177,7 @@ impl Game {
         let owner = piece.owner;
         let mut out: Vec<CellId> = Vec::new();
 
+        let exact = self.config.territory && self.config.terr_exact;
         match &piece.kind {
             PieceKind::King => {
                 for n in board.neighbors(piece.cell) {
@@ -178,6 +185,12 @@ impl Game {
                         out.push(n);
                     }
                 }
+                if self.config.territory {
+                    out.extend(self.king_boost_moves(piece).into_iter().map(|(to, _)| to));
+                }
+            }
+            PieceKind::Unit { .. } if exact => {
+                self.exact_walk(piece, &mut |to, _| out.push(to));
             }
             PieceKind::Unit {
                 level: 1, range, ..
@@ -375,7 +388,7 @@ impl Game {
         amount
     }
 
-    fn own_piece_at(&self, cell: CellId, owner: PlayerId) -> bool {
+    pub(crate) fn own_piece_at(&self, cell: CellId, owner: PlayerId) -> bool {
         self.state.piece_at(cell).is_some_and(|p| p.owner == owner)
     }
 
@@ -421,6 +434,7 @@ impl Game {
 
         if self.config.territory {
             actions.extend(self.territory_build_actions(me));
+            actions.extend(self.factory_shift_actions(me));
             if actions.is_empty() {
                 actions.push(Action::Pass);
             }
@@ -704,6 +718,20 @@ impl Game {
                     return IllegalReason::CannotAffordUnit;
                 }
             }
+            Action::ShiftFactory { factory, to } => {
+                let Some(f) = self.state.factories.get(&factory) else {
+                    return IllegalReason::NoSuchFactory;
+                };
+                if f.owner != me {
+                    return IllegalReason::NotYourFactory;
+                }
+                if self.state.stored_card[me.idx()] != Some(Card::FactoryShift) {
+                    return IllegalReason::NoFactoryShiftCard;
+                }
+                if !self.factory_shift_targets(me).contains(&to) {
+                    return IllegalReason::CannotShiftThere;
+                }
+            }
             Action::Pass => return IllegalReason::PassNotAllowed,
             Action::BuyCard { card, from, target } => {
                 if !self.state.market.contains(&card) {
@@ -713,7 +741,7 @@ impl Game {
                     return IllegalReason::AlreadyBoughtThisTurn;
                 }
                 if self.config.territory {
-                    if self.state.stored_card[me.idx()].is_some() {
+                    if !self.territory_card_takeable(me, card) {
                         return IllegalReason::CardSlotFull;
                     }
                     if self.territory_card_payment(me, card).is_none() {
@@ -755,6 +783,9 @@ impl Game {
             Action::SpawnPiece { factory } => self.do_spawn(actor, factory, &mut events),
             Action::BuildUnit { factory, level } => {
                 self.do_build_unit(actor, factory, level, &mut events)
+            }
+            Action::ShiftFactory { factory, to } => {
+                self.do_shift_factory(actor, factory, to, &mut events)
             }
             Action::Pass => events.push(Event::Passed { player: actor }),
             Action::BuyCard { card, from, target } => {
@@ -997,6 +1028,15 @@ impl Game {
             Card::Lance => self.target_mut(target).perks.lance = true,
             Card::Spring => self.target_mut(target).perks.spring = true,
             Card::Horse => self.target_mut(target).perks.horse = true,
+            Card::Shorten => self.target_mut(target).perks.shorten = true,
+            Card::Bend => self.target_mut(target).perks.bend = true,
+            Card::Hop => self.target_mut(target).perks.hop = true,
+            Card::KingBoost => {
+                let pp = &mut self.state.player_perks[actor.idx()];
+                pp.king_boost = (pp.king_boost + 1).min(crate::state::MAX_KING_BOOST);
+            }
+            // Wirkt nicht beim Kauf, sondern als eigene Aktion (`Action::ShiftFactory`).
+            Card::FactoryShift => {}
             Card::Charge => self.state.charge = true,
             Card::Mining => self.state.player_perks[actor.idx()].mining = true,
             Card::Farming => self.state.player_perks[actor.idx()].farming = true,
