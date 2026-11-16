@@ -113,6 +113,8 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .faccard .fc-card:hover:not(:disabled) { border-color: var(--accent); }
 .faccard p { margin: 0; }
 .faccard .muted { color: var(--muted); }
+/* 2D: die Karte haengt direkt unter dem Brett statt ueber den Feldern. */
+.faccard.docked { position: static; width: 100%; max-width: 640px; max-height: none; overflow: visible; margin-top: 8px; box-shadow: none; }
 .tip ul { margin: 4px 0 0; padding-left: 16px; }
 
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
@@ -318,6 +320,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <div id="tip" class="tip" hidden></div>
       <div id="facCard" class="faccard" hidden></div>
     </div>
+    <div id="facDock"></div>
     <div class="controls">
       <div class="btns">
         <button id="first" type="button" aria-label="Zum Start"><svg viewBox="0 0 20 20"><path d="M4 4h2v12H4zM16 4v12L7 10z"/></svg></button>
@@ -2104,6 +2107,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Platz neben der Fabrik waehlen, an dem die Karte moeglichst wenig verdeckt (Figuren, Felder). */
   function placeFactoryCard(card, info) {
+    // 2D: die Karte liegt in der Seite direkt unter dem Brett, nicht ueber den Feldern.
+    const target = view3d ? canvas.parentElement : $("facDock");
+    if (card.parentElement !== target) target.appendChild(card);
+    card.classList.toggle("docked", !view3d);
+    if (!view3d) { card.style.left = ""; card.style.top = ""; return; }
     const W = geo.cssW, H = geo.cssH, cw = card.offsetWidth, ch = card.offsetHeight;
     const f = R.frames[fi];
     const at = (cell) => { const [x, y] = R.board.cells[cell]; return iso(x, y); };
