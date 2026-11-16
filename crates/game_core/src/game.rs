@@ -750,10 +750,17 @@ impl Game {
                 }
                 if self.config.territory {
                     if !self.territory_card_takeable(me, card) {
-                        return IllegalReason::CardSlotFull;
+                        return if self.cards_go_on_pieces(card) {
+                            IllegalReason::InvalidCardTarget
+                        } else {
+                            IllegalReason::CardSlotFull
+                        };
                     }
                     if self.territory_card_payment(me, card).is_none() {
                         return IllegalReason::CannotPayCard;
+                    }
+                    if self.cards_go_on_pieces(card) {
+                        return IllegalReason::InvalidCardTarget;
                     }
                     return IllegalReason::Unspecified;
                 }
@@ -806,7 +813,7 @@ impl Game {
             Action::BuyCard { card, from, target } => {
                 // Ein Kauf ist keine Aktion: der Spieler bleibt am Zug.
                 if self.config.territory {
-                    self.do_buy_territory(actor, card, from, &mut events);
+                    self.do_buy_territory(actor, card, from, target, &mut events);
                 } else {
                     self.do_buy(actor, card, from, target, &mut events);
                 }

@@ -142,6 +142,14 @@ pub struct Config {
     /// bringen die `k` Kat-3-Felder auf dem mit der stehenden Fabrik verbundenen Land zusaetzlich
     /// `2^k` Flaeche (`k = 0` bringt nichts).
     pub terr_bonus: bool,
+    /// Version 3: Der Erntezaehler eines Feldes laeuft nur, solange am Ende des eigenen Zuges
+    /// eine eigene Figur (auch der Koenig) auf dem verbundenen Feld steht; ohne Figur steht er
+    /// still (und erst mit ihr gibt es Ernte). Braucht `terr_cycle`.
+    pub terr_occupy: bool,
+    /// Version 3: Karten wirken auf eine gewaehlte eigene Einheit, auch auf eine schon gebaute
+    /// (Kuerzer, Ecke, Sprung). Sie liegen nicht mehr neben der Fabrik; nur "Fabrik ruecken" liegt
+    /// dort noch, bis sie benutzt wird. Braucht den Kartensatz von Version 2 (`terr_cards`).
+    pub terr_cardany: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -225,6 +233,8 @@ impl Config {
             terr_rebuild: 0,
             terr_trade: false,
             terr_bonus: false,
+            terr_occupy: false,
+            terr_cardany: false,
         }
     }
 
@@ -241,6 +251,10 @@ impl Config {
         self.terr_rebuild = if on { 3 } else { 0 };
         self.terr_trade = false;
         self.terr_bonus = on;
+        self.terr_occupy = on;
+        self.terr_cardany = on;
+        // Karten kosten in Version 3 die Haelfte des Grundpreises (16 = voll).
+        self.terr_card_mult = if on { 8 } else { 16 };
         if on {
             self.terr_cats = 3;
             self.terr_ripen = [3, 10, 10, 0];
@@ -345,6 +359,8 @@ impl Config {
             "terr_rebuild" => self.terr_rebuild = as_u32(value)?,
             "terr_trade" => self.terr_trade = value != 0,
             "terr_bonus" => self.terr_bonus = value != 0,
+            "terr_occupy" => self.terr_occupy = value != 0,
+            "terr_cardany" => self.terr_cardany = value != 0,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
             "veins3" => self.veins_per_type[2] = as_u32(value)?,
@@ -492,6 +508,16 @@ impl Config {
         if self.terr_bonus && self.terr_trade {
             return Err(ConfigError::Invalid(
                 "terr_bonus und terr_trade gehen nicht zusammen (Kat 3 wird nur eines von beiden)",
+            ));
+        }
+        if self.terr_occupy && !self.terr_cycle {
+            return Err(ConfigError::Invalid(
+                "terr_occupy braucht terr_cycle (den Erntezaehler)",
+            ));
+        }
+        if self.terr_cardany && self.terr_cards != 1 {
+            return Err(ConfigError::Invalid(
+                "terr_cardany braucht den Kartensatz von Version 2 (terr_cards=1)",
             ));
         }
         if self.terr_move > 1 {

@@ -151,6 +151,9 @@ pub struct Weights {
     /// Gebietsmodus: Prozent vom Wert einer Figur, die verloren gehen, solange sie nicht auf
     /// verbundenem Land steht (wehrlos).
     pub helpless: i32,
+    /// Version 3 mit `terr_occupy`: je eigener Figur auf einem verbundenen Kat-1-Feld (Kat 2 zaehlt
+    /// doppelt), dessen Erntezaehler dadurch laeuft.
+    pub work: i32,
 }
 
 impl Weights {
@@ -189,6 +192,7 @@ impl Weights {
                 "terr_factory_hit" => &mut self.terr_factory_hit,
                 "terr_blocked" => &mut self.terr_blocked,
                 "helpless" => &mut self.helpless,
+                "work" => &mut self.work,
                 "diagonal" => &mut self.diagonal,
                 "extra_range" => &mut self.extra_range,
                 "lance" => &mut self.lance,
@@ -246,6 +250,7 @@ impl Weights {
         terr_factory_hit: 250,
         terr_blocked: 30,
         helpless: 70,
+        work: 8,
     };
 }
 
@@ -1176,6 +1181,24 @@ impl SearchBot {
             }
         }
         v += w.land * linked + w.land_loose * loose;
+        // Version 3: eine Figur auf einem Rohstofffeld laesst dessen Erntezaehler laufen.
+        if g.config.terr_occupy {
+            if let Some(c) = &conn {
+                for piece in st.pieces.values().filter(|x| x.owner == p) {
+                    if !c[piece.cell.idx()] {
+                        continue;
+                    }
+                    for res in g.all_deposits(piece.cell) {
+                        v += w.work
+                            * match g.map.category(res) {
+                                1 => 1,
+                                2 => 2,
+                                _ => 0,
+                            };
+                    }
+                }
+            }
+        }
         // Version 3: der Flaechenbonus der verbundenen Kat-3-Felder (`2^k` je Runde).
         v += Game::kat3_bonus(g.connected_kat3(p)).min(2_000) as i32 * w.land;
         if let Some(c) = &conn {

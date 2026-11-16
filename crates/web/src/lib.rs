@@ -169,6 +169,13 @@ pub extern "C" fn sv_apply(index: u32) -> i32 {
     with_session(|s| s.apply_index(index as usize))
 }
 
+/// Die Ziehfelder einer beliebigen Figur (auch einer gegnerischen): `{"piece":id,"cells":[...]}`.
+/// Fuer die Anzeige "Ziehfelder zeigen"; aendert nichts am Spiel.
+#[no_mangle]
+pub extern "C" fn sv_destinations(piece: u32) -> i32 {
+    with_session(|s| s.destinations_json(piece))
+}
+
 /// Der Bot am Zug zieht.
 #[no_mangle]
 pub extern "C" fn sv_bot_step() -> i32 {
@@ -202,6 +209,26 @@ mod tests {
         assert_eq!(sv_apply(0), 1);
         assert!(out().contains("keine Partie"));
         assert_eq!(sv_bot_step(), 1);
+    }
+
+    #[test]
+    fn destinations_work_for_any_piece_and_do_not_change_the_game() {
+        assert_eq!(sv_new_game(2, 7, 0, 0, 0), 0);
+        let start = out();
+        // Figur 0 ist der Koenig von A; ein Koenig zieht in alle Nachbarfelder.
+        assert_eq!(sv_destinations(0), 0, "{}", out());
+        let mine = out();
+        assert!(mine.starts_with("{\"piece\":0,\"cells\":["), "{mine}");
+        assert_eq!(
+            sv_destinations(1),
+            0,
+            "auch der gegnerische Koenig: {}",
+            out()
+        );
+        assert_eq!(sv_destinations(999), 1);
+        assert!(out().contains("gibt es nicht"));
+        // Die Partie ist unveraendert: derselbe Mensch am Zug.
+        assert_eq!(sv_apply(0), 0, "{start}");
     }
 
     #[test]

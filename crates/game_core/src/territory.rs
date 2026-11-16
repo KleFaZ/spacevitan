@@ -263,9 +263,37 @@ impl Game {
     pub fn territory_card_takeable(&self, player: PlayerId, card: Card) -> bool {
         if card == Card::KingBoost {
             self.state.player_perks[player.idx()].king_boost < crate::state::MAX_KING_BOOST
+        } else if self.cards_go_on_pieces(card) {
+            self.pieces_of(player)
+                .any(|p| self.card_fits_piece(card, p))
         } else {
             self.state.stored_card[player.idx()].is_none()
         }
+    }
+
+    /// Version 3 (`terr_cardany`): wirkt `card` sofort auf eine gewaehlte eigene Einheit, statt
+    /// neben der Fabrik zu liegen?
+    pub fn cards_go_on_pieces(&self, card: Card) -> bool {
+        self.config.territory
+            && self.config.terr_cardany
+            && card.target() == crate::cards::CardTarget::Unit
+    }
+
+    /// Version 3 (`terr_cardany`): kann `card` auf diese Figur gelegt werden? Nur auf Einheiten
+    /// (nicht den Koenig), nur, wenn sie noch nichts davon kann, und erst ab Reichweite 2: eine
+    /// Figur mit Reichweite 1 zieht ein Feld, da gibt es nichts zu kuerzen, keine Ecke und keinen
+    /// Sprung ueber ein Zwischenfeld (und Figuren werden nie hoeher).
+    pub fn card_fits_piece(&self, card: Card, piece: &Piece) -> bool {
+        let PieceKind::Unit { range, .. } = &piece.kind else {
+            return false;
+        };
+        let has = match card {
+            Card::Shorten => piece.perks.shorten,
+            Card::Bend => piece.perks.bend,
+            Card::Hop => piece.perks.hop,
+            _ => return false,
+        };
+        !has && *range >= 2
     }
 
     /// Was `player` fuer `card` aus dem Lager seiner Fabrik zahlen wuerde.
@@ -303,12 +331,25 @@ impl Game {
             return out;
         };
         for &card in &self.state.market {
-            if self.territory_card_takeable(me, card)
-                && self.territory_card_payment(me, card).is_some()
+            if !self.territory_card_takeable(me, card)
+                || self.territory_card_payment(me, card).is_none()
             {
+                continue;
+            }
+            let from = PaySource::Factory(f.id);
+            if self.cards_go_on_pieces(card) {
+                // Eine Aktion je Figur, auf die die Karte passt.
+                for piece in self.pieces_of(me).filter(|p| self.card_fits_piece(card, p)) {
+                    out.push(Action::BuyCard {
+                        card,
+                        from,
+                        target: Some(piece.id),
+                    });
+                }
+            } else {
                 out.push(Action::BuyCard {
                     card,
-                    from: PaySource::Factory(f.id),
+                    from,
                     target: None,
                 });
             }
@@ -1206,6 +1247,7 @@ impl Game {
         let yield_n = self.config.terr_yield;
         let cycle = self.config.terr_cycle;
         let bonus_on = self.config.terr_bonus;
+        let occupy = self.config.terr_occupy;
         let mut gained = Inventory::new();
         let mut area = 0u32;
         let mut kat3 = 0u32;
@@ -1214,7 +1256,9 @@ impl Game {
                 continue;
             }
             area += 1;
-            if cycle {
+            // Mit `terr_occupy` zaehlt und erntet ein Feld nur, solange eine eigene Figur darauf steht.
+            let worked = !occupy || self.own_piece_at(cell, actor);
+            if cycle && worked {
                 self.state.age[cell.idx()] += 1;
             }
             for res in self.all_deposits(cell) {
@@ -1224,7 +1268,7 @@ impl Game {
                     continue;
                 }
                 let ready = if cycle {
-                    self.harvest_due(cell, res)
+                    worked && self.harvest_due(cell, res)
                 } else {
                     self.ripen_wait(cell, res) == 0
                 };
@@ -1313,6 +1357,7 @@ impl Game {
         actor: PlayerId,
         card: Card,
         from: PaySource,
+        target: Option<PieceId>,
         events: &mut Vec<Event>,
     ) {
         let paid = self.territory_card_payment(actor, card).expect("bezahlbar");
@@ -1331,8 +1376,12 @@ impl Game {
         self.state.ledger.spent_on_cards += paid.total();
         self.state.bought_this_turn = true;
         self.state.player_perks[actor.idx()].cards_bought += 1;
+        let on_piece = self.cards_go_on_pieces(card);
         if card == Card::KingBoost {
             self.apply_card(actor, card, from, None, None, events);
+        } else if on_piece {
+            // Version 3: die Karte wirkt sofort auf die gewaehlte Einheit.
+            self.apply_card(actor, card, from, target, None, events);
         } else {
             self.state.stored_card[actor.idx()] = Some(card);
         }
@@ -1340,7 +1389,7 @@ impl Game {
             player: actor,
             card,
             from,
-            target: None,
+            target: if on_piece { target } else { None },
             paid,
         });
     }
@@ -1362,6 +1411,15 @@ impl Game {
         let st = &self.state;
         if st.land.len() != self.map.board.len() || st.owned_since.len() != st.land.len() {
             return Err("land hat falsche Laenge".into());
+        }
+        if self.config.terr_cardany
+            && st
+                .stored_card
+                .iter()
+                .flatten()
+                .any(|&c| self.cards_go_on_pieces(c))
+        {
+            return Err("eine Figurenkarte liegt neben der Fabrik, sie wirkt sofort".into());
         }
         if st.stored_card.contains(&Some(Card::KingBoost)) {
             return Err("der Koenigs-Boost liegt nicht neben der Fabrik, er wirkt sofort".into());

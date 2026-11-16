@@ -54,6 +54,16 @@ fn standing(g: &Game, p: PlayerId) -> i64 {
                 if g.config.terr_bonus && cat == 2 {
                     continue;
                 }
+                if g.config.terr_occupy {
+                    // Der Zaehler laeuft nur mit eigener Figur auf dem Feld: dann voller Wert, sonst
+                    // ein Drittel (das Vorkommen ist da, aber es kommt nichts heraus).
+                    v += if g.own_piece_at(cell, p) {
+                        DEPOSIT[cat]
+                    } else {
+                        DEPOSIT[cat] / 3
+                    };
+                    continue;
+                }
                 let need = g.config.terr_ripen[cat].max(1) as i64;
                 let wait = g.ripen_wait(cell, res) as i64;
                 // Reif = voller Wert, frisch gefaerbt ein gutes Drittel.
@@ -109,6 +119,28 @@ fn risk(g: &Game, me: PlayerId) -> i64 {
 }
 
 impl AreaBot {
+    /// Version 3 (Karten auf gebaute Figuren): die beste Karte fuer die hoechste Figur, auf die sie
+    /// passt. Rangfolge der Karten: Ecke, Sprung, Kuerzer.
+    fn card_for_piece(game: &Game, buys: &[Action]) -> Option<Action> {
+        let level_of = |id: crate::ids::PieceId| match game.state.pieces.get(&id).map(|p| &p.kind) {
+            Some(PieceKind::Unit { level, .. }) => *level,
+            _ => 0,
+        };
+        [Card::Bend, Card::Hop, Card::Shorten]
+            .into_iter()
+            .find_map(|want| {
+                buys.iter()
+                    .copied()
+                    .filter(|a| matches!(a, Action::BuyCard { card, target: Some(_), .. } if *card == want))
+                    .max_by_key(|a| match a {
+                        Action::BuyCard {
+                            target: Some(id), ..
+                        } => (level_of(*id), std::cmp::Reverse(*id)),
+                        _ => (0, std::cmp::Reverse(crate::ids::PieceId(0))),
+                    })
+            })
+    }
+
     /// Welche Karte nuetzt jetzt, wenn gleich gebaut wird? Rangfolge: Ecke, Sprung, Kuerzer.
     fn card_for_build(buys: &[Action]) -> Option<Action> {
         [Card::Bend, Card::Hop, Card::Shorten]
@@ -232,7 +264,11 @@ impl Bot for AreaBot {
         }) {
             return boost;
         }
-        if build.is_some() && game.state.stored_card[me.idx()].is_none() {
+        if game.config.terr_cardany {
+            if let Some(card) = Self::card_for_piece(game, &buys) {
+                return card;
+            }
+        } else if build.is_some() && game.state.stored_card[me.idx()].is_none() {
             if let Some(card) = Self::card_for_build(&buys) {
                 return card;
             }

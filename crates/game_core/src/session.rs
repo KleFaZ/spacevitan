@@ -10,7 +10,7 @@ use crate::area_bot::AreaBot;
 use crate::bot::{Bot, GreedyBot, RandomBot};
 use crate::config::Config;
 use crate::game::Game;
-use crate::ids::PlayerId;
+use crate::ids::{PieceId, PlayerId};
 use crate::replay::{action_json, event_json, header_json, state_json};
 use crate::state::Outcome;
 
@@ -158,6 +158,26 @@ impl Session {
             r#"{{"frame":{},{}}}"#,
             self.frame_json(Some(player), Some(&action), &events),
             self.tail_json()
+        ))
+    }
+
+    /// Die Felder, auf die eine beliebige Figur (auch die eines anderen Spielers, auch wenn er
+    /// nicht am Zug ist) nach den Regeln ziehen oder schlagen duerfte, als JSON
+    /// `{"piece":id,"cells":[...]}`. Die Anzeige zeigt damit "Ziehfelder" ohne Zugrecht.
+    pub fn destinations_json(&self, piece: u32) -> Result<String, String> {
+        let id = PieceId(piece);
+        if !self.game.state.pieces.contains_key(&id) {
+            return Err(format!("Figur {piece} gibt es nicht."));
+        }
+        let cells: Vec<String> = self
+            .game
+            .piece_destinations(id)
+            .iter()
+            .map(|c| c.0.to_string())
+            .collect();
+        Ok(format!(
+            r#"{{"piece":{piece},"cells":[{}]}}"#,
+            cells.join(",")
         ))
     }
 

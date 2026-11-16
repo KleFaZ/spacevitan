@@ -24,15 +24,23 @@ fn v3_config(players: u8) -> Config {
 
 /// Alte Fassung: Kat 3 wird geerntet und gegen `2^k` Flaeche getauscht (statt Rundenbonus).
 fn v3_trade_config() -> Config {
-    let mut c = v3_config(2);
+    let mut c = open_config();
     c.terr_bonus = false;
     c.terr_trade = true;
     c
 }
 
-/// Karte ohne Rohstoffe, dazu die gewuenschten Vorkommen.
+/// Version 3 ohne die Besetzungsregel (`terr_occupy`): die Zaehlertests gelten fuer jedes verbundene
+/// Feld. Die Besetzung hat eigene Tests weiter unten.
+fn open_config() -> Config {
+    let mut c = v3_config(2);
+    c.terr_occupy = false;
+    c
+}
+
+/// Karte ohne Rohstoffe, dazu die gewuenschten Vorkommen (ohne Besetzungsregel).
 fn with_deposits(deps: &[((i32, i32), ResourceId)]) -> Game {
-    with_deposits_cfg(v3_config(2), deps)
+    with_deposits_cfg(open_config(), deps)
 }
 
 fn with_deposits_cfg(config: Config, deps: &[((i32, i32), ResourceId)]) -> Game {
@@ -426,10 +434,13 @@ fn the_move_needs_connected_land_the_price_and_another_cell() {
 fn area_and_the_card_move_along_with_the_factory() {
     let mut g = ready_to_move();
     g.state.area[P0.idx()] = 77;
-    g.state.stored_card[P0.idx()] = Some(crate::cards::Card::Hop);
+    g.state.stored_card[P0.idx()] = Some(crate::cards::Card::FactoryShift);
     g.apply(Action::RebuildFactory).unwrap();
     assert_eq!(g.state.area[P0.idx()], 77);
-    assert_eq!(g.state.stored_card[P0.idx()], Some(crate::cards::Card::Hop));
+    assert_eq!(
+        g.state.stored_card[P0.idx()],
+        Some(crate::cards::Card::FactoryShift)
+    );
     g.check_invariants().unwrap();
 }
 
@@ -1059,4 +1070,302 @@ fn rush_probe_center_relocation() {
             );
         }
     }
+}
+
+// ----- Besetzung: der Erntezaehler laeuft nur mit einer eigenen Figur auf dem Feld ---------------
+
+fn v3_game(deps: &[((i32, i32), ResourceId)]) -> Game {
+    with_deposits_cfg(v3_config(2), deps)
+}
+
+#[test]
+fn the_occupy_and_card_switches_belong_to_version_3_and_can_be_changed() {
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1").unwrap();
+    assert!(cfg.terr_occupy && cfg.terr_cardany);
+    assert_eq!(cfg.terr_card_mult, 8, "Karten kosten die Haelfte");
+    cfg.set_all("terr_occupy=0,terr_cardany=0,terr_card_mult=16")
+        .unwrap();
+    assert!(!cfg.terr_occupy && !cfg.terr_cardany);
+    cfg.set_all("terr_v2=1").unwrap();
+    assert!(!cfg.terr_occupy && !cfg.terr_cardany && cfg.terr_card_mult == 16);
+    let mut bad = Config::new(2, 1);
+    bad.territory = true;
+    bad.terr_occupy = true;
+    assert!(
+        bad.validate().is_err(),
+        "Besetzung braucht den Erntezaehler"
+    );
+    let mut bad = Config::new(2, 1);
+    bad.territory = true;
+    bad.terr_cardany = true;
+    assert!(
+        bad.validate().is_err(),
+        "Karten auf Figuren brauchen die neuen Karten"
+    );
+}
+
+#[test]
+fn a_field_counts_down_only_while_an_own_piece_stands_on_it() {
+    let g0 = v3_game(&[]);
+    let k1 = typ(&g0, 0, 1);
+    let mut g = v3_game(&[((2, 0), k1)]);
+    strip(&mut g, P0, 3);
+    let field = c(&g, 2, 0);
+    // Ohne Figur: der Zaehler steht, es gibt nichts.
+    for _ in 0..7 {
+        income(&mut g, P0);
+    }
+    assert_eq!(g.harvest_in(field, k1), 3);
+    assert_eq!(storage_of(&g, P0, k1), 0);
+    // Eine gegnerische Figur zaehlt nicht fuer den Besitzer.
+    let enemy = g.setup_unit(P1, field, 1, 1);
+    for _ in 0..4 {
+        income(&mut g, P0);
+    }
+    assert_eq!(
+        g.harvest_in(field, k1),
+        3,
+        "der Gegner erntet fuer uns nicht"
+    );
+    g.state.remove_piece(enemy);
+    // Mit eigener Figur laeuft er, nach drei Zugenden gibt es die Ernte und er beginnt von vorn.
+    let mine = g.setup_unit(P0, field, 1, 1);
+    income(&mut g, P0);
+    income(&mut g, P0);
+    assert_eq!((g.harvest_in(field, k1), storage_of(&g, P0, k1)), (1, 0));
+    income(&mut g, P0);
+    assert_eq!((g.harvest_in(field, k1), storage_of(&g, P0, k1)), (3, 1));
+    // Die Figur geht weg: der Stand bleibt stehen (er faengt nicht von vorn an) und laeuft weiter.
+    income(&mut g, P0);
+    g.state.remove_piece(mine);
+    for _ in 0..5 {
+        income(&mut g, P0);
+    }
+    assert_eq!(g.harvest_in(field, k1), 2, "Zaehler pausiert");
+    assert_eq!(storage_of(&g, P0, k1), 1);
+    g.setup_unit(P0, field, 1, 1);
+    income(&mut g, P0);
+    income(&mut g, P0);
+    assert_eq!(storage_of(&g, P0, k1), 2, "mit Figur geht es dort weiter");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_king_counts_as_a_figure_and_the_area_still_comes_from_every_field() {
+    let g0 = v3_game(&[]);
+    let k1 = typ(&g0, 0, 1);
+    let mut g = v3_game(&[((1, 0), k1)]);
+    strip(&mut g, P0, 2);
+    let field = c(&g, 1, 0);
+    let king = king_id(&g, P0);
+    g.setup_teleport(king, field);
+    let before = g.state.area[P0.idx()];
+    for _ in 0..3 {
+        income(&mut g, P0);
+    }
+    assert_eq!(
+        storage_of(&g, P0, k1),
+        1,
+        "auch der Koenig bearbeitet ein Feld"
+    );
+    assert_eq!(
+        g.state.area[P0.idx()] - before,
+        9,
+        "die Flaeche kommt von jedem verbundenen Feld, besetzt oder nicht (3 Felder, 3 Zuege)"
+    );
+}
+
+#[test]
+fn a_cut_off_field_is_not_worked_even_with_a_figure_on_it() {
+    let g0 = v3_game(&[]);
+    let k1 = typ(&g0, 0, 1);
+    let mut g = v3_game(&[((5, 5), k1)]);
+    paint(&mut g, P0, &[(5, 5)]);
+    let field = c(&g, 5, 5);
+    g.setup_unit(P0, field, 1, 1);
+    for _ in 0..6 {
+        income(&mut g, P0);
+    }
+    assert_eq!(storage_of(&g, P0, k1), 0, "nicht mit der Fabrik verbunden");
+    assert_eq!(g.harvest_in(field, k1), 3);
+}
+
+#[test]
+fn recolouring_still_starts_the_count_over_with_the_rule_on() {
+    let g0 = v3_game(&[]);
+    let k1 = typ(&g0, 0, 1);
+    let mut g = v3_game(&[((2, 0), k1)]);
+    strip(&mut g, P0, 3);
+    let field = c(&g, 2, 0);
+    g.setup_unit(P0, field, 1, 1);
+    income(&mut g, P0);
+    income(&mut g, P0);
+    assert_eq!(g.harvest_in(field, k1), 1);
+    g.state.age[field.idx()] = 0;
+    assert_eq!(g.harvest_in(field, k1), 3);
+}
+
+// ----- Karten auf jede eigene Einheit, auch auf schon gebaute -----------------------------------
+
+fn card_game(cards: &[crate::cards::Card]) -> Game {
+    let mut g = v3_game(&[]);
+    g.state.market = cards.to_vec();
+    g
+}
+
+fn buys(g: &Game) -> Vec<Action> {
+    g.legal_actions()
+        .into_iter()
+        .filter(|a| matches!(a, Action::BuyCard { .. }))
+        .collect()
+}
+
+#[test]
+fn a_unit_card_goes_on_a_chosen_existing_unit_at_once() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Bend, Card::Hop, Card::Shorten]);
+    let pawn = g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    let two = g.setup_unit(P0, c(&g, 4, 0), 2, 2);
+    let three = g.setup_unit(P0, c(&g, 5, 0), 3, 3);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 12);
+    let fid = g.home_factory(P0).unwrap().id;
+    let all = buys(&g);
+    // Je Karte nur Einheiten ab Reichweite 2, nie der Koenig, nie der Bauer.
+    assert_eq!(
+        all.len(),
+        3 * 2,
+        "drei Karten, zwei passende Figuren: {all:?}"
+    );
+    for a in &all {
+        let Action::BuyCard { target, .. } = a else {
+            unreachable!()
+        };
+        let t = target.expect("jede Karte braucht eine Figur");
+        assert!(t == two || t == three, "{t:?} (Bauer {pawn:?})");
+    }
+    let bend = Action::BuyCard {
+        card: Card::Bend,
+        from: crate::action::PaySource::Factory(fid),
+        target: Some(three),
+    };
+    assert!(all.contains(&bend));
+    let events = g.apply(bend).unwrap();
+    assert!(g.state.pieces[&three].perks.bend, "wirkt sofort");
+    assert!(!g.state.pieces[&two].perks.bend);
+    assert_eq!(
+        g.state.stored_card[P0.idx()],
+        None,
+        "keine Karte neben der Fabrik"
+    );
+    assert_eq!(g.current_player(), P0, "Kaufen ist keine Aktion");
+    assert_eq!(storage_of(&g, P0, k1), 7, "Ecke kostet 5 Kat 1");
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::CardBought { card: Card::Bend, target: Some(t), .. } if *t == three
+    )));
+    g.check_invariants().unwrap();
+    // Ein Kauf pro Zug.
+    assert!(buys(&g).is_empty());
+    g.state.bought_this_turn = false;
+    // Dieselbe Karte nicht noch einmal auf dieselbe Figur, aber eine andere darauf.
+    let again = buys(&g);
+    assert!(!again.contains(&bend));
+    assert!(again.iter().any(|a| matches!(
+        a,
+        Action::BuyCard { card: Card::Hop, target: Some(t), .. } if *t == three
+    )));
+}
+
+#[test]
+fn the_unit_card_changes_the_moves_of_that_unit() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Bend]);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 5);
+    let corner = c(&g, 6, 6);
+    assert!(!g.piece_destinations(unit).contains(&corner));
+    let fid = g.home_factory(P0).unwrap().id;
+    g.apply(Action::BuyCard {
+        card: Card::Bend,
+        from: crate::action::PaySource::Factory(fid),
+        target: Some(unit),
+    })
+    .unwrap();
+    assert!(
+        g.piece_destinations(unit).contains(&corner),
+        "jetzt um die Ecke"
+    );
+}
+
+#[test]
+fn a_card_needs_a_fitting_figure_to_be_bought() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Bend]);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 12);
+    assert!(buys(&g).is_empty(), "nur der Koenig, kein Ziel");
+    g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    assert!(buys(&g).is_empty(), "ein Bauer hat keine Ecke zu gehen");
+    let fid = g.home_factory(P0).unwrap().id;
+    let no_target = Action::BuyCard {
+        card: Card::Bend,
+        from: crate::action::PaySource::Factory(fid),
+        target: None,
+    };
+    let err = g.apply(no_target).unwrap_err();
+    assert_eq!(
+        err,
+        RuleError::Illegal(IllegalReason::InvalidCardTarget),
+        "{err}"
+    );
+}
+
+#[test]
+fn only_the_factory_shift_card_still_lies_beside_the_factory() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::FactoryShift]);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 12);
+    let fid = g.home_factory(P0).unwrap().id;
+    let buy = Action::BuyCard {
+        card: Card::FactoryShift,
+        from: crate::action::PaySource::Factory(fid),
+        target: None,
+    };
+    assert!(buys(&g).contains(&buy));
+    g.apply(buy).unwrap();
+    assert_eq!(g.state.stored_card[P0.idx()], Some(Card::FactoryShift));
+    g.state.bought_this_turn = false;
+    assert!(buys(&g).is_empty(), "der Platz ist belegt");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn version_3_cards_cost_half_of_the_basic_price() {
+    use crate::cards::Card;
+    let g = card_game(&[Card::Bend]);
+    assert_eq!(g.territory_card_price(Card::Shorten), [3, 0, 0]);
+    assert_eq!(g.territory_card_price(Card::Hop), [4, 0, 0]);
+    assert_eq!(g.territory_card_price(Card::Bend), [5, 0, 0]);
+    assert_eq!(g.territory_card_price(Card::FactoryShift), [3, 0, 0]);
+    assert_eq!(g.territory_card_price(Card::KingBoost), [0, 1, 0]);
+}
+
+#[test]
+fn the_area_bot_puts_a_card_on_its_best_existing_unit() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Bend, Card::Hop]);
+    g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    let best = g.setup_unit(P0, c(&g, 4, 0), 3, 3);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 12);
+    let mut bot = AreaBot::new(1);
+    let a = bot.choose(&g);
+    assert!(
+        matches!(a, Action::BuyCard { card: Card::Bend, target: Some(t), .. } if t == best),
+        "{a:?}"
+    );
 }
