@@ -94,7 +94,9 @@ Menue nicht mehr waehlbar, bleiben aber im Spielkern und in der CLI (`--rule ...
 Felder weggefallen sind.
 
 **Startmenue:** *Spielen* oeffnet zuerst ein Menue; eine Partie beginnt erst mit *Partie
-starten*. Dort stehen Spielerzahl (2 bis 8; ab 5 ein Sechseck-Brett), Bots, Seed, Brettgroesse, Wertung, Kartenzahl und alle
+starten*; *Neue Partie* oben neben *Spielen* oeffnet es jederzeit wieder. Dort stehen **Brettform** (Dreieck, Quadrat,
+Fuenfeck bis Achteck), Spielerzahl, *Mit Bots auffuellen*, je Platz **Mensch oder Bot-Stufe** (stark, flaeche, gierig,
+zufall; jeder Bot einzeln), Seed, Brettgroesse, Wertung, Kartenzahl und alle
 Gebiets-Werte (Preise, Wieder anbinden, Umschliessen, Brettrand, Kartenpreis). Leere Felder gelten
 als Standard, *Alles zuruecksetzen* leert sie. Die Einstellungen merkt sich der Browser. Technisch
 schickt die Seite sie als Text `territory=1,name=wert,...` an `sv_set_rules` (`crates/web`); die
@@ -113,6 +115,13 @@ Rechnung steht im Viewer (`terrIncome`, `terrLevelStatus`), der Spielkern aender
 niemandem gehoert; sobald es einem Spieler gehoert, nehmen sie dessen Farbe an (Lager an der
 Fabrik: Summe je Kategorie in der Farbe des Besitzers). Das ist nur Anzeige: Preise und Lager
 zaehlen im Gebietsmodus nach Kategorie.
+
+**Uebersicht rechts neben dem Brett (Version 3):** Die rechte Spalte ist eine Uebersicht fuer den Spieler, der du bist
+(in Bot-Partien und bei mehreren Menschen: der gerade Ziehende): Lager der Fabrik (Flaeche und Rohstoffe), Einkommen je
+Runde, je Figurenstufe was noch fehlt oder in wie vielen Runden sie bezahlbar ist, die Karte neben der Fabrik, darunter
+der Kartenmarkt mit dem, was zum Kaufen noch fehlt. Lange Erklaerungen sind eingeklappt. Partie-Angaben (Seed, Regeln,
+Spielerkacheln, "Dieser Zug", Bedienung, Legende) stehen eingeklappt ganz unten unter *Weitere Angaben*. Auf schmalen
+Bildschirmen (unter 900 px) liegt die Uebersicht unter dem Brett.
 
 **Wege vorplanen (Premoves):** Eigene Figur anklicken, dann mit der Maus ueber das Zielfeld
 fahren und **Shift** halten: der kuerzeste freie Weg wird gestrichelt gezeigt. **Shift+Klick**
@@ -483,14 +492,15 @@ spielbar).
 | `terr_control` | 0 | **Kontrollfelder** (Schalter, Standard aus): als bearbeitet zaehlen (Zaehler, Ernte, Kat-3-Bonus) auch alle Felder in Zugreichweite einer eigenen Figur: gerade Strahlen bis zur Reichweite, der erste Stein (egal wessen) stoppt den Strahl, ein Sprung geht ueber genau einen; der Koenig kontrolliert seine Nachbarn. Figuren, die nicht auf mit der Fabrik verbundenem Land stehen, kontrollieren nichts. Braucht `terr_occupy` (`Game::worked_cells`) |
 | `kat3_spread` | 1 | Kat-3-Felder gleichmaessig: je Ecke zwei **einzelne** Felder statt einer Ader aus zwei (`cells3 = 2`, `veins3 = 1`), die Startpunkte nach groesstem Abstand zu den bisherigen Kat-3-Feldern und zum Brettrand gewaehlt, im eigenen Gebiet mindestens 2 Felder vom Start entfernt |
 | `terr_move` | 1 | **Fabrik-Umzug / Neubau durch den Koenig** (`Action::RebuildFactory`, JSON `rebuild_factory`), siehe unten |
-| `terr_move_k1`, `terr_move_k2` | 4, 2 | Preis des freiwilligen Umzugs aus dem Lager der Fabrik (Annahme, nicht von der Regel vorgegeben) |
+| `terr_move_k1`, `terr_move_k2` | 0, 0 | Preis des freiwilligen Umzugs aus dem Lager der Fabrik. **Seit der fuenften Aenderung kostenlos** (vorher 4 Kat 1 + 2 Kat 2); wer den Preis zurueckwill, setzt die Werte |
+| `board_corners` | 0 | Brettform unabhaengig von der Spielerzahl: 3 = Dreieck, 4 = Quadrat, 5 bis 8 = Fuenfeck bis Achteck (Sechseck-Felder). 0 = nach Spielerzahl wie bisher. Die Startecken der Spieler waehlt der Spielkern **fair** (`config::fair_corners`, siehe unten) |
 | `terr_rebuild` | 3 | Bauzeit in Runden, wenn die Fabrik zerstoert wurde (fest, egal wo, kostenlos) |
 | `terr_cats` | 3 | Kat 1 bis 3 gibt es |
 | `veins1..3`, `cells1..3`, `center_cells`, `center_mix` | 1/1/2, 1/1/1, 2, 0 | weniger Rohstoffe: 20 Vorkommen statt 29 auf dem 10x10-Brett (8 Kat 1, 4 Kat 2, 8 Kat 3; Kat 3 je Ecke als zwei einzelne Felder, vorher eine Ader aus zwei) |
 
 **Fabrik-Umzug** (freiwillig, die Fabrik steht und der Koenig steht auf verbundenem eigenem Land ohne Fabrik):
 
-- Der Koenig zahlt 4 Kat 1 + 2 Kat 2 aus dem Lager, **die alte Fabrik faellt weg**, auf dem Feld des Koenigs entsteht
+- Der Umzug ist **kostenlos** (`terr_move_k1/k2 = 0`; einstellbar), **die alte Fabrik faellt weg**, auf dem Feld des Koenigs entsteht
   die neue. Lager, Flaeche und die liegende Karte ziehen mit um.
 - Dauer = **halbe Entfernung** zum alten Platz in Feldern (Schritte ueber Nachbarfelder), aufgerundet, mindestens 1
   Runde (`Game::relocation_rounds`): 1 bis 2 Felder = 1 Runde, 3 bis 4 = 2, ... quer ueber das 10x10-Brett (18) = 9.
@@ -560,8 +570,8 @@ ein Stresstest, bei dieser Stichprobe rauscht jede Zahl um 15 Prozentpunkte):
   (`flaeche`: ein Vorkommen ohne Figur ist nur ein Drittel wert; `stark`: Gewicht `work` fuer eigene Figuren auf
   verbundenen Kat-1/2-Feldern); die Ernte bleibt trotzdem niedrig (ob andere Gewichte mehr herausholen, ist nicht
   untersucht).
-- Der Fabrik-Umzug (4 Kat 1 + 2 Kat 2) ist damit selten bezahlbar: Kat 2 kommt nur etwa 9-mal je Partie, davon ein
-  Teil an den Gegner. Wer ihn haeufiger will, senkt `terr_move_k1` / `terr_move_k2` oder `terr_ripen2`.
+- Der Fabrik-Umzug war damals mit 4 Kat 1 + 2 Kat 2 selten bezahlbar (Kat 2 kommt nur etwa 9-mal je Partie, davon ein
+  Teil an den Gegner); seit der fuenften Aenderung ist er kostenlos.
 - Die Karten sind jetzt billig genug, dass der Flaechen-Bot sie 12-mal je Partie kauft (vorher 6): Kuerzer 175,
   Sprung 111, Koenigs-Boost 110, Ecke 99 Kaeufe in 40 Partien.
 
@@ -624,11 +634,45 @@ Mitte und baut die Fabrik dort neu, sobald der Umzug bezahlbar ist; sonst spielt
 |---|---|---|
 | Bot ohne Umzug | 50 % | 18 % |
 | Umzug zur Mitte, Preis 4 Kat 1 + 2 Kat 2 | 20 % (Umzug im Schnitt Runde 33) | 5 % (Runde 37) |
-| Umzug zur Mitte, gratis | 45 % (Runde 8) | 0 % (Runde 8, Partie nur 28 Runden) |
+| Umzug zur Mitte, gratis (**jetzt Standard**) | 45 % (Runde 8) | 0 % (Runde 8, Partie nur 28 Runden) |
 
 Die Kosten (2 Kat 2 gibt es erst nach etwa 20 Runden) verhindern den Umzug in den ersten Runden; ein frueher Umzug
 ohne Preis ist gegen den schwachen Bot gleichwertig, gegen den starken Bot ein Verlust (wehrlos und der Koenig auf dem
 Bauplatz). Das gilt fuer einen plumpen Hilfsbot; ein Mensch, der den Zeitpunkt abpasst, ist damit nicht widerlegt.
+Nach der Umstellung auf den kostenlosen Umzug neu gemessen (40 Partien je Zeile): der Hilfsbot gewinnt 40 % gegen
+`flaeche` und 8 % gegen `stark`; der Umzug macht ihn also nicht zur Gewinnstrategie. Ob er gegen `flaeche` schlechter
+ist als der Bot ohne Umzug (50 %), laesst sich bei 40 Partien (rund 8 Prozentpunkte Rauschen) nicht sagen.
+
+**Fuenfte Aenderung der Version 3: kostenloser Umzug, freie Brettform, Auffuell-Bots.**
+
+- **Umzug kostenlos**, damit man ihn schon frueh nutzen kann (siehe oben). Die Wartezeit (halbe Entfernung) und die
+  Folgen waehrend des Baus (kein Ertrag, wehrlos, Koenig gesperrt) bleiben der Preis.
+- **Jedes Brett mit jeder Spielerzahl**, solange eine Ecke frei ist und niemand einen Vorteil hat. Die Startecken
+  sind **fair**, wenn die Symmetrien des Bretts (Drehungen und Spiegelungen, die die Eckenmenge auf sich abbilden)
+  jede Ecke in jede andere ueberfuehren (`config::corners_are_fair`, `fair_corners`, `fair_player_count`). Plaetze
+  am Tisch bei gewuenschter Spielerzahl, *mit Auffuellen* (aus dem Menue-Test aller Bretter gelesen):
+
+  | Brett | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+  |---|---|---|---|---|---|---|---|
+  | Dreieck | 2 | 3 | | | | | |
+  | Quadrat | 2 | **4** | 4 | | | | |
+  | Fuenfeck | 2 | **5** | **5** | 5 | | | |
+  | Sechseck | 2 | 3 | 4 | **6** | 6 | | |
+  | Siebeneck | 2 | **7** | **7** | **7** | **7** | 7 | |
+  | Achteck | 2 | **4** | 4 | **8** | **8** | **8** | 8 |
+
+  Fett = es kommen Auffuell-Bots dazu. Ohne Auffuellen spielen genau die gewuenschten Spieler; wo oben Bots
+  dazukommen wuerden, warnt das Menue, dass jemand einen Vorteil hat.
+- **Auffuell-Bots** (`sv_plan`): gehen die gewuenschten Spieler nicht auf, kommt ein Bot dazu, bis die Eckenmenge fair
+  ist (3 auf dem Quadrat: 4 Plaetze; 5 auf dem Sechseck: 6). Der Auffuell-Bot ist ein ganz normaler Spieler auf der
+  freien Ecke, kein Sonderfall im Spielkern. Im Menue laesst sich *Mit Bots auffuellen* ausschalten (Standard: an);
+  dann spielen genau die gewuenschten Spieler auf den am weitesten gestreuten Ecken, und das Menue warnt, dass jemand
+  einen Vorteil haben kann.
+- **Bot-Stufe je Platz**: `sv_new_game_list` startet eine Partie aus `seed|ecken|platzcodes`; Codes 0 gierig, 1 zufall,
+  2 Mensch, 3 stark, 4 flaeche. Die Namen der Stufen sind grob: `stark` und `flaeche` liegen in den Messungen oben nahe
+  beieinander (20 : 20 beim Stapeln), `gierig` und `zufall` sind klar schwaecher.
+- Die Sitzverteilung der Bots auf den neuen Brettern liegt bei den kleinen Stichproben im Rauschen; einen echten
+  Fairness-Test gibt es nur fuer die Symmetrie der Ecken, nicht fuer die Rohstoffverteilung jeder Brettform.
 
 ## Karten
 

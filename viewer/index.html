@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: links das isometrische Brett mit Steuerleiste, rechts die Spieltafel; Kartenmarkt und Lager direkt unter dem Brett; unter 900px gestapelt. */
+/* Layout: links das isometrische Brett mit Steuerleiste, rechts die Uebersicht (Lager, Einkommen, Figuren, Kartenmarkt; Partie-Angaben eingeklappt ganz unten); unter 900px gestapelt. */
 :root {
   --bg: #e9ece6;
   --surface: #f8f9f5;
@@ -133,9 +133,14 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .status .what { font-weight: 600; }
 
 .panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.below { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; margin-top: 14px; align-items: start; }
-.below > [hidden] { display: none; }
-.below .panel { gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.overview { gap: 14px; }
+.overview > .panel { gap: 6px; }
+.overview > .panel + .panel { border-top: 1px solid var(--line); padding-top: 12px; }
+details.explain > summary { cursor: pointer; color: var(--muted); font-size: 0.76rem; margin-top: 2px; }
+details.explain[open] > summary { margin-bottom: 2px; }
+details.more { border-top: 1px solid var(--line); padding-top: 10px; }
+details.more > summary { cursor: pointer; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.moreinner { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
 .panel h2 {
   font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
   color: var(--muted); margin-bottom: 8px;
@@ -240,6 +245,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .group label.check { flex-direction: row; align-items: flex-start; gap: 8px; }
 .group label.check input { margin-top: 3px; }
 .group label.check span { font-weight: 600; }
+.seats { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 8px 14px; }
+.seats label { flex-direction: column; }
+.seats .chip { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: baseline; }
+.group label.check small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.group label.check.warn small { color: #b3261e; }
 .menufoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; }
 .menufoot .note { margin: 0; }
 .btn { padding: 8px 12px; cursor: pointer; font-weight: 650; }
@@ -261,6 +271,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <button id="modePlay" type="button" aria-pressed="false">Spielen</button>
       <button id="modeView" type="button" aria-pressed="true">Partien ansehen</button>
     </div>
+    <button class="btn" id="newGame" type="button" title="Brett, Spielerzahl, Bots und Regeln einstellen">Neue Partie</button>
   </div>
   <div class="pick" id="viewPick">
     <label class="lead" for="game">Partie</label>
@@ -281,28 +292,30 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <p class="note" id="presetNote"></p>
     </div>
     <div class="groups" id="menuGroups">
-      <fieldset class="group">
+      <fieldset class="group wide" id="gameGroup">
         <legend>Spiel</legend>
-        <label for="setPlayers"><span>Spieler</span>
-          <select id="setPlayers">
-            <option value="2" selected>2 (Quadrat, gegenüber)</option>
-            <option value="3">3 (Dreieck)</option>
-            <option value="4">4 (Quadrat)</option>
-            <option value="5">5 (Sechseck-Brett)</option>
-            <option value="6">6 (Sechseck-Brett)</option>
-            <option value="7">7 (Sechseck-Brett)</option>
-            <option value="8">8 (Sechseck-Brett)</option>
-          </select>
+        <div class="inner">
+          <label for="setBoard"><span>Brett</span>
+            <select id="setBoard">
+              <option value="4" selected>Quadrat (4 Ecken)</option>
+              <option value="3">Dreieck (3 Ecken)</option>
+              <option value="5">Fünfeck (5 Ecken, Sechseck-Felder)</option>
+              <option value="6">Sechseck (6 Ecken)</option>
+              <option value="7">Siebeneck (7 Ecken)</option>
+              <option value="8">Achteck (8 Ecken)</option>
+            </select>
+          </label>
+          <label for="setPlayers"><span>Spieler</span>
+            <select id="setPlayers"></select>
+          </label>
+          <label for="setSeed"><span>Seed (leer = zufällig)</span>
+            <input id="setSeed" type="number" min="0" step="1" inputmode="numeric" placeholder="zufällig">
+          </label>
+        </div>
+        <label class="check" for="setFill"><input type="checkbox" id="setFill" checked>
+          <span>Mit Bots auffüllen, damit niemand einen Vorteil hat <small id="fillNote"></small></span>
         </label>
-        <label for="setSelf"><span>Spieler A</span>
-          <select id="setSelf"><option value="2" selected>Du</option><option value="3">Bot „stark“</option><option value="4">Bot „fläche“</option><option value="0">Bot „gierig“</option></select>
-        </label>
-        <label for="setOpp"><span>Gegner (alle anderen)</span>
-          <select id="setOpp"><option value="3" selected>Bot „stark“</option><option value="4">Bot „fläche“</option><option value="0">Bot „gierig“</option><option value="1">Bot „zufall“</option><option value="2">Menschen, ein Gerät</option></select>
-        </label>
-        <label for="setSeed"><span>Seed (leer = zufällig)</span>
-          <input id="setSeed" type="number" min="0" step="1" inputmode="numeric" placeholder="zufällig">
-        </label>
+        <div class="seats" id="setSeats" role="group" aria-label="Wer spielt welchen Platz"></div>
       </fieldset>
     </div>
     <p class="error" id="menuError" hidden></p>
@@ -348,44 +361,46 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <div class="actions" id="actions"></div>
       <div><button class="btn" id="toNow" type="button" hidden>Zur aktuellen Stellung</button></div>
     </div>
-    <div class="below">
-      <div id="marketBox" class="panel" hidden>
-        <h2>Kartenmarkt</h2>
-        <p class="note" id="marketNote"></p>
-        <div class="legend" id="marketLegend"></div>
-        <ul class="market" id="market"></ul>
-      </div>
-      <div id="stockBox" class="panel" hidden>
-        <h2 id="stockTitle">Lager</h2>
-        <div class="stock" id="stock"></div>
-      </div>
-    </div>
   </section>
 
-  <aside class="panel">
-    <div id="playBox" hidden>
-      <h2>Spielen</h2>
-      <button class="btn primary" id="openMenu" type="button" style="width:100%">Neue Partie / Einstellungen …</button>
-      <p class="error" id="playError" hidden></p>
-      <p class="note">Wege vorplanen: Figur anklicken, dann <b>Shift</b> halten (zeigt den Weg bis zum Feld unter der Maus), <b>Shift+Klick</b> geht ihn von selbst Zug um Zug. Mit <b>Strg+Klick</b> wählst du Kacheln einzeln, Strg loslassen startet. <b>Esc</b> bricht ab.</p>
+  <aside class="panel overview" aria-label="Übersicht">
+    <p class="error" id="playError" hidden></p>
+    <p class="error" id="error" hidden></p>
+    <div id="stockBox" class="panel" hidden>
+      <h2 id="stockTitle">Übersicht</h2>
+      <div class="stock" id="stock"></div>
     </div>
-    <div>
-      <h2>Partie</h2>
-      <div class="summary" id="summary"></div>
-      <p class="error" id="error" hidden></p>
+    <div id="marketBox" class="panel" hidden>
+      <h2>Kartenmarkt</h2>
+      <details class="explain"><summary>So funktioniert der Kauf</summary><p class="note" id="marketNote"></p></details>
+      <div class="legend" id="marketLegend"></div>
+      <ul class="market" id="market"></ul>
     </div>
-    <div>
-      <h2>Spieler</h2>
-      <div class="players" id="players"></div>
-    </div>
-    <div>
-      <h2>Dieser Zug</h2>
-      <ol class="events" id="events"></ol>
-    </div>
-    <details class="legend" open>
-      <summary>Legende</summary>
-      <dl id="legend"></dl>
-      <p class="note" style="margin-top:10px">Auf dem Quadrat heißen Felder wie beim Schach: Buchstabe für die Spalte, Zahl für die Reihe. Gebiete (Wald, Himmel, Steppe, Fels und mehr) sind nur Farbe, ohne Spielwirkung. Tippe oder zeige auf ein Feld für Details. Tasten: Leertaste, ← →, Pos1, Ende.</p>
+    <details class="more" id="more">
+      <summary>Weitere Angaben</summary>
+      <div class="moreinner">
+        <div id="playBox" hidden>
+          <h2>Bedienung</h2>
+          <p class="note">Wege vorplanen: Figur anklicken, dann <b>Shift</b> halten (zeigt den Weg bis zum Feld unter der Maus), <b>Shift+Klick</b> geht ihn von selbst Zug um Zug. Mit <b>Strg+Klick</b> wählst du Kacheln einzeln, Strg loslassen startet. <b>Esc</b> bricht ab.</p>
+        </div>
+        <div>
+          <h2>Partie</h2>
+          <div class="summary" id="summary"></div>
+        </div>
+        <div>
+          <h2>Spieler</h2>
+          <div class="players" id="players"></div>
+        </div>
+        <div>
+          <h2>Dieser Zug</h2>
+          <ol class="events" id="events"></ol>
+        </div>
+        <details class="legend">
+          <summary>Legende</summary>
+          <dl id="legend"></dl>
+          <p class="note" style="margin-top:10px">Auf dem Quadrat heißen Felder wie beim Schach: Buchstabe für die Spalte, Zahl für die Reihe. Gebiete (Wald, Himmel, Steppe, Fels und mehr) sind nur Farbe, ohne Spielwirkung. Tippe oder zeige auf ein Feld für Details. Tasten: Leertaste, ← →, Pos1, Ende.</p>
+        </details>
+      </div>
     </details>
   </aside>
 </main>
@@ -1988,7 +2003,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   // ----- Oberflaeche aktualisieren ------------------------------------------------------------
   /** Wessen Lager und Kaufmoeglichkeiten gezeigt werden: du (gegen Bots), sonst wer am Zug ist. */
   function focusPlayer(f) {
-    if (mode === "play" && live && R === liveR && !live.watch && live.opponent !== 2) return 0;
+    if (mode === "play" && live && R === liveR && !live.watch && !live.hotseat) return Math.max(0, live.seats.indexOf("mensch"));
     return f.current;
   }
   /** Rohstoffe als HTML: Kat-1-Farben als Rauten, Quader als Quadrate, Baelle als Kreise, je Farbe. */
@@ -2092,6 +2107,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const bits = r.map((n, i) => (n > 0 ? `Kat ${i + 1} nach ${n}` : "")).filter(Boolean);
     return ` – aber erst, wenn das Feld dir ${bits.join(", ")} Runden gehört (die Zahl auf dem Vorkommen zählt herunter; ein Umfärben setzt sie zurück)`;
   }
+  /** Lange Erklaerung, standardmaessig eingeklappt: die Uebersicht rechts soll Zahlen zeigen, keine Absaetze. */
+  const explain = (text) => `<details class="explain"><summary>Erklärung</summary><span class="sub">${text}</span></details>`;
   function renderTerritoryStock(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
     const rows = [];
@@ -2102,12 +2119,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     if (fac.building > 0) {
       rows.push(`<div class="loc"><b>Fabrik im Bau auf ${cellName(fac.cell)}: noch ${fac.building} Runde${fac.building === 1 ? "" : "n"}</b><div class="res"><span>Fläche: <b style="display:inline">${(f.area || [])[p] || 0}</b></span>${resHtml(fac.storage, p)}</div>` +
-        `<span class="sub">Solange sie nicht steht: kein Einkommen, keine Ernte (die Erntezähler stehen still), nichts zu bauen oder zu kaufen. Das Land ist nicht verbunden, alle Figuren sind wehrlos (sie färben nichts und schlagen nicht) und der König darf sich nicht bewegen.</span></div>`);
+        explain("Solange sie nicht steht: kein Einkommen, keine Ernte (die Erntezähler stehen still), nichts zu bauen oder zu kaufen. Das Land ist nicht verbunden, alle Figuren sind wehrlos (sie färben nichts und schlagen nicht) und der König darf sich nicht bewegen.") + `</div>`);
       return rows;
     }
     const area = (f.area || [])[p] || 0;
-    rows.push(`<div class="loc"><b>Fabrik auf ${cellName(fac.cell)}</b><div class="res"><span>Fläche: <b style="display:inline">${area}</b></span>${resHtml(fac.storage, p)}</div>` +
-      `<span class="sub">Am Ende deines Zugs sammelt sie alle Felder ein, die an ihr hängen (je 1 Fläche), dazu die Rohstoffe auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.</span></div>`);
+    rows.push(`<div class="loc"><b>Lager der Fabrik auf ${cellName(fac.cell)}</b><div class="res"><span>Fläche: <b style="display:inline">${area}</b></span>${resHtml(fac.storage, p)}</div>` +
+      explain(`Am Ende deines Zugs sammelt sie alle Felder ein, die an ihr hängen (je 1 Fläche), dazu die Rohstoffe auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.`) + `</div>`);
     const color = PLAYER[p].color;
     const req = (kind, have, need) => {
       const ok = have >= need;
@@ -2258,7 +2275,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (!(R.market || []).length) cardsNote = "In dieser Partie gibt es keine Karten.";
       else if (!acting) cardsNote = "Karten kaufst du, wenn du am Zug bist.";
       else if (f.bought_this_turn) cardsNote = "In diesem Zug hast du schon eine Karte gekauft.";
-      else if (!buys.length) cardsNote = "Gerade ist keine Karte bezahlbar (der Markt unter dem Brett zeigt, was fehlt).";
+      else if (!buys.length) cardsNote = "Gerade ist keine Karte bezahlbar (der Kartenmarkt in der Übersicht zeigt, was fehlt).";
       body = `<div class="fc-body">` +
         `<p class="muted">Einkommen je Runde: ${escapeHtml(incomeText(inc))}</p>` +
         (bonusOn() ? `<p class="muted">Kat 3: ${inc.k3} verbundene${inc.k3 === 1 ? "s" : ""} Feld${inc.k3 === 1 ? "" : "er"} = ${inc.bonus} Fläche je Runde extra; das nächste bringt ${bonusArea(inc.k3 + 1)}.</p>` : "") +
@@ -2413,7 +2430,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (p === undefined || p === null || !f.alive[p]) { box.hidden = true; return; }
     box.hidden = false;
     const me = mode === "play" && live && R === liveR && live.seats[p] === "mensch";
-    $("stockTitle").textContent = `Lager von Spieler ${playerName(p)}${me ? " (du)" : ""}`;
+    $("stockTitle").textContent = `Übersicht · Spieler ${playerName(p)}${me ? " (du)" : ""}`;
     if (isTerr()) { $("stock").innerHTML = renderTerritoryStock(f, p).join(""); return; }
     const rows = [];
     const carried = (f.carried || [])[p] || [];
@@ -2780,7 +2797,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function seatLabel(p) {
     const name = (R.bots || [])[p] || "";
     if (name !== "mensch") return R === liveR ? `Bot ${name}` : name;
-    return live && live.opponent === 2 ? "Mensch" : "du";
+    return live && live.hotseat ? "Mensch" : "du";
   }
   function escapeHtml(s) {
     return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -3008,7 +3025,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           ? "Lager an der Fabrik: Summe je Kategorie (Raute Kat 1, Quadrat Kat 2) in der Farbe des Besitzers."
           : "Lager an der Fabrik: Summe je Kategorie (Raute Kat 1, Quadrat Kat 2, Kreis Kat 3) in der Farbe des Besitzers. Kat 3 lässt sich in der Fabrik gegen Fläche tauschen: k Stück ergeben 2^k.",
         crystal: `Kat 1 (Raute), Hauptrohstoff. Weiß, solange das Feld niemandem gehört; dann in der Farbe des Besitzers. Die Zahl zählt herunter (alle ${pr[0] || 3} Runden): bei 0 erntet die Fabrik es einmal, dann beginnt der Zähler von vorn. Ohne stehende Fabrik oder ohne Anbindung steht der Zähler still; ein Umfärben setzt ihn zurück.${R.config.terr_occupy ? " Er läuft nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (Zahl grau mit Pausenbalken = er steht still)." : ""}`,
-        ingot: `Quader (Kat 2, Quadrat): wie Kat 1, Erntezeit ${pr[1] || 10} Runden. Rohstoffe gibt es für Karten und den Fabrik-Umzug.`,
+        ingot: `Quader (Kat 2, Quadrat): wie Kat 1, Erntezeit ${pr[1] || 10} Runden. Rohstoffe gibt es für Karten (und für den Fabrik-Umzug, wenn er etwas kosten soll).`,
         grain: R.config.terr_bonus
           ? "Ball (Kat 3, Kreis): wird nicht geerntet. Jeder Ball auf deinem mit der Fabrik verbundenen Land zählt: k Bälle bringen dir am Ende jedes Zugs zusätzlich 2^k Fläche (2, 4, 8, 16 …), ohne Zähler. Umfärben nimmt ihn dir."
           : `Ball (Kat 3, Kreis): wie Kat 1, Erntezeit ${pr[2] || 10} Runden. Das Lager tauscht ihn gegen Fläche: k Stück ergeben 2^k Fläche.`,
@@ -3456,14 +3473,39 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   // ----- Startmenue: alle Regeln einstellbar ---------------------------------------------------
   // Die Vorgaben (ph) spiegeln Config::new im Spielkern; sie erscheinen nur grau als Platzhalter.
   // Gesendet wird nur, was jemand eintippt: leere Felder lassen dem Spielkern seinen Standard.
-  const menuPlayers = () => Number($("setPlayers").value) || 2;
+  /** Brett (Eckenzahl), verlangte Spielerzahl und der Plan des Spielkerns (Plaetze samt Auffuell-Bots). */
+  const menuBoard = () => Number($("setBoard").value) || 4;
+  const menuAsked = () => Number($("setPlayers").value) || 2;
+  const BOARD_NAME = { 3: "Dreieck", 4: "Quadrat", 5: "Fünfeck", 6: "Sechseck", 7: "Siebeneck", 8: "Achteck" };
+  /** Platzarten: Code im Spielkern, Anzeige. Die Reihenfolge ist die in der Liste. */
+  const SEAT_KINDS = [
+    [2, "Mensch (ein Gerät)"],
+    [3, "Bot „stark“ – schwer, rechnet voraus"],
+    [4, "Bot „fläche“ – mittel bis schwer"],
+    [0, "Bot „gierig“ – leicht"],
+    [1, "Bot „zufall“ – sehr leicht"],
+  ];
+  const SEAT_DEFAULT = [2, 3, 3, 3, 3, 3, 3, 3];
+  let seatChoice = SEAT_DEFAULT.slice();   // zuletzt gewaehlte Platzart je Platz
+  let menuPlan = { players: 2, added: 0, fair: true, corners: [0, 2] };
+  /** Plan fuer Brett, Spielerzahl und Auffuellen vom Spielkern (ohne Spielkern: ohne Bots). */
+  function planNow() {
+    const board = menuBoard(), k = menuAsked(), fill = $("setFill").checked ? 1 : 0;
+    if (!wasm || typeof wasm.sv_plan !== "function") return { players: k, added: 0, fair: true, corners: [] };
+    try {
+      return callWasm("sv_plan", putInput(`${board},${k},${fill}`));
+    } catch (err) {
+      return { players: k, added: 0, fair: true, corners: [] };
+    }
+  }
+  const menuPlayers = () => menuPlan.players;
   /** Regelstufe aus dem Menue (leer = 3): bestimmt einige Platzhalter. */
   const menuVer = () => { const v = $("rule_terr_ver"); return v && v.value.trim() !== "" ? Number(v.value) : 3; };
   const marketDefault = (p) => (p <= 4 ? 2 * p : p);
-  const sideRange = (p) => (p === 3 ? [6, 40] : p >= 5 ? [8, 30] : [6, 64]);
+  const sideRange = (corners) => (corners === 3 ? [6, 40] : corners >= 5 ? [8, 30] : [6, 64]);
   const RULE_GROUPS = [
     { title: "Brett", fields: [
-      { key: "side", label: "Seitenlänge", ph: () => "10", hint: () => { const [a, b] = sideRange(menuPlayers()); return `Felder je Kante, bei ${menuPlayers()} Spielern ${a} bis ${b}.`; } },
+      { key: "side", label: "Seitenlänge", ph: () => "10", hint: () => { const [a, b] = sideRange(menuBoard()); return `Felder je Kante, auf dem ${BOARD_NAME[menuBoard()]} ${a} bis ${b}.`; } },
     ] },
     { title: "Ende und Wertung", fields: [
       { key: "score_after", label: "Wertung nach Runde", ph: () => "100", hint: () => "Hat bis dahin kein König gewonnen, zählen eigene Felder + Summe der Figurenstufen. 0 = keine Wertung." },
@@ -3489,11 +3531,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_enclose_edge", label: "Brettrand zählt als Wand", ph: () => "0", hint: () => "0 = eine neutrale Fläche am Brettrand wird nie umschlossen; 1 = der Rand ist eine Wand (ein „L“ aus der Ecke holt ein Quadrat)" },
       { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => (menuVer() === 3 ? "8" : "16"), hint: () => "Preise der Karten mal diese Zahl durch 16. Version 2 (16): Kürzer 6, Ecke 10, Sprung 8, Fabrik rücken 6 Kat 1, Königs-Boost 3 Kat 2 je Stufe. Version 3 (8): Kürzer 3, Ecke 5, Sprung 4, Fabrik rücken 3, Königs-Boost 1 Kat 2 je Stufe." },
     ] },
-    { title: "Version 3: Fabrik, Ernte, Rohstoffe", wide: true, grid: true, note: "Fabrik-Umzug: der König baut die Fabrik auf seinem Feld (verbundenes Land) neu, die alte fällt weg und ihr Lager zieht mit um; das kostet Rohstoffe und dauert die halbe Entfernung vom alten Platz (aufgerundet, mindestens 1 Runde; der Tooltip über deinem Land nennt die Dauer vorab). Wurde die Fabrik zerstört, baut er sie auf eigenem Land fest in 3 Runden neu (kostenlos). Während des Baus gibt es kein Einkommen, die Erntezähler stehen still, das Land ist nicht verbunden (alle Figuren wehrlos, sie färben nichts), der König darf sich nicht bewegen. Erntezähler: jedes Vorkommen wird alle N Runden einmal geerntet, dann beginnt es von vorn; er läuft aber nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (sonst pausiert er). Kat 3 wird nicht geerntet: k Kat-3-Felder auf dem mit der Fabrik verbundenen Land bringen am Ende jedes eigenen Zugs zusätzlich 2^k Fläche (kein Feld: nichts). Die Kat-3-Felder liegen einzeln und gleichmäßig verteilt auf dem Brett. Figuren ab Stufe 2 kosten doppelt (200 / 400 / 800 Fläche); Kat 2 wird alle 5 Runden geerntet. Eine Karte sperrt die verbesserte Figur für diesen Zug.", fields: [
+    { title: "Version 3: Fabrik, Ernte, Rohstoffe", wide: true, grid: true, note: "Fabrik-Umzug: der König baut die Fabrik auf seinem Feld (verbundenes Land) neu, die alte fällt weg und ihr Lager zieht mit um; das kostet nichts (Kat 1 / Kat 2 lassen sich unten als Preis einstellen) und dauert die halbe Entfernung vom alten Platz (aufgerundet, mindestens 1 Runde; der Tooltip über deinem Land nennt die Dauer vorab). Wurde die Fabrik zerstört, baut er sie auf eigenem Land fest in 3 Runden neu (kostenlos). Während des Baus gibt es kein Einkommen, die Erntezähler stehen still, das Land ist nicht verbunden (alle Figuren wehrlos, sie färben nichts), der König darf sich nicht bewegen. Erntezähler: jedes Vorkommen wird alle N Runden einmal geerntet, dann beginnt es von vorn; er läuft aber nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (sonst pausiert er). Kat 3 wird nicht geerntet: k Kat-3-Felder auf dem mit der Fabrik verbundenen Land bringen am Ende jedes eigenen Zugs zusätzlich 2^k Fläche (kein Feld: nichts). Die Kat-3-Felder liegen einzeln und gleichmäßig verteilt auf dem Brett. Figuren ab Stufe 2 kosten doppelt (200 / 400 / 800 Fläche); Kat 2 wird alle 5 Runden geerntet. Eine Karte sperrt die verbesserte Figur für diesen Zug.", fields: [
       { key: "terr_cycle", label: "Erntezähler je Vorkommen", ph: () => "1", hint: () => "1 = jedes Vorkommen wird alle N Runden (Erntezeit) einmal geerntet; 0 = Version 2 (nach der Reifezeit jede Runde)." },
       { key: "terr_move", label: "König baut die Fabrik neu", ph: () => "1", hint: () => "1 = Umzug und Neubau nach einer Zerstörung erlaubt; 0 = aus." },
-      { key: "terr_move_k1", label: "Umzug: Kat 1", ph: () => "4", hint: () => "Kosten aus dem Lager der Fabrik." },
-      { key: "terr_move_k2", label: "Umzug: Kat 2", ph: () => "2" },
+      { key: "terr_move_k1", label: "Umzug: Kat 1", ph: () => "0", hint: () => "0 = der Umzug ist kostenlos. Sonst Kosten aus dem Lager der Fabrik." },
+      { key: "terr_move_k2", label: "Umzug: Kat 2", ph: () => "0" },
       { key: "terr_rebuild", label: "Neubau nach Zerstörung (Runden)", ph: () => "3", hint: () => "Fest, egal wo; beim Umzug zählt die Entfernung." },
       { key: "terr_bonus", label: "Kat 3: 2^k Fläche je Runde", ph: () => "1", hint: () => "1 = k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich, Kat 3 wird nicht geerntet; 0 = Kat 3 wird wie Kat 1 geerntet." },
       { key: "terr_occupy", label: "Zähler nur mit eigener Figur", ph: () => "1", hint: () => "1 = der Erntezähler eines Feldes läuft nur, wenn am Ende deines Zugs eine eigene Figur (auch der König) darauf steht, sonst pausiert er (ohne Rückstellung); 0 = er läuft immer. Nur mit Erntezähler." },
@@ -3512,8 +3554,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "center_mix", label: "Kat 2/3 in der Mitte", ph: () => "0", hint: () => "Zusätzliche Felder jeder Regionsfarbe rund um die Kartenmitte." },
     ] },
   ];
-  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), und sind billiger, Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
-  const MENU_KEY = "spacevitan-menu-v3";
+  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), und sind billiger, Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik kostenlos umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
+  const MENU_KEY = "spacevitan-menu-v4";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
   function buildMenu() {
@@ -3568,6 +3610,49 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     refreshMenu();
   }
+  /** Spielerzahl-Liste folgt dem Brett: 2 bis zur Eckenzahl. */
+  function fillPlayerOptions(keep) {
+    const sel = $("setPlayers"), corners = menuBoard();
+    sel.innerHTML = "";
+    for (let n = 2; n <= corners; n++) sel.add(new Option(String(n), String(n)));
+    sel.value = String(Math.min(Math.max(keep || 2, 2), corners));
+  }
+  /** Plan neu holen und die Platzliste (Mensch oder Bot je Platz) darauf abstimmen. */
+  function refreshSeats() {
+    menuPlan = planNow();
+    const k = menuAsked(), total = menuPlan.players;
+    const host = $("setSeats");
+    host.innerHTML = "";
+    for (let i = 0; i < total; i++) {
+      const filler = i >= k;
+      const label = document.createElement("label");
+      const span = document.createElement("span");
+      const chip = document.createElement("i");
+      chip.className = "chip"; chip.style.background = PLAYER[i].color;
+      span.append(chip, `Spieler ${PLAYER[i].name}${filler ? " · Auffüll-Bot" : ""}`);
+      const sel = document.createElement("select");
+      sel.id = `seat_${i}`;
+      for (const [code, text] of SEAT_KINDS) {
+        if (filler && code === 2) continue;
+        sel.add(new Option(text, String(code)));
+      }
+      const want = String(seatChoice[i] === undefined ? 3 : seatChoice[i]);
+      sel.value = [...sel.options].some((o) => o.value === want) ? want : "3";
+      seatChoice[i] = Number(sel.value);
+      sel.addEventListener("change", () => { seatChoice[i] = Number(sel.value); saveMenu(); });
+      label.append(span, sel);
+      host.appendChild(label);
+    }
+    const name = BOARD_NAME[menuBoard()];
+    const fillBox = $("setFill").closest("label");
+    fillBox.classList.toggle("warn", !menuPlan.fair);
+    $("fillNote").textContent = menuPlan.added
+      ? `${k} Spieler auf dem ${name} gehen nicht auf: ${menuPlan.added === 1 ? "ein Bot kommt" : menuPlan.added + " Bots kommen"} dazu (${total} Plätze, alle gleich gestellt).`
+      : menuPlan.fair
+        ? `${k} Spieler auf dem ${name}: alle stehen gleich.`
+        : `Achtung: ${k} Spieler auf dem ${name} stehen nicht gleich (jemand hat einen Vorteil). Mit Auffüllen vermeidest du das.`;
+    refreshMenu();
+  }
   /** Platzhalter und Hinweise folgen der Spielerzahl; belegte Felder bekommen einen Rand. */
   function refreshMenu() {
     const fields = new Map();
@@ -3620,6 +3705,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     return ["territory=1", ...(ver === 3 ? ["terr_v3=1"] : ver === 2 ? ["terr_v2=1"] : []), ...parts].join(",");
   }
+  /** Text in den Eingabepuffer des Spielkerns schreiben; gibt die Laenge zurueck. */
+  function putInput(text) {
+    const bytes = new TextEncoder().encode(text);
+    const ptr = wasm.sv_in_reserve(bytes.length);
+    if (bytes.length) new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
+    return bytes.length;
+  }
   function sendRules(text) {
     if (typeof wasm.sv_set_rules !== "function" || typeof wasm.sv_in_reserve !== "function") {
       if (text) throw new Error("Dieser Spielkern kennt noch keine Regeleinstellungen. Bitte die neueste Seite laden.");
@@ -3638,7 +3730,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         else if (input.value.trim() !== "") rules[input.dataset.rule] = input.value.trim();
       }
       localStorage.setItem(MENU_KEY, JSON.stringify({
-        players: $("setPlayers").value, self: $("setSelf").value, opp: $("setOpp").value, rules,
+        board: $("setBoard").value, players: $("setPlayers").value, fill: $("setFill").checked, seats: seatChoice, rules,
       }));
     } catch (err) { /* Speicher gesperrt: dann eben ohne Merken */ }
   }
@@ -3646,10 +3738,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     try {
       const saved = JSON.parse(localStorage.getItem(MENU_KEY) || "null");
       if (!saved || typeof saved !== "object") return;
-      for (const [id, key] of [["setPlayers", "players"], ["setSelf", "self"], ["setOpp", "opp"]]) {
-        const sel = $(id);
-        if (saved[key] !== undefined && [...sel.options].some((o) => o.value === String(saved[key]))) sel.value = String(saved[key]);
-      }
+      if (saved.board !== undefined && [...$("setBoard").options].some((o) => o.value === String(saved.board))) $("setBoard").value = String(saved.board);
+      fillPlayerOptions(Number(saved.players));
+      if (typeof saved.fill === "boolean") $("setFill").checked = saved.fill;
+      if (Array.isArray(saved.seats)) seatChoice = SEAT_DEFAULT.map((d, i) => (Number.isInteger(saved.seats[i]) ? saved.seats[i] : d));
       for (const input of ruleInputs()) {
         const v = saved.rules && saved.rules[input.dataset.rule];
         if (v === undefined) continue;
@@ -3666,7 +3758,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     $("menuBack").hidden = !canGoBack;
     $("menuStart").textContent = canGoBack ? "Neue Partie starten" : "Partie starten";
     showMenuError("");
-    refreshMenu();
+    refreshSeats();
     window.scrollTo(0, 0);
   }
   function closeMenu() {
@@ -3682,21 +3774,20 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     (window.crypto || window.msCrypto).getRandomValues(a);
     return a[0] % 1000000;
   }
-  function startLive(players, opponent, seed, self) {
+  /** Neue Partie: `seats` sind die Platzarten je Spieler (Codes des Spielkerns), `corners` die Brettform
+   *  (3 bis 8, 0 = nach Spielerzahl). */
+  function startLive(seats, corners, seed) {
     clearTimeout(botTimer);
     playing = false; clearTimeout(timer);
     const s = seed === null || seed === undefined ? randomSeed() : seed;
-    const seatA = self === undefined || self === null ? 2 : self;
-    const lo = s % 4294967296, hi = Math.floor(s / 4294967296);
-    const out = seatA === 2 || typeof wasm.sv_new_game_seats !== "function"
-      ? callWasm("sv_new_game", players, lo, hi, 0, opponent)
-      : callWasm("sv_new_game_seats", players, lo, hi, 0, seatA, opponent);
+    const out = callWasm("sv_new_game_list", putInput(`${s}|0|${corners || 0}|${seats.join(",")}`));
     const header = out.header;
     header.frames = [out.frame];
     header.outcome = out.outcome;
     liveR = prepare(header);
     const watch = out.seats.every((x) => x !== "mensch");
-    live = { legal: out.legal, humanToMove: out.human_to_move, outcome: out.outcome, seats: out.seats, opponent, watch };
+    const humans = out.seats.filter((x) => x === "mensch").length;
+    live = { legal: out.legal, humanToMove: out.human_to_move, outcome: out.outcome, seats: out.seats, hotseat: humans > 1, watch };
     playing = watch; // Zuschauen laeuft sofort los
     R = liveR;
     selected = null; fi = 0; tween = null; hoverCell = null;
@@ -3830,7 +3921,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     box.hidden = false;
     const last = liveR.frames.length - 1;
     const now = liveR.frames[last];
-    const hotseat = live.opponent === 2 || live.watch;
+    const hotseat = live.hotseat || live.watch;
     let hint, sub = "";
     if (live.watch && !live.outcome) {
       hint = playing ? `Bot gegen Bot: Spieler ${playerName(now.current)} ist am Zug …` : "Bot gegen Bot: angehalten.";
@@ -3912,8 +4003,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const note = document.createElement("p");
         note.className = "note";
         note.textContent = buys
-          ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"} im Kartenmarkt unter dem Brett (zusätzlich zum Zug).`
-          : "Karten: im Kartenmarkt unter dem Brett steht, was dir zum Kaufen noch fehlt.";
+          ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"} im Kartenmarkt der Übersicht (zusätzlich zum Zug).`
+          : "Karten: im Kartenmarkt der Übersicht steht, was dir zum Kaufen noch fehlt.";
         actions.appendChild(note);
       }
     }
@@ -4035,7 +4126,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     try {
       sendRules(ruleText());
       closeMenu();
-      startLive(Number($("setPlayers").value), Number($("setOpp").value), seed, Number($("setSelf").value));
+      const seats = menuPlan.players > 0 ? [...Array(menuPlan.players).keys()].map((i) => Number($(`seat_${i}`).value)) : [];
+      startLive(seats, menuBoard(), seed);
       saveMenu();
     } catch (err) {
       // Die alte Partie (falls es eine gibt) bleibt unberuehrt; das Menue bleibt offen.
@@ -4043,16 +4135,24 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       showMenuError(err.message);
     }
   });
-  $("setPlayers").addEventListener("change", refreshMenu);
-  $("openMenu").addEventListener("click", () => openMenu(true));
+  $("setBoard").addEventListener("change", () => { fillPlayerOptions(menuAsked()); refreshSeats(); saveMenu(); });
+  $("setPlayers").addEventListener("change", () => { refreshSeats(); saveMenu(); });
+  $("setFill").addEventListener("change", () => { refreshSeats(); saveMenu(); });
+  $("newGame").addEventListener("click", () => {
+    if (!wasm) return;
+    // Aus der Ansicht heraus erst in den Spielmodus (das legt die laufende Partie wieder ein), dann das Menue.
+    if (mode !== "play") setMode("play");
+    openMenu(hadGame());
+  });
   $("menuBack").addEventListener("click", () => {
     closeMenu();
     if (R) { layout(); renderPanel(); requestAnimationFrame(draw); }
     scheduleBots();
   });
   $("menuReset").addEventListener("click", () => {
-    $("setPlayers").value = "2"; $("setSelf").value = "2"; $("setOpp").value = "3"; $("setSeed").value = "";
+    $("setBoard").value = "4"; fillPlayerOptions(2); $("setFill").checked = true; seatChoice = SEAT_DEFAULT.slice(); $("setSeed").value = "";
     clearRuleFields();
+    refreshSeats();
   });
   $("file").addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
@@ -4147,6 +4247,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   $("view3d").setAttribute("aria-pressed", String(view3d));
   $("view2d").setAttribute("aria-pressed", String(!view3d));
   buildMenu();
+  fillPlayerOptions(2);
   loadMenu();
   refreshMenu();
   $("presetNote").textContent = MENU_NOTE;
@@ -4185,6 +4286,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     setMode("play");
   }).catch((err) => {
     $("modePlay").disabled = true;
+    $("newGame").disabled = true;
     $("modePlay").title = "Spielen ist hier nicht verfügbar";
     const n = $("notice");
     n.textContent = `Spielen ist in dieser Ansicht nicht verfügbar (${err.message}). Die Wiedergabe funktioniert. ` +
