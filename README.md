@@ -477,6 +477,7 @@ spielbar).
 | `terr_occupy` | 1 | **Zaehler nur mit eigener Figur**: der Erntezaehler eines Feldes (und damit seine Ernte) laeuft nur, wenn am Ende des eigenen Zuges eine **eigene Figur (auch der Koenig)** auf dem Feld steht. Sonst **pausiert** er, ohne zurueckgesetzt zu werden. Umfaerben setzt ihn weiter zurueck; die Flaeche des Feldes zaehlt weiter, der Kat-3-Bonus bleibt passiv (`Game::own_piece_at`, `territory.rs`). Braucht `terr_cycle` |
 | `terr_cardany` | 1 | **Karten auf jede eigene Figur**: Kuerzer, Ecke und Sprung wirken sofort auf eine gewaehlte eigene Figur, auch eine schon gebaute (`Action::BuyCard { target: Some(Figur) }`, `Event::CardBought` traegt `target`). Nicht auf den Koenig, nicht auf Stufe 1 (Reichweite < 2), nicht wenn sie die Faehigkeit schon hat. Der Kartenplatz neben der Fabrik bleibt nur fuer "Fabrik ruecken"; Koenigs-Boost wirkt wie bisher sofort. Braucht den Kartensatz von Version 2 |
 | `terr_card_mult` | 8 (Version 2: 16) | Kartenpreise mal `terr_card_mult` / 16 (mindestens 1): Kuerzer 3, Ecke 5, Sprung 4, Fabrik ruecken 3 Kat 1, Koenigs-Boost 1 Kat 2 je Stufe |
+| `terr_stack` | 1 | **Karten mehrfach auf dieselbe Figur**: Kuerzer, Ecke und Sprung duerfen so oft auf eine Figur, wie es logisch Sinn hat: Stufe `n` hoechstens `n - 1` mal (der letzte Schritt ist das Ziel). Kuerzer ×k: die Figur zieht `n`, `n-1`, ... bis `n-k` Felder (Stufe 3 mit zwei Karten: 3, 2 oder 1); Ecke ×k: bis zu `k` Ecken auf dem Weg; Sprung ×k: ueber bis zu `k` Figuren. `Perks::shorten`, `bend`, `hop` sind jetzt Zaehler (`u8`); im Zustands-JSON stehen Zahlen statt true/false. 0 = jede Karte nur einmal je Figur wie bisher. Braucht `terr_cardany`; auch `terr_control` zaehlt die Spruenge |
 | `terr_cardlock` | 1 | **Karte sperrt die Figur**: 1 = die Figur, die eine Karte bekommt (beim Koenigs-Boost der Koenig), darf in diesem Zug nicht mehr ziehen (Zugfelder leer; `State::card_lock`, am Zugende geloescht); 0 = nichts; 2 = der Kauf beendet den ganzen Zug (Kuerzer, Ecke, Sprung, Koenigs-Boost; "Fabrik ruecken" nicht). Der Kauf bleibt ein Teil des Zuges, nur eine Karte je Zug; die gesperrte Figur kann aber noch durch eine andere Figur geschlagen werden |
 | `terr_up_mult` | 2 | Figuren ab Stufe 2 kosten das `terr_up_mult`-Fache (Stufe 1 bleibt bei `terr_area`): bei 2 sind es 50 / 200 / 400 / 800 Flaeche (Version 2: 50 / 100 / 200 / 400) |
 | `terr_control` | 0 | **Kontrollfelder** (Schalter, Standard aus): als bearbeitet zaehlen (Zaehler, Ernte, Kat-3-Bonus) auch alle Felder in Zugreichweite einer eigenen Figur: gerade Strahlen bis zur Reichweite, der erste Stein (egal wessen) stoppt den Strahl, ein Sprung geht ueber genau einen; der Koenig kontrolliert seine Nachbarn. Figuren, die nicht auf mit der Fabrik verbundenem Land stehen, kontrollieren nichts. Braucht `terr_occupy` (`Game::worked_cells`) |
@@ -590,6 +591,30 @@ Messung (2 Spieler, Seeds ab 100, 40 Partien `flaeche`-Spiegel; `stark` gegen `f
   (16 : 24), weil seine Figuren teurer sind. Kleine Stichprobe, rund 15 Prozentpunkte Rauschen.
 - **Kat 3 verteilt**: bei 300 Seeds stieg der Abstand zum naechsten anderen Kat-3-Feld von 1,27 auf 3,66, der
   Abstand eines Feldes zum naechsten Kat-3-Feld sank im Mittel von 2,55 auf 1,76, im schlechtesten Fall von 8 auf 5.
+
+**Vierte Aenderung der Version 3: Karten stapeln, Reichweite beim Ueberfahren.** `terr_stack=1` laesst Kuerzer, Ecke und
+Sprung mehrfach auf dieselbe Figur (siehe Tabelle). Die Sperre gilt weiter: eine Karte je Zug, und die Figur ruht
+dabei, also kostet jede Schicht einen Zug mit dieser Figur. Im Viewer zeigt das Abzeichen die Anzahl (`−2`, Treppe mit
+mehreren Knicken, mehrere Boegen), der Tooltip nennt sie ("Kuerzer ×2", "darf auch 3 oder 2 Felder ziehen"). Wer mit der
+Maus auf **irgendeine** Figur zeigt, sieht ihre Ziehfelder (rot = schlagen), solange die Maus darauf steht; ein Klick
+haelt sie weiter fest. Das gilt nur an der aktuellen Stellung einer laufenden Partie oder im Zuschau-Modus, denn die
+Zuege kommen vom Spielkern (`sv_destinations`); in einer fertig geladenen Aufzeichnung gibt es sie nicht. Mit Shift oder
+Strg (Wegplanung) und waehrend der Kartenwahl bleibt die Anzeige aus.
+
+Messung (2 Spieler, Seeds ab 100, 40 Partien `flaeche`-Spiegel; `stark` gegen `flaeche` 20 Partien je Sitz, `--nodes 2000`):
+
+| | ohne Stapeln (`terr_stack=0`) | mit Stapeln |
+|---|---|---|
+| Karten je Partie | 12,6 | 14,2 |
+| Kuerzer / Koenigs-Boost / Sprung / Ecke (Kaeufe in 40 Partien) | 147 / 146 / 101 / 109 | 216 / 140 / 120 / 91 |
+| geschlagene Figuren je Partie | 3,6 | 3,1 |
+| Runden im Schnitt | 79,4 | 78,8 |
+| `stark` gegen `flaeche` (beide Sitze) | 16 : 24 | 20 : 20 |
+
+Die Bots nutzen das Stapeln kaum geschickt (`flaeche` kauft einfach noch mehr Kuerzer), im Gleichgewicht der beiden
+Bots aendert sich nichts, was ueber das Rauschen hinausgeht. Ob ein Mensch mit gestapeltem Kuerzer (ein Held mit
+dreimal Kuerzer zieht 1 bis 4 Felder geradeaus, also wie ein Turm bis zur Reichweite 4) staerker spielt, ist nicht
+gemessen: Die Regel macht aus "genau n Felder" eine Zugweite "bis n" fuer 3 Karten zu je 3 Kat 1 (bei `terr_card_mult=8`).
 
 **Sonde: lohnt ein Umzug zur Mitte?** (`cargo test --release -p game_core rush_probe -- --ignored --nocapture`, 40
 Partien je Zeile, beide Sitze). Ein Hilfsbot (`Rusher` in `v3_tests.rs`, kein Teil des Spiels) schickt den Koenig zur

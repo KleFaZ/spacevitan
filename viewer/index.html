@@ -466,6 +466,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   let selected = null; // ausgewaehlte eigene Figur
   let cardMode = null; // Version 3: { card } = Karte gewaehlt, die Figur dafuer steht noch aus
   let inspect = null;  // { R, fi, id, cells } = Ziehfelder einer beliebig angeklickten Figur (auch gegnerisch)
+  let hoverReach = null;  // { R, fi, id, cells } = Ziehfelder der Figur unter dem Mauszeiger (verschwinden mit der Maus)
   let fx = [];         // Blitze: eine Karte hat eine Figur verbessert { R, id, start, dur, card }
   // Premoves: Wege, die eine Figur ueber mehrere eigene Zuege von selbst geht.
   let routes = [];       // [{ piece, owner, cells: [Startfeld, ..., Ziel] }]
@@ -611,9 +612,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       : [p.level === 1
         ? `zieht und schlägt geradeaus bis ${p.range} ${p.range === 1 ? "Feld" : "Felder"}`
         : `zieht frei bis ${p.range} Felder (um Ecken, nicht durch Figuren)`];
-    if (pk.shorten) out.push(p.range > 1 ? `darf auch nur ${p.range - 1} ${p.range - 1 === 1 ? "Feld" : "Felder"} ziehen` : "Kürzer ohne Wirkung (zieht schon nur 1)");
-    if (pk.bend) out.push("darf einmal um die Ecke gehen");
-    if (pk.hop) out.push("darf über eine Figur springen");
+    if (pk.shorten) {
+      const lens = [];
+      for (let i = 1; i <= pkn(pk.shorten) && p.range - i >= 1; i++) lens.push(p.range - i);
+      out.push(lens.length ? `darf auch ${lens.join(" oder ")} ${lens.length === 1 && lens[0] === 1 ? "Feld" : "Felder"} ziehen` : "Kürzer ohne Wirkung (zieht schon nur 1)");
+    }
+    if (pk.bend) out.push(pkn(pk.bend) > 1 ? `darf bis zu ${pkn(pk.bend)}-mal um die Ecke gehen` : "darf einmal um die Ecke gehen");
+    if (pk.hop) out.push(pkn(pk.hop) > 1 ? `darf über bis zu ${pkn(pk.hop)} Figuren springen` : "darf über eine Figur springen");
     if (pk.diagonal) out.push("schlägt diagonal");
     if (pk.lance) out.push("schlägt 2 Felder geradeaus");
     if (pk.spring) out.push("springt über Nachbarfiguren");
@@ -629,9 +634,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function perkText(pk) {
     if (!pk) return "";
     const out = [];
-    if (pk.shorten) out.push("Kürzer");
-    if (pk.bend) out.push("Ecke");
-    if (pk.hop) out.push("Sprung");
+    if (pk.shorten) out.push(pkn(pk.shorten) > 1 ? `Kürzer ×${pkn(pk.shorten)}` : "Kürzer");
+    if (pk.bend) out.push(pkn(pk.bend) > 1 ? `Ecke ×${pkn(pk.bend)}` : "Ecke");
+    if (pk.hop) out.push(pkn(pk.hop) > 1 ? `Sprung ×${pkn(pk.hop)}` : "Sprung");
     if (pk.diagonal) out.push("Läuferschlag");
     if (pk.lance) out.push("Lanze");
     if (pk.spring) out.push("Sprungfeder");
@@ -896,6 +901,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const occupyOn = () => !!(R.config && R.config.terr_occupy);
   /** Version 3: Karten wirken sofort auf eine gewaehlte eigene Einheit (auch eine schon gebaute). */
   const cardAnyOn = () => !!(R.config && R.config.terr_cardany);
+  /** Version 3: Kuerzer, Ecke und Sprung duerfen mehrmals auf dieselbe Figur (hoechstens Stufe - 1 mal). */
+  const stackOn = () => !!(R.config && R.config.terr_stack);
+  /** Anzahl einer Karte an der Figur; aeltere Spiele kennen nur true / false. */
+  const pkn = (v) => (v === true ? 1 : Number(v) || 0);
   /** Version 3: Felder im Einflussbereich einer eigenen Figur zaehlen als bearbeitet. */
   const controlOn = () => !!(R.config && R.config.terr_control);
   /** Version 3: 0 = Karte kostet nichts, 1 = die verbesserte Figur ruht in diesem Zug, 2 = Kauf ist der ganze Zug. */
@@ -1210,7 +1219,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ctx.beginPath(); ctx.arc(bx, by, bw, 0, Math.PI * 2);
       ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.stroke();
       ctx.strokeStyle = "#1c2420"; ctx.fillStyle = "#1c2420"; ctx.lineWidth = Math.max(1.2, bw * 0.2); ctx.lineCap = "round"; ctx.lineJoin = "round";
-      v2Glyph(kind, bx, by, bw * 0.55, bw);
+      v2Glyph(kind, bx, by, bw * 0.55, bw, pkn(pk[kind]));
       ctx.lineCap = "butt";
     });
   }
@@ -1441,15 +1450,34 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     perkBadges(cx, cy, r, pk);
   }
   /** Zeichen der Karten von Version 2: Kuerzer (-1), Ecke (L), Sprung (Bogen). Farbe und Strichstaerke setzt der Aufrufer. */
-  function v2Glyph(kind, bx, by, q, br) {
+  function v2Glyph(kind, bx, by, q, br, count) {
+    const n = Math.max(1, count || 1);
     if (kind === "shorten") {
       ctx.font = `700 ${Math.max(8, Math.round(br * 1.05))}px ${cssVar("--font-data") || "monospace"}`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("−1", bx, by + 0.5);
+      ctx.fillText(`−${n}`, bx, by + 0.5);
     } else if (kind === "bend") {
-      ctx.beginPath(); ctx.moveTo(bx - q * 0.6, by - q); ctx.lineTo(bx - q * 0.6, by + q * 0.6); ctx.lineTo(bx + q, by + q * 0.6); ctx.stroke();
+      // Eine Ecke: L; n Ecken: Treppe mit n Knicken.
+      ctx.beginPath();
+      if (n === 1) {
+        ctx.moveTo(bx - q * 0.6, by - q); ctx.lineTo(bx - q * 0.6, by + q * 0.6); ctx.lineTo(bx + q, by + q * 0.6);
+      } else {
+        const segs = n + 1, down = Math.ceil(segs / 2), right = Math.floor(segs / 2);
+        const dy = (q * 1.6) / down, dx = (q * 1.6) / right;
+        let x = bx - q * 0.8, y = by - q * 0.8;
+        ctx.moveTo(x, y);
+        for (let i = 0; i < segs; i++) { if (i % 2 === 0) y += dy; else x += dx; ctx.lineTo(x, y); }
+      }
+      ctx.stroke();
     } else {
-      ctx.beginPath(); ctx.moveTo(bx - q, by + q * 0.7); ctx.quadraticCurveTo(bx, by - q * 1.6, bx + q, by + q * 0.7); ctx.stroke();
+      // Ein Sprung: Bogen; n Spruenge: n Boegen nebeneinander.
+      ctx.beginPath();
+      const w = (q * 2) / n;
+      for (let i = 0; i < n; i++) {
+        const x0 = bx - q + i * w;
+        ctx.moveTo(x0, by + q * 0.7); ctx.quadraticCurveTo(x0 + w / 2, by - q * (n === 1 ? 1.6 : 1.2), x0 + w, by + q * 0.7);
+      }
+      ctx.stroke();
     }
   }
   /** Karten an der Figur als kleine weisse Abzeichen rund um die Marke. */
@@ -1476,7 +1504,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       else if (kind === "lance") { ctx.beginPath(); ctx.moveTo(bx, by + q); ctx.lineTo(bx, by - q); ctx.moveTo(bx - q * 0.6, by - q * 0.2); ctx.lineTo(bx, by - q); ctx.lineTo(bx + q * 0.6, by - q * 0.2); ctx.stroke(); }
       else if (kind === "spring") { ctx.beginPath(); for (let k = 0; k <= 4; k++) { const xx = bx - q + (k / 4) * 2 * q, yy = by + (k % 2 ? q * 0.6 : -q * 0.6); k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); } ctx.stroke(); }
       else if (kind === "star") star(bx, by, br * 0.85);
-      else if (kind === "shorten" || kind === "bend" || kind === "hop") v2Glyph(kind, bx, by, q, br);
+      else if (kind === "shorten" || kind === "bend" || kind === "hop") v2Glyph(kind, bx, by, q, br, pkn(pk[kind]));
       else {
         ctx.font = `700 ${Math.round(br * (kind === "range" ? 1.0 : 1.3))}px ${cssVar("--font-data") || "monospace"}`;
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1522,6 +1550,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
   function draw(now) {
     if (!R || !geo) return;
+    refreshHoverReach();
     const { dpr } = geo;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, geo.cssW, geo.cssH);
@@ -1592,6 +1621,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const col = PLAYER[me.owner].color;
       outlineCell(me.cell, col, 0.3);
       for (const to of inspect.cells) {
+        const hostile = f.pieces.some((q) => q.cell === to && q.owner !== me.owner) ||
+          f.factories.some((x) => x.cell === to && x.owner !== me.owner);
+        markCell(to, hostile ? HOSTILE : col);
+      }
+    }
+
+    // Reichweite der Figur unter dem Mauszeiger (nur solange die Maus darauf steht)
+    if (hoverReachValid() && !cardMode && !shiftMode && selected !== hoverReach.id && !(inspectValid() && inspect.id === hoverReach.id)) {
+      const me = f.byId.get(hoverReach.id);
+      const col = PLAYER[me.owner].color;
+      outlineCell(me.cell, col, 0.18);
+      for (const to of hoverReach.cells) {
         const hostile = f.pieces.some((q) => q.cell === to && q.owner !== me.owner) ||
           f.factories.some((x) => x.cell === to && x.owner !== me.owner);
         markCell(to, hostile ? HOSTILE : col);
@@ -1688,7 +1729,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const [x, y] = R.board.cells[piece.cell];
     const [cx, cy] = iso(x, y);
     const u = geo.W, r = Math.max(7, u * 0.2);
-    const bx = cx + u * 0.32, by = cy - u * (geo.flat ? 0.3 : 0.62);
+    // Flach links oben, damit es die Karten-Abzeichen (rechts oben) nicht verdeckt.
+    const bx = cx + u * (geo.flat ? -0.32 : 0.32), by = cy - u * (geo.flat ? 0.3 : 0.62);
     ctx.save();
     ctx.globalAlpha = 1;
     ctx.fillStyle = "#2b2f3a";
@@ -2491,7 +2533,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const acting = canAct();
     const own = p === null || p === undefined ? -1 : ownColorOf(p);
     $("marketNote").textContent = isTerr() && cardAnyOn()
-      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König); klicke die Karte, dann die Figur. „Fabrik rücken“ liegt neben der Fabrik, bis du sie benutzt; der Königs-Boost wirkt sofort auf den König." +
+      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König)"+(stackOn() ? ", und mehrmals auf dieselbe Figur (Stufe n höchstens n−1 mal; Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld)" : "")+"; klicke die Karte, dann die Figur. „Fabrik rücken“ liegt neben der Fabrik, bis du sie benutzt; der Königs-Boost wirkt sofort auf den König." +
         (cardLockMode() === 1 ? " Eine verbesserte Figur (auch der König beim Boost) ruht dafür in diesem Zug: mit ihr kannst du nicht ziehen, mit allen anderen schon."
           : cardLockMode() === 2 ? " Eine Verbesserung (Figurenkarte, Königs-Boost) ist dein ganzer Zug." : "")
       : isTerr()
@@ -2600,7 +2642,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           c.terr_bonus ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
           c.terr_occupy ? (c.terr_control ? "Erntezähler läuft mit eigener Figur auf dem Feld oder in ihrem Einflussbereich" : "Erntezähler läuft nur mit eigener Figur auf dem Feld") : "Erntezähler läuft ohne Figur",
           c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
-          c.terr_cardany ? "Karten wirken auf jede eigene Figur (auch gebaute)" : "Karten wirken auf die nächste gebaute Figur",
+          c.terr_cardany ? `Karten wirken auf jede eigene Figur (auch gebaute)${c.terr_stack ? ", mehrfach auf dieselbe (Stufe n höchstens n−1 mal)" : ""}` : "Karten wirken auf die nächste gebaute Figur",
           cut, score];
         return v3.join(" · ");
       }
@@ -2833,6 +2875,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       rows.push(piece.king
         ? `König von ${playerName(piece.owner)}: ${abilityText(piece)}`
         : `${unitTitle(piece.level)} von ${playerName(piece.owner)} (Stufe ${piece.level}, Reichweite ${piece.range}${extra ? `; ${extra}` : ""}): ${abilityText(piece)}`);
+      if (hoverReachValid() && hoverReach.id === piece.id) {
+        const n = hoverReach.cells.length;
+        rows.push(piece.id === f.card_lock ? "Hat in diesem Zug eine Karte bekommen und ruht bis zum nächsten Zug."
+          : n ? `Ziehfelder jetzt: ${n} (auf dem Brett markiert, rot = schlagen).` : "Hat gerade kein Ziehfeld.");
+      }
     }
     if (fac) {
       const lvl = fac.level ? `; Auflösen ergäbe ${unitTitle(fac.level)} (Stufe ${fac.level})` : "";
@@ -2874,7 +2921,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
     const cell = cellAt(mx, my);
     modifiersChanged(ev.shiftKey, ev.ctrlKey || ev.metaKey);
-    if (cell !== hoverCell) { hoverCell = cell; requestAnimationFrame(draw); }
+    if (cell !== hoverCell) { hoverCell = cell; refreshHoverReach(); requestAnimationFrame(draw); }
     showTip(cell, mx, my);
   }
   canvas.addEventListener("pointermove", pointer);
@@ -2898,7 +2945,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     else boardClick(cell);
   });
   canvas.addEventListener("contextmenu", (ev) => { if (ev.ctrlKey) ev.preventDefault(); });
-  canvas.addEventListener("pointerleave", () => { hoverCell = null; $("tip").hidden = true; requestAnimationFrame(draw); });
+  canvas.addEventListener("pointerleave", () => { hoverCell = null; hoverReach = null; $("tip").hidden = true; requestAnimationFrame(draw); });
 
   // ----- Legende -----------------------------------------------------------------------------
   function legend() {
@@ -2946,7 +2993,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ttx = { ...textTerr,
         unit1: "Bauer (Stufe 1): zieht genau 1 Feld geradeaus und schlägt dort. Zahl = Stufe, Punkte = Reichweite.",
         unit2: "Stufe n zieht genau n Felder geradeaus wie ein Turm, nicht durch Figuren. Krieger (2) mit Helm, Ritter (3) mit Helmbusch, Held (4) mit Umhang.",
-        unitCards: `Karten an der Figur (wirken auf ${cardAnyOn() ? "eine Figur deiner Wahl, auch eine schon gebaute; beim Verbessern blitzt es" : "die nächste gebaute"}): −1 = Kürzer (ein Feld weniger), L = Ecke (einmal um die Ecke), Bogen = Sprung (über eine Figur).`,
+        unitCards: `Karten an der Figur (wirken auf ${cardAnyOn() ? "eine Figur deiner Wahl, auch eine schon gebaute; beim Verbessern blitzt es" : "die nächste gebaute"}): −1 = Kürzer (ein Feld weniger), L = Ecke (einmal um die Ecke), Bogen = Sprung (über eine Figur)${stackOn() ? "; mehrfach: −2 = zweimal Kürzer, Treppe = mehrere Ecken, mehrere Bögen = mehrere Sprünge" : ""}.`,
         crystal: "Kat 1 (Raute). Weiß, solange das Feld niemandem gehört; dann in der Farbe des Besitzers. Der erste Ertrag kommt, wenn dir das Feld 3 Runden gehört (die Zahl auf dem blassen Vorkommen zählt herunter); danach jede Runde, solange es mit der Fabrik verbunden ist. Umfärben setzt die Uhr zurück.",
         ingot: "Quader (Kat 2, Quadrat): wie Kat 1, aber erst nach 10 Runden Besitz. Rohstoffe sind nur für Karten da.",
       };
@@ -3081,6 +3128,25 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function inspectValid() {
     return !!inspect && inspect.R === R && inspect.fi === fi && !!R.frames[fi].byId.get(inspect.id);
   }
+  const hoverReachValid = () => !!hoverReach && hoverReach.R === R && hoverReach.fi === fi && !!R.frames[fi].byId.get(hoverReach.id);
+  /** Steht der Mauszeiger auf einer Figur (egal wessen), holt der Viewer ihre Ziehfelder vom Spielkern. */
+  function refreshHoverReach() {
+    let next = null;
+    if (hoverCell !== null && canInspect() && !shiftDown && !ctrlDown) {
+      const piece = R.frames[fi].pieces.find((q) => q.cell === hoverCell);
+      if (piece) {
+        if (hoverReachValid() && hoverReach.id === piece.id) return false;
+        try {
+          next = { R, fi, id: piece.id, cells: callWasm("sv_destinations", piece.id).cells };
+        } catch (err) {
+          next = null;
+        }
+      }
+    }
+    const changed = (next ? next.id : null) !== (hoverReach ? hoverReach.id : null) || (!next && !!hoverReach);
+    hoverReach = next;
+    return changed;
+  }
   function clearInspect() {
     if (!inspect) return;
     inspect = null;
@@ -3122,7 +3188,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Kartentext; mit Karten auf gebaute Figuren gilt "die naechste Figur" nicht mehr. */
   function cardText(c) {
-    return cardAnyOn() && c.target === "unit" ? c.text.replace(/^Die nächste Figur/, "Eine Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2)") : c.text;
+    if (!(cardAnyOn() && c.target === "unit")) return c.text;
+    const base = c.text.replace(/^Die nächste Figur/, "Eine Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2)");
+    return stackOn() ? `${base} Auch mehrmals auf dieselbe Figur: Stufe n höchstens n−1 mal.` : base;
   }
   /** Erlaubte Kaeufe einer Karte als [Aktion, Index in der Liste]. */
   const cardBuys = (key) => (live && canAct() ? live.legal.map((a, i) => [a, i]).filter(([a]) => a.type === "buy" && a.card === key) : []);
@@ -3131,7 +3199,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function cardMissText(c, piece) {
     const why = piece.king ? "Der König bekommt keine Figurenkarten (für ihn gibt es den Königs-Boost)."
       : piece.range < 2 ? "Eine Figur der Stufe 1 zieht nur ein Feld: da gibt es nichts zu kürzen, keine Ecke und keinen Sprung."
-      : piece.perks && piece.perks[c.key] ? "Diese Figur kann das schon."
+      : piece.perks && pkn(piece.perks[c.key]) && stackOn() ? `Mehr bringt nichts: eine Figur der Stufe ${piece.range} trägt „${c.name}“ höchstens ${piece.range - 1}-mal (der letzte Schritt ist das Ziel).`
+      : piece.perks && pkn(piece.perks[c.key]) ? "Diese Figur kann das schon."
       : "Die Karte passt nicht auf diese Figur.";
     return `„${c.name}“ passt nicht auf ${pieceLabel(piece)} auf ${cellName(piece.cell)}. ${why}`;
   }
@@ -3429,6 +3498,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_bonus", label: "Kat 3: 2^k Fläche je Runde", ph: () => "1", hint: () => "1 = k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich, Kat 3 wird nicht geerntet; 0 = Kat 3 wird wie Kat 1 geerntet." },
       { key: "terr_occupy", label: "Zähler nur mit eigener Figur", ph: () => "1", hint: () => "1 = der Erntezähler eines Feldes läuft nur, wenn am Ende deines Zugs eine eigene Figur (auch der König) darauf steht, sonst pausiert er (ohne Rückstellung); 0 = er läuft immer. Nur mit Erntezähler." },
       { key: "terr_cardany", label: "Karten auf jede eigene Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung wirken sofort auf eine eigene Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2, nicht auf den König); 0 = sie liegen neben der Fabrik und wirken auf die nächste gebaute Figur." },
+      { key: "terr_stack", label: "Karten mehrfach auf eine Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung dürfen mehrmals auf dieselbe Figur gelegt werden, so oft es Sinn hat (Stufe n höchstens n−1 mal: Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld); 0 = jede Karte nur einmal je Figur. Braucht „Karten auf jede eigene Figur“." },
       { key: "terr_cardlock", label: "Karte sperrt die Figur", ph: () => "1", hint: () => "1 = die verbesserte Figur (beim Königs-Boost der König) darf in diesem Zug nicht ziehen; 2 = Verbessern ist der ganze Zug; 0 = Karten kosten keinen Zug." },
       { key: "terr_control", label: "Kontrollfelder", ph: () => "0", hint: () => "1 = ein Feld gilt auch als bearbeitet (Erntezähler läuft, geerntet wird), wenn es im Einflussbereich einer eigenen Figur auf verbundenem Land liegt: Felder geradeaus bis zur Reichweite, bis zur ersten Figur; beim König die Nachbarfelder. Braucht „Zähler nur mit eigener Figur“." },
       { key: "terr_up_mult", label: "Figurenpreis ab Stufe 2 mal", ph: () => (menuVer() === 3 ? "2" : "1"), hint: () => "Version 3: Stufe 1 kostet 50, die höheren 2 × (100 / 200 / 400) = 200 / 400 / 800 Fläche." },
@@ -3442,7 +3512,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "center_mix", label: "Kat 2/3 in der Mitte", ph: () => "0", hint: () => "Zusätzliche Felder jeder Regionsfarbe rund um die Kartenmitte." },
     ] },
   ];
-  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 10 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur (die verbesserte Figur ruht in diesem Zug) und sind billiger, Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
+  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), und sind billiger, Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
   const MENU_KEY = "spacevitan-menu-v3";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
@@ -4023,6 +4093,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (shift === shiftDown && ctrl === ctrlDown) return;
     const released = ctrlDown && !ctrl;
     shiftDown = shift; ctrlDown = ctrl;
+    refreshHoverReach();
     if (released && ctrlPath && ctrlPath.cells.length > 1 && canAct()) {
       const piece = R.frames[fi].byId.get(ctrlPath.piece);
       if (piece) commitRoute(piece, ctrlPath.cells);
@@ -4092,7 +4163,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; },
     get live() { return live; }, get mode() { return mode; }, get selected() { return selected; },
     get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
-    get cardMode() { return cardMode; }, get lockedId() { const f = R && R.frames[fi]; return f ? f.card_lock : null; }, get inspect() { return inspect; }, get fx() { return fx; },
+    get cardMode() { return cardMode; }, get lockedId() { const f = R && R.frames[fi]; return f ? f.card_lock : null; }, get inspect() { return inspect; }, get hoverReach() { return hoverReachValid() ? hoverReach : null; }, get fx() { return fx; },
     get ready() { return wasm !== null; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },
