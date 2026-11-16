@@ -23,6 +23,8 @@ pub enum SeatKind {
     Random,
     /// Spielt den Gebietsmodus ueber Land und Rohstoffe (`area_bot::AreaBot`).
     Area,
+    /// Wie `Strong`, dazu Flaechensicherung und mehr Rechenbudget (`SearchBot::very_strong`).
+    VeryStrong,
 }
 
 impl SeatKind {
@@ -33,6 +35,7 @@ impl SeatKind {
             SeatKind::Greedy => "gierig",
             SeatKind::Random => "zufall",
             SeatKind::Area => "flaeche",
+            SeatKind::VeryStrong => "sehr-stark",
         }
     }
 }
@@ -82,6 +85,9 @@ impl Session {
                     SeatKind::Greedy => Some(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
                     SeatKind::Random => Some(Box::new(RandomBot::new(bot_seed)) as Box<dyn Bot>),
                     SeatKind::Area => Some(Box::new(AreaBot::new(bot_seed)) as Box<dyn Bot>),
+                    SeatKind::VeryStrong => {
+                        Some(Box::new(SearchBot::very_strong(bot_seed)) as Box<dyn Bot>)
+                    }
                 }
             })
             .collect();

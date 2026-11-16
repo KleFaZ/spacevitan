@@ -50,6 +50,19 @@ pub(crate) struct MovePlan {
     pub path: Vec<CellId>,
 }
 
+/// Eine Engstelle im verbundenen Land eines Spielers: faerbt ein Gegner dieses Feld um, haengt ein
+/// Teil des Landes nicht mehr an der Fabrik. Die Fabrik selbst ist nie eine Engstelle.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WeakPoint {
+    pub cell: CellId,
+    /// Felder (ohne die Engstelle), die abgetrennt wuerden.
+    pub cells: u32,
+    /// Der Koenig steht auf dem abgetrennten Teil.
+    pub king: bool,
+    /// Summe der Stufen eigener Figuren auf dem abgetrennten Teil (der Koenig zaehlt nicht).
+    pub levels: u32,
+}
+
 /// Preis einer Figur im Gebietsmodus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UnitPrice {
@@ -132,6 +145,198 @@ impl Game {
             }
         }
         Some(seen)
+    }
+
+    /// Alle Engstellen des mit der Fabrik verbundenen Landes von `player` (Schnittpunkte des
+    /// Nachbarschaftsgraphen, von der Fabrik aus gesehen), je mit dem Teil, der dahinter haengt.
+    /// Leer ohne stehende Fabrik. Ein Durchlauf (Tarjan, ohne Rekursion).
+    pub fn weak_points(&self, player: PlayerId) -> Vec<WeakPoint> {
+        let Some(factory) = self.standing_factory(player) else {
+            return Vec::new();
+        };
+        if self.state.land[factory.cell.idx()] != Some(player) {
+            return Vec::new();
+        }
+        let board = &self.map.board;
+        let n = board.len();
+        let mut disc = vec![0u32; n];
+        let mut low = vec![0u32; n];
+        let mut size = vec![0u32; n];
+        let mut king = vec![false; n];
+        let mut levels = vec![0u32; n];
+        let mut cut_cells = vec![0u32; n];
+        let mut cut_king = vec![false; n];
+        let mut cut_levels = vec![0u32; n];
+        for piece in self.state.pieces.values().filter(|p| p.owner == player) {
+            match piece.kind {
+                PieceKind::King => king[piece.cell.idx()] = true,
+                PieceKind::Unit { level, .. } => levels[piece.cell.idx()] += u32::from(level),
+            }
+        }
+        let root = factory.cell.idx();
+        let mut clock = 1u32;
+        disc[root] = clock;
+        low[root] = clock;
+        size[root] = 1;
+        // (Feld, Vorgaenger, Nachbarn, naechster Nachbar)
+        let mut stack: Vec<(usize, usize, Vec<CellId>, usize)> =
+            vec![(root, usize::MAX, board.neighbors(factory.cell).collect(), 0)];
+        while let Some(top) = stack.last_mut() {
+            let (v, parent) = (top.0, top.1);
+            if top.3 < top.2.len() {
+                let w = top.2[top.3];
+                top.3 += 1;
+                let wi = w.idx();
+                if self.state.land[wi] != Some(player) || wi == parent {
+                    continue;
+                }
+                if disc[wi] != 0 {
+                    low[v] = low[v].min(disc[wi]);
+                } else {
+                    clock += 1;
+                    disc[wi] = clock;
+                    low[wi] = clock;
+                    size[wi] = 1;
+                    stack.push((wi, v, board.neighbors(w).collect(), 0));
+                }
+            } else {
+                stack.pop();
+                if parent != usize::MAX {
+                    low[parent] = low[parent].min(low[v]);
+                    size[parent] += size[v];
+                    king[parent] |= king[v];
+                    levels[parent] += levels[v];
+                    if parent != root && low[v] >= disc[parent] {
+                        cut_cells[parent] += size[v];
+                        cut_king[parent] |= king[v];
+                        cut_levels[parent] += levels[v];
+                    }
+                }
+            }
+        }
+        (0..n)
+            .filter(|&c| cut_cells[c] > 0)
+            .map(|c| WeakPoint {
+                cell: CellId(c as u32),
+                cells: cut_cells[c],
+                king: cut_king[c],
+                levels: cut_levels[c],
+            })
+            .collect()
+    }
+
+    /// Summe `value(Engstelle, naehe)` ueber alle Engstellen von `player`. `naehe` ist 5, wenn eine
+    /// gegnerische Figur, die faerben darf (auf verbundenem Land), direkt neben der Engstelle
+    /// steht, und sinkt je Feld Abstand um eins bis 0 (ab Abstand 6 keine Gefahr, dann wird
+    /// `value` nicht gerufen). `dist` liefert den Abstand zweier Felder auf dem Brett.
+    pub fn weak_exposure(
+        &self,
+        player: PlayerId,
+        mut dist: impl FnMut(CellId, CellId) -> u32,
+        mut value: impl FnMut(&WeakPoint, i64) -> i64,
+    ) -> i64 {
+        let weak = self.weak_points(player);
+        if weak.is_empty() {
+            return 0;
+        }
+        let attackers: Vec<CellId> = self
+            .state
+            .pieces
+            .values()
+            .filter(|x| x.owner != player && self.piece_connected(x))
+            .map(|x| x.cell)
+            .collect();
+        let mut total = 0;
+        for wp in &weak {
+            let near = attackers
+                .iter()
+                .map(|&a| dist(a, wp.cell))
+                .min()
+                .unwrap_or(u32::MAX);
+            let close = 6u32.saturating_sub(near) as i64;
+            if close > 0 {
+                total += value(wp, close);
+            }
+        }
+        total
+    }
+
+    /// Was ein einzelner Zug einer gegnerischen Figur im naechsten Zug von `player` abtrennen kann:
+    /// der hoechste Wert, den `value` dem Teil gibt, der nach dem Umfaerben des Weges nicht mehr an
+    /// der Fabrik haengt (`WeakPoint::cell` ist dabei das erste umgefaerbte Feld). Nur Figuren,
+    /// die auf verbundenem Land stehen, faerben. 0, wenn nichts droht. Zuege auf die Fabrik oder
+    /// auf den eigenen Koenig (Zerstoeren, Koenigsfang) zaehlen nicht mit, die kennen die Bots anders.
+    pub fn cut_threat(&self, player: PlayerId, value: impl Fn(&WeakPoint) -> i64) -> i64 {
+        let Some(factory) = self.standing_factory(player) else {
+            return 0;
+        };
+        let Some(conn) = self.connected_land(player) else {
+            return 0;
+        };
+        if !conn[factory.cell.idx()] {
+            return 0;
+        }
+        let board = &self.map.board;
+        let n = board.len();
+        let mut hit = vec![false; n];
+        let mut seen = vec![false; n];
+        let mut queue = VecDeque::new();
+        let mut worst = 0;
+        for piece in self.state.pieces.values().filter(|p| p.owner != player) {
+            if !self.piece_connected(piece) {
+                continue;
+            }
+            for to in self.piece_destinations(piece.id) {
+                if self.state.piece_at(to).is_some_and(|other| {
+                    other.owner == player && matches!(other.kind, PieceKind::King)
+                }) {
+                    continue;
+                }
+                let path = self.move_path(piece, to);
+                if !path.iter().any(|c| conn[c.idx()]) || path.contains(&factory.cell) {
+                    continue;
+                }
+                for c in &path {
+                    hit[c.idx()] = true;
+                }
+                seen.iter_mut().for_each(|x| *x = false);
+                seen[factory.cell.idx()] = true;
+                queue.push_back(factory.cell);
+                while let Some(cur) = queue.pop_front() {
+                    for nb in board.neighbors(cur) {
+                        if !seen[nb.idx()]
+                            && !hit[nb.idx()]
+                            && self.state.land[nb.idx()] == Some(player)
+                        {
+                            seen[nb.idx()] = true;
+                            queue.push_back(nb);
+                        }
+                    }
+                }
+                let lost = |i: usize| conn[i] && !seen[i] && !hit[i];
+                let mut w = WeakPoint {
+                    cell: path[0],
+                    cells: (0..n).filter(|&i| lost(i)).count() as u32,
+                    king: false,
+                    levels: 0,
+                };
+                for mine in self.state.pieces.values().filter(|p| p.owner == player) {
+                    if lost(mine.cell.idx()) {
+                        match mine.kind {
+                            PieceKind::King => w.king = true,
+                            PieceKind::Unit { level, .. } => w.levels += u32::from(level),
+                        }
+                    }
+                }
+                for c in &path {
+                    hit[c.idx()] = false;
+                }
+                if w.cells > 0 {
+                    worst = worst.max(value(&w));
+                }
+            }
+        }
+        worst
     }
 
     /// Zahl der Felder, die mit der Fabrik zusammenhaengen (ohne Fabrik: alle eigenen Felder).

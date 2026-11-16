@@ -18,6 +18,7 @@ pub mod replay;
 pub mod rng;
 pub mod state;
 mod territory;
+pub use territory::WeakPoint;
 
 #[cfg(test)]
 mod ai_tests;
@@ -29,6 +30,8 @@ mod game_tests;
 mod json_check;
 #[cfg(test)]
 mod roles_tests;
+#[cfg(test)]
+mod safety_tests;
 pub mod session;
 #[cfg(test)]
 mod territory_tests;

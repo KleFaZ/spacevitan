@@ -60,6 +60,9 @@ pub struct SearchParams {
     pub quiescence_depth: u32,
 }
 
+/// Rechenbudget von "sehr stark" (Standard von "stark": 20000).
+pub const VERY_STRONG_BUDGET: u64 = 20_000;
+
 impl SearchParams {
     pub const DEFAULT: SearchParams = SearchParams {
         node_budget: 20_000,
@@ -325,6 +328,8 @@ pub struct SearchBot {
     max_degree: u32,
     name: &'static str,
     stats: SearchStats,
+    /// Gebietsmodus: Bewertung der Blaetter wie bei `flaeche` (`area_bot::leaf_value`).
+    area_eval: bool,
 }
 
 impl SearchBot {
@@ -348,7 +353,23 @@ impl SearchBot {
             max_degree: 0,
             name: "stark",
             stats: SearchStats::default(),
+            area_eval: false,
         }
+    }
+
+    /// "Sehr stark": die Suche von "stark" mit der Blattbewertung von `flaeche` (Land und duenne
+    /// Verbindungen) und `VERY_STRONG_BUDGET` Stellungen je Zug.
+    pub fn very_strong(seed: u64) -> SearchBot {
+        SearchBot::with_params(seed, SearchParams::with_budget(VERY_STRONG_BUDGET))
+            .with_area_eval()
+            .with_name("sehr-stark")
+    }
+
+    /// Im Gebietsmodus die Blaetter der Suche wie `flaeche` bewerten (Land, Vorkommen, Figuren,
+    /// duenne Verbindungen) statt mit den Gewichten von "stark".
+    pub fn with_area_eval(mut self) -> SearchBot {
+        self.area_eval = true;
+        self
     }
 
     pub fn with_weights(mut self, weights: Weights) -> SearchBot {
@@ -994,6 +1015,13 @@ impl SearchBot {
     // ----- Bewertung ------------------------------------------------------------------------
 
     fn evaluate(&mut self, g: &Game) -> i32 {
+        if self.area_eval && g.config.territory {
+            if g.king(self.root).is_none() {
+                return -WIN;
+            }
+            let v = crate::area_bot::leaf_value(g, self.root);
+            return v.clamp(-i64::from(WIN / 2), i64::from(WIN / 2)) as i32;
+        }
         let n = g.config.players as usize;
         let mut kings: Vec<Option<CellId>> = vec![None; n];
         for p in g.state.pieces.values() {

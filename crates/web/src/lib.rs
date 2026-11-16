@@ -4,7 +4,7 @@
 //! `{"error": "..."}`) im Ausgabepuffer, den JavaScript ueber `sv_out_ptr` und `sv_out_len`
 //! aus dem Speicher liest. Rueckgabewert 0 = in Ordnung, 1 = Fehler.
 //!
-//! Platzarten: 0 = gierig, 1 = zufall, 2 = Mensch, 3 = stark (rechnet voraus), 4 = flaeche
+//! Platzarten: 0 = gierig, 1 = zufall, 2 = Mensch, 3 = stark (rechnet voraus), 4 = flaeche, 5 = sehr stark
 //! (Gebietsmodus: Land und Rohstoffe).
 //! `sv_new_game`: Spieler A ist ein Mensch, alle anderen haben die Art `opponent`
 //! (2 = alle Spieler an einem Geraet). `sv_new_game_seats`: auch Spieler A frei waehlbar,
@@ -69,6 +69,7 @@ fn seat_kind(code: u32) -> Result<SeatKind, String> {
         2 => Ok(SeatKind::Human),
         3 => Ok(SeatKind::Strong),
         4 => Ok(SeatKind::Area),
+        5 => Ok(SeatKind::VeryStrong),
         other => Err(format!("Unbekannte Gegnerart {other}")),
     }
 }
@@ -458,6 +459,20 @@ mod tests {
         assert!(out().contains("\"human_to_move\":false"));
         assert_eq!(sv_bot_step(), 0, "{}", out());
         assert!(out().contains("\"human_to_move\":true"));
+    }
+
+    #[test]
+    fn the_very_strong_bot_takes_a_seat_with_code_five() {
+        assert_eq!(sv_new_game(2, 5, 0, 0, 5), 0, "{}", out());
+        assert!(
+            out().contains("\"seats\":[\"mensch\",\"sehr-stark\"]"),
+            "{}",
+            out()
+        );
+        assert_eq!(sv_apply(0), 0);
+        assert_eq!(sv_bot_step(), 0, "{}", out());
+        assert!(out().contains("\"human_to_move\":true"));
+        assert_eq!(sv_new_game(2, 5, 0, 0, 6), 1, "Code 6 gibt es nicht");
     }
 
     #[test]

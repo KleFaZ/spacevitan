@@ -29,6 +29,15 @@ const UNIT: [i64; 5] = [0, 60, 150, 280, 450];
 const WIN: i64 = 1_000_000_000;
 const KING_LOST: i64 = 1_000_000;
 const FACTORY_THREAT: i64 = 800;
+/// Abzug, wenn der Koenig im naechsten Zug von der Fabrik getrennt werden kann (wehrlos, steht still).
+const KING_CUT: i64 = 500;
+/// Ab dieser Drohung (siehe `cut_value`) geht das Entschaerfen vor Bauen und Kartenkauf.
+const URGENT_CUT: i64 = 300;
+/// Abzug je Naehe-Einheit, wenn der Koenig hinter einer Engstelle steht, an die ein Gegner in zwei
+/// Zuegen herankommt.
+const TETHER: i64 = 40;
+/// Abzug je Stufe einer Figur, die dabei von der Fabrik getrennt wuerde.
+const CUT_UNIT: i64 = 60;
 /// Was dem Bot eine Verbesserung durch eine Karte wert ist; die Sperre der Figur (Version 3)
 /// darf hoechstens so viel kosten.
 const CARD_VALUE: i64 = 30;
@@ -103,6 +112,14 @@ fn evaluate(g: &Game, me: PlayerId) -> i64 {
     standing(g, me) - theirs
 }
 
+/// Was ein Gegner im naechsten Zug an Land, Figuren und Koenig von `me` abtrennen koennte.
+fn cut_value(g: &Game, me: PlayerId) -> i64 {
+    g.cut_threat(me, |w| {
+        let king = if w.king { KING_CUT } else { 0 };
+        i64::from(w.cells) * 2 * LAND + i64::from(w.levels) * CUT_UNIT + king
+    })
+}
+
 /// Abzug fuer alles, was der Gegner im naechsten Zug erreichen koennte.
 fn risk(g: &Game, me: PlayerId) -> i64 {
     let threatened = g.threatened_cells(me);
@@ -121,7 +138,49 @@ fn risk(g: &Game, me: PlayerId) -> i64 {
     {
         r += FACTORY_THREAT;
     }
-    r
+    // Eine duenne Verbindung: kann ein Gegner im naechsten Zug eine Engstelle umfaerben, fallen die
+    // Felder dahinter an ihn (doppelter Landwert), Figuren darauf sind wehrlos und der Koenig steht
+    // still, bis er wieder angebunden ist.
+    r + cut_risk(g, me)
+}
+
+/// Anteilige Gefahr einer duennen Verbindung, die ein Gegner in zwei Zuegen erreicht: je naeher eine
+/// gegnerische Figur, desto mehr (Naehe 5 = direkt daneben).
+pub(crate) fn exposure(g: &Game, me: PlayerId) -> i64 {
+    let board = &g.map.board;
+    let mut rows: std::collections::HashMap<crate::ids::CellId, Vec<u32>> = Default::default();
+    g.weak_exposure(
+        me,
+        |a, b| rows.entry(a).or_insert_with(|| board.distances_from(a))[b.idx()],
+        |w, close| {
+            let king = if w.king { TETHER * close } else { 0 };
+            i64::from(w.cells) * LAND * close / 6 + king
+        },
+    )
+}
+
+/// Was `me` an Land, Figuren und Koenig verliert, wenn ein Gegner eine duenne Verbindung kappt:
+/// im naechsten Zug genau gerechnet, dazu anteilig die Zwei-Zug-Gefahr.
+fn cut_risk(g: &Game, me: PlayerId) -> i64 {
+    cut_value(g, me) + exposure(g, me)
+}
+
+/// Bewertung eines Blattes der Suche von "sehr stark" (`SearchBot::with_area_eval`): Lage von `me`
+/// gegen die der Gegner wie bei `flaeche`. Eine duenne Verbindung, die ein Gegner kappen koennte,
+/// kostet Punkte; Schlagen und Koenigsfang sieht die Suche selbst.
+pub(crate) fn leaf_value(g: &Game, me: PlayerId) -> i64 {
+    let v = evaluate(g, me);
+    if v.abs() >= WIN / 2 {
+        return v;
+    }
+    // Nur wenn der Gegner am Zug ist, zaehlt die Kappung: ist `me` am Zug, kann er sie noch abwehren.
+    // (Gemessen: die anteilige Gefahr auch dann abzuziehen, machte "sehr stark" schwaecher, ohne
+    // dass der Koenig seltener abgetrennt wurde.)
+    if g.state.current != me {
+        v - cut_risk(g, me)
+    } else {
+        v
+    }
 }
 
 impl AreaBot {
@@ -303,6 +362,25 @@ impl Bot for AreaBot {
             })
             .max_by_key(|&(level, _)| level)
             .filter(|&(level, _)| level > best_owned && (level >= 2 || game.state.round >= 12));
+
+        // Droht, dass ein Gegner im naechsten Zug Land oder den Koenig von der Fabrik trennt, und
+        // laesst sich das mit einem Zug (nicht mit Bauen oder einem Kartenkauf) deutlich
+        // entschaerfen, geht das vor.
+        let threat = cut_value(game, me);
+        if threat >= URGENT_CUT {
+            let moves: Vec<Action> = rest
+                .iter()
+                .copied()
+                .filter(|a| !matches!(a, Action::BuildUnit { .. }))
+                .collect();
+            if let Some(a) = self.best_by_value(game, me, &moves, None) {
+                let mut child = game.clone();
+                child.apply_unchecked(a);
+                if cut_value(&child, me) + URGENT_CUT / 2 <= threat {
+                    return a;
+                }
+            }
+        }
 
         // Alles, was dieser Zug sonst tun koennte (fuer die Kosten der Sperre durch eine Karte).
         let options: Vec<Action> = rest.clone();

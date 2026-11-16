@@ -35,6 +35,7 @@ Module in `game_core`:
 cargo run --release -- --show                  # eine Partie gierig gegen gierig ansehen
 cargo run --release -- --games 200             # Statistik ueber 200 Partien
 cargo run --release -- --games 50 --bots stark,gierig   # starker Bot gegen einfachen
+cargo run --release -- --games 20 --bots sehr-stark,stark --rule territory=1,terr_v3=1   # die zwei staerksten gegeneinander
 cargo run --release -- --players 4 --games 50 --bots gierig,zufall
 cargo run --release -- --games 200 --stock 5 --kat1 3   # Vorrat je Vorkommen, Kat-1-Felder je Ecke
 cargo run --release -- --games 50 --bots stark,stark --rule upgrade_step=0,market_size=0
@@ -53,9 +54,10 @@ neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
 | Bot | Spielweise |
 |---|---|
 | `stark` | rechnet voraus: eigene Zuege und die gefaehrlichste Antwort der Gegner, mehrere Zuege tief (bei 2 Spielern Alpha-Beta wie bei Schachprogrammen, ab 3 Spielern Best-Reply-Search). Wirtschaft, Koenigssicherheit und das Einkesseln gegnerischer Koenige stecken in der Bewertung. Rechnet mit festem Budget (`--nodes`, Standard 20000 Stellungen pro Zug), also auf jedem Rechner gleich. |
+| `sehr-stark` | die Suche von `stark` (Alpha-Beta, Ruhesuche), aber mit der Land-Bewertung von `flaeche` an den Blaettern (`SearchBot::with_area_eval`, `area_bot::leaf_value`): verbundenes Land, Vorkommen, Figuren und duenne Verbindungen, die ein Gegner kappen koennte. Eigenes Budget (`--nodes-sehr`, Standard 20000), etwa 200 ms je Zug (hoechstens 0,5 s). Nur im Gebietsmodus anders als `stark`. |
 | `stark-pur` | wie `stark`, kauft aber nie Karten (Vergleichsgegner fuer Kartenmessungen) |
 | `gierig` | feste Faustregeln ohne Vorausschau |
-| `flaeche` | nur Gebietsmodus: spielt auf Land und Rohstoffe statt auf Figurenkampf. Rechnet einen eigenen Zug voraus und bewertet das Ergebnis mit der echten Engine (verbundenes Land, Vorkommen darauf nach Reife gewichtet, Figuren, Bedrohung von Koenig und Fabrik), also sind Abtrennen und Umschliessen schon eingerechnet. Baut nur, wenn die neue Figur besser ist als seine beste; kauft Karten, die der naechsten Figur oder dem Koenig nutzen. 0,1 ms je Zug (`area_bot.rs`) |
+| `flaeche` | nur Gebietsmodus: spielt auf Land und Rohstoffe statt auf Figurenkampf. Rechnet einen eigenen Zug voraus und bewertet das Ergebnis mit der echten Engine (verbundenes Land, Vorkommen darauf nach Reife gewichtet, Figuren, Bedrohung von Koenig und Fabrik), also sind Abtrennen und Umschliessen schon eingerechnet. Baut nur, wenn die neue Figur besser ist als seine beste; kauft Karten, die der naechsten Figur oder dem Koenig nutzen. Sichert die Flaeche (siehe "Siebte Aenderung der Version 3"): rechnet genau nach, ob ein Gegner im naechsten Zug den Koenig oder Land von der Fabrik trennen kann, und raeumt das vor dem Bauen aus. 0,6 ms je Zug (`area_bot.rs`) |
 | `zufall` | zufaellige erlaubte Zuege (zum Testen der Regeln) |
 
 Gewichte der Bewertung lassen sich zum Abstimmen ohne Neubau setzen, z. B.
@@ -95,7 +97,7 @@ Felder weggefallen sind.
 
 **Startmenue:** *Spielen* oeffnet zuerst ein Menue; eine Partie beginnt erst mit *Partie
 starten*; *Neue Partie* oben neben *Spielen* oeffnet es jederzeit wieder. Dort stehen **Brettform** (Dreieck, Quadrat,
-Fuenfeck bis Achteck), Spielerzahl, *Mit Bots auffuellen*, je Platz **Mensch oder Bot-Stufe** (stark, flaeche, gierig,
+Fuenfeck bis Achteck), Spielerzahl, *Mit Bots auffuellen*, je Platz **Mensch oder Bot-Stufe** (sehr stark, stark, flaeche, gierig,
 zufall; jeder Bot einzeln), Seed, Brettgroesse, Wertung, Kartenzahl und alle
 Gebiets-Werte (Preise, Wieder anbinden, Umschliessen, Brettrand, Kartenpreis). Leere Felder gelten
 als Standard, *Alles zuruecksetzen* leert sie. Die Einstellungen merkt sich der Browser. Technisch
@@ -705,6 +707,42 @@ ist als der Bot ohne Umzug (50 %), laesst sich bei 40 Partien (rund 8 Prozentpun
   (roter Rahmen um das Feld der aufgeloesten Figur). Die Start-JSON enthaelt `king_up: {on, extra: [a, b, c], price}`.
 - **Abgeschnittenes Land ist wehrlos**: alles, was nicht ueber Nachbarfelder an der Fabrik haengt, ist wehrlos (die Figuren
   darauf faerben nichts und schlagen nicht); das war schon so (`connected_land`, `helpless`) und aendert sich nicht.
+
+**Siebte Aenderung der Version 3: die Bots sichern ihre Flaeche, neuer Bot `sehr-stark`.**
+
+Beobachtung beim Spielen: die Bots fuehren den Koenig weit hinaus und verbinden ihn nur ueber eine duenne Linie mit der
+Fabrik; wird die Linie durchtrennt, ist der Koenig wehrlos und steht still. Die Messung dazu (`king_tether_probe` in
+`safety_tests.rs`, 12 Seeds, beide Sitze = 24 Partien je Zeile, Standardbudget):
+
+- Beim Messen fiel auf, dass `flaeche` nur auf Schlagen und Koenigsfang achtete, nicht auf das Kappen: sie verlor den Koenig
+  gegen `stark` in 9 von 24 Partien, in 5 davon nach einer Abtrennung. `stark` selbst verlor ihn dabei nie.
+- **Neu in der Engine** (`territory.rs`): `Game::weak_points` (alle Engstellen des verbundenen Landes, ein Durchlauf nach
+  Tarjan, mit Zahl der Felder, Figurenstufen und Koenig dahinter), `Game::cut_threat` (rechnet fuer jeden Zug einer
+  gegnerischen Figur, die faerben darf, genau nach, was danach nicht mehr an der Fabrik haengt; **auch lange Striche ueber
+  zwei Reihen**, nicht nur ein einzelnes Feld) und `Game::weak_exposure` (anteilige Gefahr einer Engstelle je nach
+  Abstand gegnerischer Figuren, fuer Kappungen in zwei Zuegen).
+- **`flaeche`** zieht das in `risk` ab (Koenig 500, Land doppelt, Figuren je Stufe) und loest eine akute Kappgefahr vor dem
+  Bauen und Kartenkaufen mit einem Zug auf, wenn der sie deutlich entschaerft. Ergebnis gegen `stark` (24 Partien):
+  Koenig gefangen **9 auf 3**, Abtrennungen je Partie **1,38 auf 0,25**, Siege von `flaeche` 14 auf 18. Damit ist `flaeche`
+  etwas staerker als `stark` (die Beschriftung im Menue sagt jetzt "schwer"). Die Tabelle weiter oben (`stark` 92 % gegen
+  `flaeche`) wurde mit `--nodes 4000` und vor mehreren spaeteren Aenderungen der Version 3 gemessen; beim Standardbudget
+  und heutigen Regeln gewann schon die alte `flaeche` 14 von 24 Partien. `stark` selbst spielt unveraendert (gleiche
+  Statistik wie vor der Aenderung, `stark` gegen `gierig` und `stark` gegen `stark` mit denselben Seeds).
+- **`sehr-stark`** (neu): erste Fassung war `stark` mit zusaetzlichen Gewichten fuer duenne Linien; sie schlug `stark` nur
+  knapp (14:10) und verlor gegen die neue `flaeche` (10:14), denn `flaeche` bewertet Land einfach besser. Deshalb nutzt
+  `sehr-stark` jetzt die Suche von `stark` mit der Blattbewertung von `flaeche`. Eine Variante, die die anteilige Gefahr auch
+  dann abzieht, wenn man selbst am Zug ist, war schwaecher (12:12 gegen beide) und wurde verworfen.
+  Messung (zwei Seed-Bereiche, je 24 Partien, `sehr-stark` zuerst): gegen `stark` 16:8 und 16:8 (zusammen **32:16**),
+  gegen die neue `flaeche` 18:6 und 16:8 (zusammen **34:14**).
+- **Offen / ehrlich**: `sehr-stark` ist am staerksten, aber nicht der vorsichtigste Bot: sein Koenig steht in 36 bis 44 %
+  der Zugenden hinter einer Engstelle (`flaeche`: 17 bis 26 %, `stark`: 25 bis 35 %), er wurde in 2 bis 6 von 24 Partien gefangen
+  (meist nach einer Abtrennung), `flaeche` gegen ihn in 7 bis 9. Wer einen Bot will, der den Koenig am wenigsten riskiert,
+  nimmt `flaeche`. Mit 24 Partien je Zeile liegt jede Zahl um etwa zehn Prozentpunkte im Rauschen; die Reihenfolge
+  `sehr-stark` > `flaeche` > `stark` ist aus zwei Seed-Bereichen gleich herausgekommen, mehr kann man daraus nicht lesen.
+- Rechenzeit: `flaeche` 0,6 ms (vorher 0,2), `sehr-stark` etwa 200 ms je Zug (hoechstens 0,5 s), `stark` etwa 110 ms. Im
+  Browser rechnet das Wasm-Modul etwa zwei- bis dreimal so lang.
+- Nachmessen: `PROBE_PAIRS=sehr:stark,sehr:flaeche PROBE_FROM=200 PROBE_N=12 cargo test --release -p game_core king_tether_probe -- --ignored --nocapture`
+  (Bots `stark`, `sehr`, sonst `flaeche`; `PROBE_NODES`, `PROBE_NODES_VERY` stellen das Budget).
 
 ## Karten
 

@@ -1,7 +1,7 @@
 //! Text-Oberflaeche: Bots gegeneinander spielen lassen und zusehen oder Statistik sammeln.
 
 use game_core::action::{Action, Event};
-use game_core::ai::{SearchBot, SearchParams, Weights};
+use game_core::ai::{SearchBot, SearchParams, Weights, VERY_STRONG_BUDGET};
 use game_core::area_bot::AreaBot;
 use game_core::bot::{play_out_with, Bot, GreedyBot, RandomBot};
 use game_core::cards::Card;
@@ -55,11 +55,13 @@ Optionen:
                  terr_bonus (k verbundene Kat-3-Felder = 2^k Flaeche je Runde zusaetzlich),
                  terr_trade (alte Fassung: Kat 3 ernten und einmalig gegen 2^k Flaeche tauschen),
                  veins2, veins3, cells2, cells3, center_cells, center_mix (Rohstoffmenge)
-  --bots LISTE   pro Spieler: stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
+  --bots LISTE   pro Spieler: sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),
+                 stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,
                  z. B. stark,gierig
                  (Standard: gierig)
   --nodes N      Rechenbudget von \"stark\": Stellungen pro Zug (Standard 20000)
+  --nodes-sehr N Rechenbudget von \"sehr-stark\" (Standard: eigenes Budget, siehe README)
   --show         Partie Runde fuer Runde anzeigen
   --games N      N Partien mit Seeds seed..seed+N-1 spielen und Statistik zeigen
   --export DATEI Partie als JSON speichern (fuer die Browser-Ansicht), nur mit einer Partie
@@ -80,6 +82,7 @@ struct Options {
     gift: Option<Gift>,
     bots: Vec<String>,
     nodes: u64,
+    nodes_very: u64,
     show: bool,
     games: u32,
     export: Option<String>,
@@ -98,6 +101,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
         gift: None,
         bots: Vec::new(),
         nodes: SearchParams::DEFAULT.node_budget,
+        nodes_very: VERY_STRONG_BUDGET,
         show: false,
         games: 1,
         export: None,
@@ -176,6 +180,10 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
                 o.nodes = number(value(i)?, "--nodes")?.max(1);
                 i += 1;
             }
+            "--nodes-sehr" => {
+                o.nodes_very = number(value(i)?, "--nodes-sehr")?.max(1);
+                i += 1;
+            }
             "--bots" => {
                 o.bots = value(i)?.split(',').map(|s| s.trim().to_string()).collect();
                 i += 1;
@@ -217,6 +225,18 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                         .with_weights(weights);
                     Ok(Box::new(bot) as Box<dyn Bot>)
                 }
+                "sehr-stark" | "sehrstark" | "very-strong" => {
+                    let weights = match std::env::var("SPACEVITAN_WEIGHTS") {
+                        Ok(list) => Weights::DEFAULT.parse_overrides(&list)?,
+                        Err(_) => Weights::DEFAULT,
+                    };
+                    let bot =
+                        SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes_very))
+                            .with_weights(weights)
+                            .with_area_eval()
+                            .with_name("sehr-stark");
+                    Ok(Box::new(bot) as Box<dyn Bot>)
+                }
                 "stark-pur" => {
                     let bot = SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes))
                         .without_cards();
@@ -226,7 +246,7 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                 "gierig" | "greedy" => Ok(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
                 "zufall" | "random" => Ok(Box::new(RandomBot::new(bot_seed)) as Box<dyn Bot>),
                 other => Err(format!(
-                    "unbekannter Bot '{other}' (stark, gierig oder zufall)"
+                    "unbekannter Bot '{other}' (sehr-stark, stark, flaeche, gierig oder zufall)"
                 )),
             }
         })
