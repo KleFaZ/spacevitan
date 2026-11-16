@@ -86,6 +86,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 /* Fabrik-Karte (Gebietsmodus, beim Spielen): Bau, Wartezeit, Karten, neben der Fabrik */
 .faccard { position: absolute; z-index: 3; width: min(252px, calc(100% - 12px)); max-height: calc(100% - 12px); overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgb(0 0 0 / 0.2); font-size: 0.8rem; line-height: 1.3; }
 .faccard[hidden] { display: none; }
+.faccard.open { width: min(330px, calc(100% - 12px)); box-shadow: 0 10px 28px rgb(0 0 0 / 0.32); }
 .faccard .fc-head { display: flex; align-items: center; gap: 8px; padding: 7px 9px; cursor: pointer; }
 .faccard .fc-dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: var(--muted); }
 .faccard.ready .fc-dot { background: #2f9e55; box-shadow: 0 0 0 3px rgb(47 158 85 / 0.25); }
@@ -163,6 +164,51 @@ details.more > summary { cursor: pointer; font-size: 0.72rem; font-weight: 700; 
 .stock .chip4 { border-radius: 3px 3px 50% 50%; }
 .stock .chip1 { display: inline-block; width: 10px; height: 10px; transform: rotate(45deg); border: 1px solid rgba(0,0,0,.5); margin-right: 3px; }
 .stock .sub { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 2px; }
+.sym { display: inline-block; flex: none; vertical-align: -4px; overflow: visible; }
+.sym.off { filter: grayscale(1); opacity: 0.45; }
+.resbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.resbar .rs { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--surface); min-width: 0; }
+.resbar .rs b { font-family: var(--font-data); font-size: 1rem; font-variant-numeric: tabular-nums; }
+.resbar .rs .gr { font-family: var(--font-data); font-size: 0.8rem; color: #2b7a3f; font-variant-numeric: tabular-nums; }
+.resbar .rs .gr.zero { color: var(--muted); }
+.resbar .rs .gr.neg { color: #c0392b; font-weight: 700; }
+.resbar .rs small { color: var(--muted); font-size: 0.72rem; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .resbar .rs .gr { color: #6fcf8a; } :root:not([data-theme="light"]) .resbar .rs .gr.neg { color: #ff8a7a; } }
+:root[data-theme="dark"] .resbar .rs .gr { color: #6fcf8a; }
+:root[data-theme="dark"] .resbar .rs .gr.neg { color: #ff8a7a; }
+.stock .lad { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+.stock .lad .lb b { display: inline; margin: 0; font-size: 0.84rem; }
+.stock .lad .lb small { color: var(--muted); font-size: 0.72rem; margin-left: 5px; }
+.stock .lad .need { grid-column: 2 / 3; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.stock .lad .st { grid-column: 3; grid-row: 1 / span 2; font-size: 0.74rem; color: var(--muted); font-weight: 650; text-align: right; white-space: nowrap; }
+.stock .lad.ok { border-color: #2b7a3f; }
+.stock .lad.ok .st { color: #2b7a3f; }
+.stock .lad.never .st { color: #c0392b; }
+.stock .lad .sym.lv { grid-row: 1 / span 2; }
+.req { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-family: var(--font-data); font-size: 0.76rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.req.ok { color: #2b7a3f; font-weight: 600; }
+.req .sym { vertical-align: -3px; }
+.stock .sec, .faccard .sec { margin: 4px 0 0; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.stock .netline { color: var(--muted); font-size: 0.76rem; }
+.stock .warn { color: #c0392b; font-size: 0.78rem; font-weight: 650; }
+.faccard .fc-x { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 1rem; cursor: pointer; padding: 0 2px; line-height: 1; }
+.faccard .fc-act { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.faccard .fc-act .lb b { display: inline; font-size: 0.84rem; }
+.faccard .fc-act .lb small { color: var(--muted); font-size: 0.7rem; margin-left: 5px; }
+.faccard .fc-act .need { grid-column: 2; display: flex; flex-wrap: wrap; gap: 2px 9px; font-family: var(--font-data); font-size: 0.74rem; color: var(--muted); }
+.faccard .fc-act .need .req.ok { color: #2b7a3f; font-weight: 600; }
+.faccard .fc-act .go { grid-column: 3; grid-row: 1 / span 2; font-size: 0.74rem; font-weight: 700; color: var(--muted); text-align: right; white-space: nowrap; }
+.faccard .fc-act .sym { grid-row: 1 / span 2; }
+.faccard .fc-act.ok { border-color: #2f9e55; }
+.faccard .fc-act.ok .go { color: #fff; background: #2f9e55; border-radius: 6px; padding: 3px 8px; }
+.faccard .fc-act:disabled { cursor: default; }
+.faccard .fc-act.ok:hover { background: rgb(47 158 85 / 0.08); }
+.faccard .fc-act.one { grid-template-columns: 24px minmax(0, 1fr) auto auto; padding: 3px 8px; }
+.faccard .fc-act.one .need { grid-column: 3; grid-row: 1; }
+.faccard .fc-act.one .go { grid-column: 4; grid-row: 1; }
+.faccard .fc-act.one .sym { grid-row: 1; }
+.faccard.open .fc-body { gap: 6px; }
+.faccard .fc-act .why { grid-column: 2 / 4; color: var(--muted); font-size: 0.7rem; }
 .market li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; }
 .market b { font-size: 0.88rem; }
 .market .cost { color: var(--muted); font-size: 0.76rem; display: block; margin-top: 1px; }
@@ -550,7 +596,100 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return `${COLS[x] || "?"}${y + 1}`;
   };
   const playerName = (p) => PLAYER[p] ? PLAYER[p].name : String(p);
-  const RES_NAME = ["", "Farbe", "Quader", "Ball", "Fass"];
+  // ----- Symbole -------------------------------------------------------------------------------
+  /** Rohstoffnamen: im Gebietsmodus Eisen / Gold / Brot, sonst die alten (Farbe / Quader / Ball). */
+  const resName = (c) => ((isTerr() ? ["", "Eisen", "Gold", "Brot", "Fass"] : ["", "Farbe", "Quader", "Ball", "Fass"])[c] || "?");
+  /** Natuerliche Farben der Rohstoffe (Rand der Kachel, Abzeichen) und ihre Symbole. */
+  const CAT_COLOR = ["", "#7c8ca6", "#f2b705", "#d99a4e", "#9a6a3c"];
+  const CAT_SYM = ["", "iron", "gold", "bread"];
+  const LV_RING = ["", "#ffffff", "#c9ced6", "#e0584c", "#f2c94c"];
+  /**
+   * Ebenen eines Symbols auf einem Raster von 24 x 24: {d, fill, stroke, w} (Pfad) oder {text, fill, stroke}.
+   * Dieselben Ebenen zeichnen das Brett (Path2D) und das Menue (Inline-SVG).
+   */
+  function symLayers(kind, color) {
+    const col = color || "#9aa1ab", line = "rgba(30,34,44,0.85)";
+    switch (kind) {
+      case "iron": return [
+        { d: "M3.5 15 L6.5 8 L12.5 3.8 L19 7.5 L21 15 L15.5 20.5 L8 19.5 Z", fill: "#8d9bb0", stroke: line, w: 1.3 },
+        { d: "M6.5 8 L12.5 3.8 L11.5 11 Z", fill: "#d6deea" },
+        { d: "M21 15 L15.5 20.5 L11.5 11 L19 7.5 Z", fill: "#5a687d" },
+        { d: "M3.5 15 L11.5 11 L8 19.5 M11.5 11 L15.5 20.5", stroke: "rgba(30,34,44,0.55)", w: 0.9 },
+      ];
+      case "gold": return [
+        { d: "M7 7 L17 7 L20 11 L4 11 Z", fill: "#ffe586", stroke: line, w: 1.3 },
+        { d: "M4 11 L20 11 L22 19 L2 19 Z", fill: "#f2b705", stroke: line, w: 1.3 },
+        { d: "M5.2 14 L18.8 14", stroke: "rgba(255,255,255,0.55)", w: 1.1 },
+        { d: "M19.5 2 L20.3 4.2 L22.5 5 L20.3 5.8 L19.5 8 L18.7 5.8 L16.5 5 L18.7 4.2 Z", fill: "#ffffff", stroke: "rgba(120,80,0,0.6)", w: 0.6 },
+      ];
+      case "bread": return [
+        { d: "M2.5 15 C2.5 9 7 5.5 12 5.5 C17 5.5 21.5 9 21.5 15 C21.5 17.8 19.8 19.5 17.5 19.5 L6.5 19.5 C4.2 19.5 2.5 17.8 2.5 15 Z", fill: "#dc9d4f", stroke: line, w: 1.3 },
+        { d: "M7.5 9 L9.8 13.2 M11.8 8 L14.2 12.4 M16 9.2 L17.7 12.6", stroke: "#fbe3b3", w: 1.5 },
+      ];
+      case "area-square": return [
+        { d: "M3.5 3.5 H20.5 V20.5 H3.5 Z", fill: col, stroke: line, w: 1.3 },
+        { d: "M7.5 7.5 H16.5 V16.5 H7.5 Z", stroke: "rgba(255,255,255,0.55)", w: 1.2 },
+      ];
+      case "area-hex": return [
+        { d: "M12 2 L20.7 7 L20.7 17 L12 22 L3.3 17 L3.3 7 Z", fill: col, stroke: line, w: 1.3 },
+        { d: "M12 6.4 L16.9 9.2 L16.9 14.8 L12 17.6 L7.1 14.8 L7.1 9.2 Z", stroke: "rgba(255,255,255,0.55)", w: 1.2 },
+      ];
+      case "area-triangle": return [
+        { d: "M12 3 L22 20.5 L2 20.5 Z", fill: col, stroke: line, w: 1.3 },
+        { d: "M12 9 L16.4 16.7 L7.6 16.7 Z", stroke: "rgba(255,255,255,0.55)", w: 1.2 },
+      ];
+      case "card": return [
+        { d: "M6 3 H18 V21 H6 Z", fill: "#fdf6e3", stroke: line, w: 1.3 },
+        { d: "M12 7.5 L13.3 10.6 L16.5 11 L14.1 13.2 L14.8 16.4 L12 14.7 L9.2 16.4 L9.9 13.2 L7.5 11 L10.7 10.6 Z", fill: "#e0a100", stroke: "rgba(90,60,0,0.7)", w: 0.7 },
+      ];
+      case "crown": return [
+        { d: "M3.5 19 L3.5 8 L8 13 L12 5 L16 13 L20.5 8 L20.5 19 Z", fill: "#f2c94c", stroke: line, w: 1.3 },
+        { d: "M3.5 19 L20.5 19 L20.5 21 L3.5 21 Z", fill: "#c9962a", stroke: line, w: 1 },
+      ];
+      default: {
+        const lv = Number(String(kind).replace("u", "")) || 1;
+        return [
+          { d: "M2.5 12 A9.5 9.5 0 1 0 21.5 12 A9.5 9.5 0 1 0 2.5 12 Z", fill: col, stroke: LV_RING[Math.min(lv, 4)], w: 2.4 },
+          { d: "M2 12 A10 10 0 1 0 22 12 A10 10 0 1 0 2 12 Z", stroke: "rgba(0,0,0,0.6)", w: 0.9 },
+          { text: String(lv), fill: "#ffffff", stroke: "rgba(0,0,0,0.55)" },
+        ];
+      }
+    }
+  }
+  /** Symbol als Inline-SVG fuer das Menue. `off`: grau (noch nicht bezahlbar). */
+  function symSvg(kind, size, color, off, title) {
+    const body = symLayers(kind, color).map((l) => {
+      if (l.text) {
+        return `<text x="12" y="16.6" text-anchor="middle" font-size="13" font-weight="700" font-family="sans-serif" fill="${l.fill}" stroke="${l.stroke}" stroke-width="2" paint-order="stroke">${l.text}</text>`;
+      }
+      return `<path d="${l.d}" fill="${l.fill || "none"}"${l.stroke ? ` stroke="${l.stroke}" stroke-width="${l.w || 1}" stroke-linejoin="round" stroke-linecap="round"` : ""}/>`;
+    }).join("");
+    const t = title ? `<title>${escapeHtml(title)}</title>` : "";
+    return `<svg class="sym${off ? " off" : ""}${/^u\d$/.test(kind) ? " lv" : ""}" viewBox="0 0 24 24" width="${size}" height="${size}" role="img" aria-label="${escapeHtml(title || kind)}">${t}${body}</svg>`;
+  }
+  /** Symbol aufs Brett: Mitte (cx, cy), Kantenlaenge `size` in Pixeln. */
+  function drawSymbol(kind, cx, cy, size, color) {
+    ctx.save();
+    ctx.translate(cx - size / 2, cy - size / 2);
+    ctx.scale(size / 24, size / 24);
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    for (const l of symLayers(kind, color)) {
+      if (l.text) {
+        ctx.font = `700 13px sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+        ctx.lineWidth = 2; ctx.strokeStyle = l.stroke; ctx.strokeText(l.text, 12, 16.6);
+        ctx.fillStyle = l.fill; ctx.fillText(l.text, 12, 16.6);
+        continue;
+      }
+      const path = new Path2D(l.d);
+      if (l.fill) { ctx.fillStyle = l.fill; ctx.fill(path); }
+      if (l.stroke) { ctx.lineWidth = l.w || 1; ctx.strokeStyle = l.stroke; ctx.stroke(path); }
+    }
+    ctx.restore();
+  }
+  /** Symbol der Flaeche je nach Brettform: Quadrat, Sechseck oder Dreieck. */
+  const areaKind = () => (R && R.board ? (R.board.kind === "hex" ? "area-hex" : R.board.kind === "triangle" ? "area-triangle" : "area-square") : "area-square");
+  const KAT_SYM_NAME = { 0: "Fläche", 1: "Eisen", 2: "Gold", 3: "Brot" };
   const typeInfo = (res) => R.resource_types[res];
   const category = (res) => typeInfo(res).category;
   const total = (inv) => inv.reduce((s, [, n]) => s + n, 0);
@@ -569,7 +708,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const RES_NEUTRAL = "#ffffff";
   const resColor = (res, owner) => {
     if (!isTerr()) return crystalColor(res);
-    return owner === null || owner === undefined || owner < 0 ? RES_NEUTRAL : PLAYER[owner].color;
+    return CAT_COLOR[category(res)] || RES_NEUTRAL;
   };
   const cellOwnerAt = (f, cell) => (f.land ? f.land[cell] : null);
   /** Wem gehoert eine Farbe? Text fuer Tooltips und Knoepfe. */
@@ -578,13 +717,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (home === null || home === undefined) return "Zentrumsfarbe";
     return R.cornerPlayer[home] >= 0 ? `Farbe ${playerName(R.cornerPlayer[home])}` : "Farbe einer freien Ecke";
   };
-  const CARD = (key) => (R.market || []).find((c) => c.key === key) || { key, name: key, text: "" };
+  const CARD = (key) => (R.market || []).find((c) => c.key === key) ||
+    (key === "king_boost" ? { key, name: "König-Upgrade", text: "Der König bekommt zusätzliche Zugfelder (bis Stufe 3), bezahlt mit Gold." } : { key, name: key, text: "" });
   function costParts(k) {
     const parts = [];
-    if (k.color) parts.push(`${k.color}× Farbe`);
+    if (k.color) parts.push(`${k.color}× ${resName(1)}`);
     if (k.foreign_color) parts.push(`${k.foreign_color}× fremde Farbe`);
-    if (k.k2) parts.push(`${k.k2}× Quader${k.k2_kinds > 1 ? ` in ${k.k2_kinds} Farben` : ""}`);
-    if (k.k3) parts.push(`${k.k3}× Ball${k.k3_kinds > 1 ? ` in ${k.k3_kinds} Farben` : ""}`);
+    if (k.k2) parts.push(`${k.k2}× ${resName(2)}${k.k2_kinds > 1 ? ` in ${k.k2_kinds} Farben` : ""}`);
+    if (k.k3) parts.push(`${k.k3}× ${resName(3)}${k.k3_kinds > 1 ? ` in ${k.k3_kinds} Farben` : ""}`);
     return parts.join(" + ");
   }
   /** Preis fuer eine Zielfigur mit Reichweite `range`, wie Card::cost_for im Spielkern. */
@@ -937,7 +1077,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const roundsWord = (n) => `${n} Runde${n === 1 ? "" : "n"}`;
   const relocCostText = () => {
     const c = R.config;
-    return [c.terr_move_k1 ? `${c.terr_move_k1}× Kat 1` : "", c.terr_move_k2 ? `${c.terr_move_k2}× Kat 2` : ""].filter(Boolean).join(" + ") || "nichts";
+    return [c.terr_move_k1 ? `${c.terr_move_k1}× Eisen` : "", c.terr_move_k2 ? `${c.terr_move_k2}× Gold` : ""].filter(Boolean).join(" + ") || "nichts";
   };
   /**
    * Vorab: was ein Umzug der Fabrik von `p` auf `cell` kosten und wie lange er dauern wuerde (nur auf eigenem,
@@ -951,8 +1091,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (f.land[cell] !== p || !f.linked[cell]) return null;
     const miss = [];
     const k1 = catUnits(fac.storage, 1), k2 = catUnits(fac.storage, 2);
-    if (k1 < c.terr_move_k1) miss.push(`${c.terr_move_k1 - k1}× Kat 1`);
-    if (k2 < c.terr_move_k2) miss.push(`${c.terr_move_k2 - k2}× Kat 2`);
+    if (k1 < c.terr_move_k1) miss.push(`${c.terr_move_k1 - k1}× Eisen`);
+    if (k2 < c.terr_move_k2) miss.push(`${c.terr_move_k2 - k2}× Gold`);
     return { from: fac.cell, rounds: relocRounds(fac.cell, cell), cost: relocCostText(), miss };
   }
   const harvestPeriod = (res) => ((R.config && R.config.terr_ripen) || [])[category(res) - 1] || 0;
@@ -1019,11 +1159,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       // Abgebaut: blass, mit der Zahl der Runden bis es wieder da ist.
       const dw = depositWait(f, cell, res), wait = dw.n;
       ctx.globalAlpha = dw.faded ? 0.22 : dim ? 0.35 : 1;
-      if (cat === 1) drawCrystal(px, py, s, col);
+      if (isTerr() && cat <= 3) { shadow(px, py, s * 0.5); drawSymbol(CAT_SYM[cat], px, py - s * 0.68, s * 1.75); }
+      else if (cat === 1) drawCrystal(px, py, s, col);
       else if (cat === 2) drawIngot(px, py, s, col);
       else if (cat === 3) drawGrain(px, py, s, col);
       else drawBarrel(px, py, s, col);
-      if (wait) countdownLabel(String(wait), px, py - s * 0.3, Math.max(9, Math.round(geo.W * 0.2)), dw.paused, dim);
+      if (wait) countdownLabel(String(wait), px, isTerr() && cat <= 3 ? py + s * 0.5 : py - s * 0.3, Math.max(9, Math.round(geo.W * 0.2)), dw.paused, dim);
     });
     ctx.globalAlpha = 1;
   }
@@ -1255,8 +1396,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!inv.length && !level) return;
     if (isTerr()) {
       // Gebietsmodus: je Kategorie die Summe, in der Farbe des Besitzers.
-      const col = resColor(1, owner);
-      const parts = [1, 2, 3, 4].map((c) => [c, String(catUnits(inv, c)), col]).filter((x) => x[1] !== "0");
+      const parts = [1, 2, 3, 4].map((c) => [c, String(catUnits(inv, c)), CAT_COLOR[c]]).filter((x) => x[1] !== "0");
       drawPill(cx, by, [], parts, level);
       return;
     }
@@ -1273,7 +1413,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.font = `600 ${fs}px ${cssVar("--font-data") || "monospace"}`;
     const dw = h * 0.62;
     let width = h * 0.35 + colors.length * dw;
-    for (const [, t] of parts) width += ctx.measureText(t).width + h * 0.55;
+    const padPart = isTerr() ? h * 0.95 : h * 0.55;
+    for (const [, t] of parts) width += ctx.measureText(t).width + padPart;
     const lv = level ? `→${level}` : "";
     if (lv) width += ctx.measureText(lv).width + h * 0.5;
     width += h * 0.2;
@@ -1289,6 +1430,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     for (const [c, t, col] of parts) {
+      if (isTerr() && c <= 3) {
+        drawSymbol(CAT_SYM[c], x + h * 0.3, by + h / 2, h * 0.86);
+        ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(t, x + h * 0.78, by + h / 2 + 0.5);
+        x += ctx.measureText(t).width + padPart;
+        continue;
+      }
       ctx.fillStyle = col || "#c9ced6";
       const q = h * 0.17, mx = x + h * 0.15, my = by + h / 2;
       ctx.beginPath();
@@ -1420,8 +1568,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const px = cx + (list.length === 1 ? 0 : (k === 0 ? -1 : 1) * U * 0.2), py = cy;
       const dw = depositWait(f, cell, res), wait = dw.n;
       ctx.globalAlpha = dw.faded ? 0.25 : dim ? 0.4 : 1;
-      flatGlyph(category(res), px, py, s, resColor(res, cellOwnerAt(f, cell)));
-      if (wait) countdownLabel(String(wait), px, py + 0.5, Math.max(10, Math.round(U * 0.24)), dw.paused, dim);
+      if (isTerr() && category(res) <= 3) drawSymbol(CAT_SYM[category(res)], px, py, s * 2.7);
+      else flatGlyph(category(res), px, py, s, resColor(res, cellOwnerAt(f, cell)));
+      if (wait) countdownLabel(String(wait), px, isTerr() && category(res) <= 3 ? py + U * 0.3 : py + 0.5, Math.max(10, Math.round(U * 0.24)), dw.paused, dim);
     });
     ctx.globalAlpha = 1;
   }
@@ -1589,6 +1738,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       return depth(ax, ay) - depth(bx, by) || ax - bx;
     });
     for (const c of order) drawTile(c);
+    drawResourceRims(f);
     drawLabels();
 
     // Letzter Zug hervorheben
@@ -1604,6 +1754,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (e.type === "cut_off" && e.to !== null) for (const c of e.cells) outlineCell(c, PLAYER[e.to].color, 0.32);
       if (e.type === "enclosed") for (const c of e.cells) outlineCell(c, PLAYER[e.player].color, 0.3);
       if (e.type === "reconnected") outlineCell(e.cell, PLAYER[e.owner].color, 0.3);
+      if (e.type === "dissolved") outlineCell(e.cell, HOSTILE, 0.3);
     }
     if (hoverCell !== null) outlineCell(hoverCell, cssVar("--ink") || "#000", 0);
     if (canAct() && cardMode) {
@@ -1728,6 +1879,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ob.fn();
     }
     ctx.globalAlpha = 1;
+    drawResourceBadges(f, new Set([...occupied, ...built]));
     if (pills) { for (const job of pills) job(); pills = null; }
     canvas.dataset.pieces = String(f.pieces.length);
     canvas.dataset.frame = String(fi);
@@ -1738,6 +1890,46 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
 
   /** Pausezeichen an der Figur, die in diesem Zug eine Karte bekam und deshalb ruht. */
+  /**
+   * Gebietsmodus: jede Kachel mit Vorkommen traegt einen Rand in der Farbe des Rohstoffs (Eisen grau-blau,
+   * Gold gelb, Brot braun; zwei Vorkommen: zwei Raender ineinander). Er liegt auf der Kachel unter allen
+   * Figuren und bleibt am Rand sichtbar, auch wenn eine Figur auf dem Feld steht.
+   */
+  function drawResourceRims(f) {
+    if (!isTerr()) return;
+    ctx.lineJoin = "round";
+    for (let c = 0; c < R.deposits.length; c++) {
+      const list = liveDeposits(f, c);
+      list.slice(0, 2).forEach((res, k) => {
+        const sc = k === 0 ? 0.94 : 0.8;
+        cellPath(c, sc);
+        ctx.lineWidth = Math.max(4, geo.W * 0.11); ctx.strokeStyle = "rgba(20,24,32,0.5)"; ctx.stroke();
+        cellPath(c, sc);
+        ctx.lineWidth = Math.max(2.2, geo.W * 0.065); ctx.strokeStyle = CAT_COLOR[category(res)] || "#888"; ctx.stroke();
+      });
+    }
+  }
+  /** Steht eine Figur oder Fabrik auf dem Feld, wiederholt ein kleines Abzeichen am Feldrand, was darunter liegt. */
+  function drawResourceBadges(f, covered) {
+    if (!isTerr()) return;
+    for (let c = 0; c < R.deposits.length; c++) {
+      if (!covered.has(c)) continue;
+      const list = liveDeposits(f, c);
+      if (!list.length) continue;
+      const [x, y] = R.board.cells[c];
+      const [cx, cy] = iso(x, y);
+      const u = geo.W, r = u * (geo.flat ? 0.13 : 0.12);
+      list.slice(0, 2).forEach((res, k) => {
+        const n = Math.min(2, list.length);
+        const bx = cx + (geo.flat ? -u * 0.3 + k * r * 2.2 : (k - (n - 1) / 2) * r * 2.3);
+        const by = cy + (geo.flat ? u * (R.board.kind === "triangle" ? 0.22 : 0.3) : u * 0.2);
+        ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255,255,255,0.96)"; ctx.fill();
+        ctx.lineWidth = Math.max(1.5, r * 0.35); ctx.strokeStyle = CAT_COLOR[category(res)] || "#888"; ctx.stroke();
+        if (category(res) <= 3) drawSymbol(CAT_SYM[category(res)], bx, by, r * 1.55);
+      });
+    }
+  }
   function drawLockBadge(f) {
     const piece = lockedPiece(f);
     if (!piece) return;
@@ -1877,7 +2069,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!inv.length) return "nichts";
     const byCat = [0, 0, 0, 0];
     for (const [res, n] of inv) byCat[category(res)] += n;
-    return [1, 2, 3].filter((c) => byCat[c]).map((c) => `${byCat[c]}× Kat ${c}`).join(", ");
+    return [1, 2, 3].filter((c) => byCat[c]).map((c) => `${byCat[c]}× ${isTerr() ? resName(c) : "Kat " + c}`).join(", ");
   }
   function actionText(i) {
     const f = R.frames[i];
@@ -1963,7 +2155,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       case "cut_off": return `Land von ${playerName(e.from)} abgetrennt (${e.cells.length} Feld${e.cells.length === 1 ? "" : "er"}): ${e.to === null ? "wird neutral" : `geht an ${playerName(e.to)}`}.`;
       case "enclosed": return `${playerName(e.player)} umschließt ${e.cells.length} neutrale${e.cells.length === 1 ? "s Feld" : " Felder"}: ${e.cells.length === 1 ? "es geht" : "sie gehen"} an ${playerName(e.player)} (${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}).`;
       case "reconnected": return `Figur von ${playerName(e.owner)} auf ${cellName(e.cell)} grenzt wieder an ihr Land: wieder aktiv, das Feld gehört jetzt ${playerName(e.owner)}.`;
-      case "income": return `Fabrik von ${playerName(e.player)} sammelt ${e.area} Fläche${e.bonus ? `, dazu ${e.bonus} Bonus-Fläche (${e.kat3}× Kat 3: 2^${e.kat3})` : ""}${e.gained.length ? ` und ${invText(e.gained)}` : ""}.`;
+      case "income": return `Fabrik von ${playerName(e.player)} sammelt ${e.area} Fläche${e.bonus ? `, dazu ${e.bonus} Bonus-Fläche (${e.kat3}× Brot: 2^${e.kat3})` : ""}${e.gained.length ? ` und ${invText(e.gained)}` : ""}.`;
+      case "upkeep": return `Unterhalt von ${playerName(e.player)}: −${e.paid} Fläche (Summe der Figurenstufen).`;
+      case "dissolved": return `Figur Stufe ${e.level} von ${playerName(e.owner)} auf ${cellName(e.cell)} löst sich auf: die Fläche reichte nicht für den Unterhalt.`;
       case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
       case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
       case "factory_destroyed": if (isTerr()) return `Fabrik von ${playerName(e.owner)} auf ${cellName(e.cell)} zerstört: Lager, Fläche und gelagerte Karte sind weg, es gibt keine neuen Figuren mehr.`;
@@ -2011,11 +2205,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!inv.length) return "<span>nichts</span>";
     const out = [];
     if (isTerr()) {
-      // Gebietsmodus: Summe je Kategorie, in der Farbe des Besitzers.
-      const col = resColor(1, owner);
-      for (let c = 1; c <= 4; c++) {
+      // Gebietsmodus: Summe je Kategorie als Symbol mit Zahl.
+      for (let c = 1; c <= 3; c++) {
         const n = catUnits(inv, c);
-        if (n) out.push(`<span>${c === 1 ? "Kat 1" : RES_NAME[c]}: <i class="chip${c}" style="background:${col}"></i>${n}</span>`);
+        if (n) out.push(`<span title="${resName(c)}">${symSvg(CAT_SYM[c], 16)} ${n}</span>`);
       }
       return out.join("") || "<span>nichts</span>";
     }
@@ -2027,7 +2220,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (!items.length) continue;
       const chips = items.map(([r, k]) =>
         `<i class="chip${Math.min(c, 4)}" style="background:${crystalColor(r)}" title="${escapeHtml(colorOwner(r))}"></i>${k}`).join(" ");
-      out.push(`<span>${RES_NAME[c]}: ${chips}</span>`);
+      out.push(`<span>${resName(c)}: ${chips}</span>`);
     }
     return out.join("");
   }
@@ -2043,15 +2236,29 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const terrMaxLevel = () => Math.min(R.board.corners.length, 4);
   function terrPriceText(level) {
     const p = terrPrice(level), parts = [`${p.area} Fläche`];
-    if (p.k1) parts.push(`${p.k1}× Kat 1`);
-    if (p.k2) parts.push(`${p.k2}× Kat 2`);
-    if (p.k3) parts.push(`${p.k3}× Kat 3`);
+    if (p.k1) parts.push(`${p.k1}× Eisen`);
+    if (p.k2) parts.push(`${p.k2}× Gold`);
+    if (p.k3) parts.push(`${p.k3}× Brot`);
     return parts.join(" + ");
   }
   const scoreNote = () => (isTerr() ? "Land + Figurenstufen" : "Figurenstufen + Fabriken + Farben");
   /** Einkommen am Ende des eigenen Zugs: Flaeche = verbundene Felder, dazu terr_yield je Vorkommen darauf. */
+  const upkeepOn = () => !!(R && R.config && R.config.terr_upkeep);
+  /** Unterhalt je Runde: Summe der Stufen aller Figuren des Spielers, der Koenig zahlt nichts. */
+  const upkeepOf = (f, p) => (upkeepOn() ? f.pieces.filter((x) => x.owner === p && !x.king).reduce((a, x) => a + (x.level || 1), 0) : 0);
+  const signed = (n) => (n < 0 ? `−${-n}` : `+${n}`);
+  /** Koenigs-Upgrade mit Gold (Regel terr_kingup): naechste Stufe, Zusatzfelder und Preis in Gold; null, wenn aus. */
+  const kingUpOn = () => !!(R && R.king_up && R.king_up.on);
+  function kingUpInfo(f, p) {
+    if (!kingUpOn()) return null;
+    const pp = (f.player_perks || [])[p];
+    const level = ((pp && pp.king_boost) || 0) + 1;
+    if (level > 3) return { done: true, level: 3 };
+    const extra = R.king_up.extra[level - 1];
+    return { done: false, level, extra, gold: extra * R.king_up.price };
+  }
   function terrIncome(f, p) {
-    const inc = { area: 0, 1: 0, 2: 0, 3: 0, 4: 0, k3: 0, bonus: 0 };
+    const inc = { area: 0, 1: 0, 2: 0, 3: 0, 4: 0, k3: 0, bonus: 0, upkeep: 0, net: 0 };
     if (!f.land || !f.anchored[p]) return inc;
     const y = (R.config && R.config.terr_yield) || 1;
     // Mit der Besetzungsregel zaehlt nur, wo am Ende des Zugs eine eigene Figur steht (so wie es jetzt aussieht).
@@ -2066,6 +2273,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
     inc.bonus = bonusArea(inc.k3);
+    inc.upkeep = upkeepOf(f, p);
+    inc.net = inc.area + inc.bonus - inc.upkeep;
     return inc;
   }
   /** Was fuer eine Stufe schon da ist und wie viele eigene Zugenden es bei dem Einkommen noch dauert. */
@@ -2076,7 +2285,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const miss = Math.max(0, need - have);
       needs.push({ kind, have, need, miss, rounds: miss === 0 ? 0 : rate > 0 ? Math.ceil(miss / rate) : Infinity });
     };
-    add(0, area, pr.area, inc.area + inc.bonus);
+    add(0, area, pr.area, inc.net);
     add(1, catUnits(storage, 1), pr.k1, inc[1]);
     add(2, catUnits(storage, 2), pr.k2, inc[2]);
     add(3, catUnits(storage, 3), pr.k3, inc[3]);
@@ -2085,17 +2294,28 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   const roundsText = (n) => (n === 0 ? "bereit" : !Number.isFinite(n) ? "nie" : n === 1 ? "in 1 Runde" : `in ${n} Runden`);
   const roundsShort = (n) => (n === 0 ? "bereit" : !Number.isFinite(n) ? "nie" : `${n} Rd.`);
-  const KAT_NAME = { 0: "Fläche", 1: "Kat 1", 2: "Kat 2", 3: "Kat 3" };
+  const KAT_NAME = { 0: "Fläche", 1: "Eisen", 2: "Gold", 3: "Brot" };
   /** Was fehlt, und warum es vielleicht nie kommt (kein Vorkommen der Kategorie am verbundenen Land). */
   function missingText(st) {
     const bits = st.needs.filter((n) => n.miss > 0).map((n) => `${n.miss} ${KAT_NAME[n.kind]}${Number.isFinite(n.rounds) ? "" : " (kein Einkommen)"}`);
     return bits.join(", ");
   }
   function incomeText(inc) {
-    const bits = [`+${inc.area + (inc.bonus || 0)} Fläche${inc.bonus ? ` (davon ${inc.bonus} durch ${inc.k3}× Kat 3)` : ""}`];
-    for (const c of [1, 2, 3]) if (inc[c]) bits.push(`+${inc[c]} Kat ${c}`);
+    const parts = [`${inc.area} Land`];
+    if (inc.bonus) parts.push(`${inc.bonus} durch ${inc.k3}× Brot`);
+    if (inc.upkeep) parts.push(`−${inc.upkeep} Unterhalt`);
+    const bits = [`${signed(inc.net)} Fläche (${parts.join(", ")})`];
+    for (const c of [1, 2, 3]) if (inc[c]) bits.push(`+${inc[c]} ${KAT_NAME[c]}`);
     return bits.join(", ") + ".";
   }
+  /** Eine Voraussetzung als Symbol mit Zahl: Flaeche (Farbe des Spielers), Eisen, Gold oder Brot. */
+  function reqHtml(kind, have, need, color) {
+    const ok = have >= need;
+    const sym = kind === 0 ? areaKind() : CAT_SYM[kind];
+    return `<span class="req${ok ? " ok" : ""}" title="${KAT_NAME[kind]}: ${have} von ${need}">${symSvg(sym, 15, kind === 0 ? color : null, false)}${Math.min(have, need)}/${need}</span>`;
+  }
+  /** Zahl mit Zuwachs je Runde in Klammern, zum Beispiel "(+5)"; negativ rot. */
+  const growthHtml = (n, tip) => `<span class="gr${n < 0 ? " neg" : n === 0 ? " zero" : ""}" title="${escapeHtml(tip || "")}">(${signed(n)})</span>`;
   /** Version 2: Satz zur Reifezeit der Vorkommen. */
   function ripenSub() {
     const r = R.config && R.config.terr_ripen;
@@ -2109,42 +2329,73 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Lange Erklaerung, standardmaessig eingeklappt: die Uebersicht rechts soll Zahlen zeigen, keine Absaetze. */
   const explain = (text) => `<details class="explain"><summary>Erklärung</summary><span class="sub">${text}</span></details>`;
+  /** Zeile der Uebersicht: Symbol, grosse Zahl, Zuwachs je Runde in Klammern. */
+  const rsHtml = (sym, big, tail, tip) => `<div class="rs" title="${escapeHtml(tip)}">${sym}<b>${big}</b>${tail}</div>`;
   function renderTerritoryStock(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
     const rows = [];
+    const color = PLAYER[p].color;
+    const area = (f.area || [])[p] || 0;
     if (!fac) {
       const again = R.config && R.config.terr_move > 0 ? ` Der König kann sie auf eigenem Land neu bauen (fest ${R.config.terr_rebuild} Runden, kostenlos).` : "";
       rows.push(`<div class="loc"><b>Fabrik zerstört</b><span class="sub">Ohne Fabrik gibt es kein Einkommen und keine neuen Figuren. Nur der König entscheidet das Spiel noch.${again}</span></div>`);
       return rows;
     }
     if (fac.building > 0) {
-      rows.push(`<div class="loc"><b>Fabrik im Bau auf ${cellName(fac.cell)}: noch ${fac.building} Runde${fac.building === 1 ? "" : "n"}</b><div class="res"><span>Fläche: <b style="display:inline">${(f.area || [])[p] || 0}</b></span>${resHtml(fac.storage, p)}</div>` +
-        explain("Solange sie nicht steht: kein Einkommen, keine Ernte (die Erntezähler stehen still), nichts zu bauen oder zu kaufen. Das Land ist nicht verbunden, alle Figuren sind wehrlos (sie färben nichts und schlagen nicht) und der König darf sich nicht bewegen.") + `</div>`);
+      rows.push(`<div class="loc"><b>Fabrik im Bau auf ${cellName(fac.cell)}: noch ${fac.building} Runde${fac.building === 1 ? "" : "n"}</b><div class="res"><span title="Fläche">${symSvg(areaKind(), 16, color)} ${area}</span>${resHtml(fac.storage, p)}</div>` +
+        explain("Solange sie nicht steht: kein Einkommen, keine Ernte (die Erntezähler stehen still), kein Unterhalt, nichts zu bauen oder zu kaufen. Das Land ist nicht verbunden, alle Figuren sind wehrlos (sie färben nichts und schlagen nicht) und der König darf sich nicht bewegen.") + `</div>`);
       return rows;
     }
-    const area = (f.area || [])[p] || 0;
-    rows.push(`<div class="loc"><b>Lager der Fabrik auf ${cellName(fac.cell)}</b><div class="res"><span>Fläche: <b style="display:inline">${area}</b></span>${resHtml(fac.storage, p)}</div>` +
-      explain(`Am Ende deines Zugs sammelt sie alle Felder ein, die an ihr hängen (je 1 Fläche), dazu die Rohstoffe auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.`) + `</div>`);
-    const color = PLAYER[p].color;
-    const req = (kind, have, need) => {
-      const ok = have >= need;
-      const mark = kind ? slotSvg(kind, ok ? color : null) : "<small>Fläche</small>";
-      const what = kind ? `Kat ${kind}` : "Fläche";
-      return `<span class="req${ok ? " ok" : ""}" title="${what}: ${have} von ${need}">${mark}${Math.min(have, need)}/${need}</span>`;
-    };
     const inc = terrIncome(f, p);
-    rows.push(`<div class="loc"><b>Einkommen je Runde</b><span class="sub">${incomeText(inc)} Am Ende deines Zugs, bei der jetzigen Fläche.</span></div>`);
+    const stock = (c) => catUnits(fac.storage, c);
+    // --- Bestand mit Zuwachs je Runde
+    const tiles = [];
+    const areaTip = `Fläche ${area}. Am Ende deines Zugs: ${inc.area} Land${inc.bonus ? `, +${inc.bonus} durch ${inc.k3}× Brot` : ""}${inc.upkeep ? `, −${inc.upkeep} Unterhalt` : ""} = ${signed(inc.net)}`;
+    tiles.push(rsHtml(symSvg(areaKind(), 24, color, false, "Fläche"), area, growthHtml(inc.net, areaTip), areaTip));
+    tiles.push(rsHtml(symSvg("iron", 24, null, false, "Eisen"), stock(1), growthHtml(inc[1], "Eisen im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Eisen (Kat 1)"));
+    tiles.push(rsHtml(symSvg("gold", 24, null, false, "Gold"), stock(2), growthHtml(inc[2], "Gold im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Gold (Kat 2)"));
+    if (bonusOn()) {
+      const tip = `Brot (Kat 3) wird nicht gelagert: ${inc.k3} verbundene${inc.k3 === 1 ? "s Feld" : " Felder"} bringen dir je Runde ${inc.bonus} Fläche (2^${inc.k3}); das nächste brächte ${bonusArea(inc.k3 + 1)}.`;
+      tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), inc.k3, `<small>Felder</small>`, tip));
+    } else {
+      tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), stock(3), growthHtml(inc[3], "Brot im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Brot (Kat 3)"));
+    }
+    rows.push(`<div class="resbar">${tiles.join("")}</div>`);
+    // --- Fläche je Runde und Unterhalt
+    const parts = [`${signed(inc.area)} Land`];
+    if (inc.bonus) parts.push(`${signed(inc.bonus)} Brot-Bonus`);
+    if (upkeepOn()) parts.push(`−${inc.upkeep} Unterhalt`);
+    rows.push(`<div class="netline">Fläche je Runde: ${parts.join(" ")} = <b>${signed(inc.net)}</b>${inc.bonus ? ` · nächstes Brot-Feld: ${signed(bonusArea(inc.k3 + 1) - inc.bonus)}` : ""}</div>`);
+    if (upkeepOn() && inc.upkeep > 0 && area + inc.area + inc.bonus < inc.upkeep) {
+      rows.push(`<div class="warn">Die Fläche reicht am Zugende nicht für den Unterhalt: eine Figur löst sich auf.</div>`);
+    }
+    rows.push(explain(`Am Ende deines Zugs sammelt die Fabrik alle Felder, die an ihr hängen (je 1 Fläche), dazu das Eisen, Gold und Brot auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.` +
+      (upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ihre Stufe in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
+    // --- Figuren: grau, solange nicht bezahlbar; Farbe, wenn bereit
+    rows.push(`<p class="sec">Figuren bauen</p>`);
     for (let level = 1; level <= terrMaxLevel(); level++) {
-      const pr = terrPrice(level);
       const st = terrLevelStatus(level, area, fac.storage, inc);
-      const bits = [req(null, area, pr.area)];
-      for (const c of [1, 2, 3]) {
-        const need = pr["k" + c];
-        if (!need) continue;
-        bits.push(req(c, catUnits(fac.storage, c), need));
+      const never = !st.ok && !Number.isFinite(st.rounds);
+      const when = st.ok ? "bereit" : never ? "nie" : roundsText(st.rounds);
+      const reqs = st.needs.map((n) => reqHtml(n.kind, n.have, n.need, color)).join("");
+      const tip = `${unitTitle(level)} (Stufe ${level}): ${terrPriceText(level)}${st.ok ? "" : never ? ` – es kommt kein ${st.needs.filter((n) => !Number.isFinite(n.rounds)).map((n) => KAT_NAME[n.kind]).join(" / ")} dazu` : ` – ${roundsText(st.rounds)}`}`;
+      rows.push(`<div class="loc lad${st.ok ? " ok" : ""}${never ? " never" : ""}" title="${escapeHtml(tip)}">${symSvg("u" + level, 28, color, !st.ok, `${unitTitle(level)} (Stufe ${level})`)}` +
+        `<div class="lb"><b>${unitTitle(level)}</b><small>Stufe ${level}${upkeepOn() ? ` · Unterhalt ${level}` : ""}</small></div><span class="st">${when}</span><div class="need">${reqs}</div></div>`);
+    }
+    // --- Koenig mit Gold verbessern
+    const ku = kingUpInfo(f, p);
+    if (ku) {
+      rows.push(`<p class="sec">König verbessern (Gold)</p>`);
+      if (ku.done) {
+        rows.push(`<div class="loc lad ok">${symSvg("crown", 28, null, false, "König")}<div class="lb"><b>König</b><small>alle 3 Stufen erreicht</small></div><span class="st">fertig</span></div>`);
+      } else {
+        const have = stock(2), ok = have >= ku.gold;
+        const rounds = ok ? 0 : inc[2] > 0 ? Math.ceil((ku.gold - have) / inc[2]) : Infinity;
+        const when = ok ? "bereit" : Number.isFinite(rounds) ? roundsText(rounds) : "nie";
+        rows.push(`<div class="loc lad${ok ? " ok" : ""}${!ok && !Number.isFinite(rounds) ? " never" : ""}" title="${escapeHtml(`König-Upgrade ${ku.level}/3: der König zieht ${ku.extra} Felder mehr (auf freiem Brett), kostet ${ku.gold}× Gold`)}">` +
+          `${symSvg("crown", 28, null, !ok, "König")}<div class="lb"><b>Stufe ${ku.level} von 3</b><small>+${ku.extra} Zugfelder</small></div><span class="st">${when}</span>` +
+          `<div class="need">${reqHtml(2, have, ku.gold, color)}</div></div>`);
       }
-      const wait = st.ok ? "bezahlbar" : `${roundsText(st.rounds)}${Number.isFinite(st.rounds) ? "" : ": kein Einkommen an " + st.needs.filter((n) => !Number.isFinite(n.rounds)).map((n) => KAT_NAME[n.kind]).join(", ")}`;
-      rows.push(`<div class="loc ladder${st.ok ? " ok" : ""}"><b>Stufe ${level} · ${unitTitle(level)} – ${wait}</b><div class="res">${bits.join("")}</div></div>`);
     }
     const sc = (f.stored_card || [])[p];
     const empty = cardAnyOn()
@@ -2172,7 +2423,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   const terrCardPrice = (c, p) => {
     const m = cardFactor(c, p), k = c.cost;
-    return [k.color ? `${k.color * m} Kat 1` : "", k.k2 ? `${k.k2 * m} Kat 2` : "", k.k3 ? `${k.k3 * m} Kat 3` : ""].filter(Boolean).join(" + ");
+    return [k.color ? `${k.color * m}× Eisen` : "", k.k2 ? `${k.k2 * m}× Gold` : "", k.k3 ? `${k.k3 * m}× Brot` : ""].filter(Boolean).join(" + ");
   };
   function factoryInfo(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
@@ -2194,21 +2445,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     facPick = null;
     humanAct(i);
   }
-  /** Klick auf die eigene Fabrik: baut die gewaehlte Figur; sonst sagt er, warum nicht. true = Klick verbraucht. */
+  /** Klick auf die eigene Fabrik: das Menue mit allen Aktionen ploppt auf (ein zweiter Klick schliesst es). true = Klick verbraucht. */
   function facClick(cell) {
     if (!facState || facState.R !== R || facState.fac.cell !== cell) return false;
-    const st = facState;
-    if (st.fac.building > 0) {
-      routeNote = `Die Fabrik ist im Bau: noch ${st.fac.building} Runde${st.fac.building === 1 ? "" : "n"}.`;
-    } else if (!st.pick) {
-      routeNote = st.levels[0] ? `Noch nicht genug für einen Bauern: ${missingText(st.levels[0])}.` : "";
-    } else if (!st.free) {
-      routeNote = "Die Fabrik ist besetzt: zieh die Figur von der Fabrik, dann kannst du bauen.";
-    } else {
-      facBuild();
-      return true;
-    }
+    if (performance.now() - facClosedAt < 400) return true; // dieser Klick hat das Menue gerade geschlossen
+    routeNote = "";
+    facOpen = true;
+    renderFactoryCard();
     renderTurnBox();
+    requestAnimationFrame(draw);
     return true;
   }
   function renderFactoryCard() {
@@ -2257,41 +2502,65 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (shiftMode) { title = "Fabrik rücken"; sub = "Klick auf ein markiertes Feld (Esc bricht ab)"; cls = "ready"; }
     let body = "";
     if (open) {
-      const chips = levels.map((st) => {
-        const sel = st.level === pick;
-        return `<button type="button" class="fc-lv${st.ok ? " ok" : ""}${sel ? " sel" : ""}" data-lv="${st.level}" ${st.ok ? "" : "disabled"} ` +
-          `title="${escapeHtml(`${unitTitle(st.level)} (Stufe ${st.level}): ${terrPriceText(st.level)}${st.ok ? "" : ` – es fehlt: ${missingText(st)}`}`)}">` +
-          `<b>${st.level}</b>${unitTitle(st.level)}<small>${roundsShort(st.rounds)}</small></button>`;
-      }).join("");
-      const pickSt = pick ? levels[pick - 1] : null;
-      const buildLabel = !pick ? "Noch keine Figur bezahlbar" : !info.free ? "Fabrik besetzt" : !acting ? `${unitTitle(pick)} (Stufe ${pick}) – du bist nicht am Zug` : `${unitTitle(pick)} (Stufe ${pick}) bauen`;
-      let nextLine;
-      if (!next) nextLine = "Höhere Stufe gibt es nicht.";
-      else if (Number.isFinite(next.rounds)) nextLine = `Nächste Stufe: ${unitTitle(next.level)} (${next.level}) ${roundsText(next.rounds)}. Es fehlt: ${missingText(next)}.`;
-      else nextLine = `Nächste Stufe: ${unitTitle(next.level)} (${next.level}) kommt nicht: ${missingText(next)}. Verbinde Land mit passenden Vorkommen.`;
-      // Karten: nur, was jetzt kaufbar ist
-      const buys = buyable.map(([c, i]) => `<button type="button" class="fc-card" data-buy="${i}" title="${escapeHtml(c.text.replace(/ Preis je Reichweite der Figur\./, ""))}"><b>${escapeHtml(c.name)}</b><small>${escapeHtml(terrCardPrice(c, info.p))}</small></button>`);
+      const color = PLAYER[info.p].color, store = info.fac.storage;
+      const act = (cls, attrs, sym, name, small, go, needs, tip) =>
+        `<button type="button" class="fc-act${cls ? " " + cls : ""}" ${attrs} title="${escapeHtml(tip || "")}">${sym}` +
+        `<span class="lb"><b>${escapeHtml(name)}</b>${small ? `<small>${escapeHtml(small)}</small>` : ""}</span>` +
+        `<span class="go">${escapeHtml(go)}</span><span class="need">${needs}</span></button>`;
+      const missText = (needs) => needs.filter(([kind, n]) => catUnits(store, kind) < n).map(([kind, n]) => `${n - catUnits(store, kind)}× ${KAT_NAME[kind]}`).join(", ");
+      // Figuren: alle vier, grau bis bezahlbar
+      const figs = levels.map((st) => {
+        const never = !st.ok && !Number.isFinite(st.rounds);
+        const can = acting && st.ok && info.free && live.legal.some((a) => a.type === "build_unit" && a.level === st.level);
+        const go = can ? "Bauen" : !st.ok ? (never ? "nie" : roundsText(st.rounds)) : !info.free ? "Fabrik besetzt" : !acting ? "nicht am Zug" : "nicht möglich";
+        const tip = `${unitTitle(st.level)} (Stufe ${st.level}): ${terrPriceText(st.level)}${st.ok ? "" : ` – es fehlt: ${missingText(st)}`}`;
+        return act(can ? "ok" : "", can ? `data-build="${st.level}"` : "disabled", symSvg("u" + st.level, 28, color, !st.ok, unitTitle(st.level)),
+          unitTitle(st.level), `Stufe ${st.level}${upkeepOn() ? ` · Unterhalt ${st.level}` : ""}`, go,
+          st.needs.map((n) => reqHtml(n.kind, n.have, n.need, color)).join(""), tip);
+      });
+      // Koenig mit Gold
+      const ku = kingUpInfo(f, info.p);
+      let king = "";
+      if (ku) {
+        if (ku.done) {
+          king = act("", "disabled", symSvg("crown", 28, null, false, "König"), "König", "alle 3 Stufen", "fertig", "", "");
+        } else {
+          const have = catUnits(store, 2), i = acting ? live.legal.findIndex((a) => a.type === "buy" && a.card === "king_boost") : -1;
+          const go = i >= 0 ? "Kaufen" : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft" : have < ku.gold ? `fehlt: ${ku.gold - have}× Gold` : "nicht möglich";
+          king = act(i >= 0 ? "ok" : "", i >= 0 ? `data-buy="${i}"` : "disabled", symSvg("crown", 28, null, i < 0, "König"),
+            `König: Stufe ${ku.level} von 3`, `+${ku.extra} Zugfelder`, go, reqHtml(2, have, ku.gold, color),
+            `Der König zieht ${ku.extra} Felder mehr (auf freiem Brett). ${lockNote({ key: "king_boost" })}`.trim());
+        }
+      }
+      // Karten des Marktes
+      const cards = (R.market || []).map((c) => {
+        const m = cardFactor(c, info.p), k = c.cost;
+        const needs = [[1, k.color * m], [2, k.k2 * m], [3, k.k3 * m]].filter(([, n]) => n > 0);
+        const opts = cardBuys(c.key), can = opts.length > 0, needPiece = can && buyNeedsPiece(opts);
+        const go = can ? (needPiece ? "Figur wählen" : "Kaufen") : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft"
+          : missText(needs) ? `fehlt: ${missText(needs)}`
+          : cardAnyOn() && c.target === "unit" ? "keine passende Figur"
+          : stockCards && c.key !== "king_boost" ? "Kartenplatz belegt" : "nicht möglich";
+        return act((can ? "ok " : "") + "one", can ? (needPiece ? `data-pick="${c.key}"` : `data-buy="${opts[0][1]}"`) : "disabled", symSvg("card", 24, null, !can, c.name),
+          c.name, "", go, needs.map(([kind, n]) => reqHtml(kind, catUnits(store, kind), n, color)).join(""), cardText(c).replace(/ Preis je Reichweite der Figur\./, ""));
+      });
       let cardsNote = "";
-      if (!(R.market || []).length) cardsNote = "In dieser Partie gibt es keine Karten.";
-      else if (!acting) cardsNote = "Karten kaufst du, wenn du am Zug bist.";
-      else if (f.bought_this_turn) cardsNote = "In diesem Zug hast du schon eine Karte gekauft.";
-      else if (!buys.length) cardsNote = "Gerade ist keine Karte bezahlbar (der Kartenmarkt in der Übersicht zeigt, was fehlt).";
+      if (!(R.market || []).length && !ku) cardsNote = "In dieser Partie gibt es keine Karten.";
+      else if (acting && f.bought_this_turn) cardsNote = "In diesem Zug hast du schon eine Karte gekauft (eine je Zug).";
+      const stockCard = stockCards ? `<p class="muted">Liegt bereit: ${escapeHtml(CARD(stockCards).name)}</p>` : "";
+      let nextLine = "";
+      if (next && !Number.isFinite(next.rounds)) nextLine = `<p class="muted">${escapeHtml(`${unitTitle(next.level)} (Stufe ${next.level}) kommt nicht: ${missingText(next)}. Verbinde Land mit passenden Vorkommen.`)}</p>`;
       body = `<div class="fc-body">` +
-        `<p class="muted">Einkommen je Runde: ${escapeHtml(incomeText(inc))}</p>` +
-        (bonusOn() ? `<p class="muted">Kat 3: ${inc.k3} verbundene${inc.k3 === 1 ? "s" : ""} Feld${inc.k3 === 1 ? "" : "er"} = ${inc.bonus} Fläche je Runde extra; das nächste bringt ${bonusArea(inc.k3 + 1)}.</p>` : "") +
-        `<div><p class="fc-h">Figur bauen · Klick auf die Fabrik</p><div class="fc-levels">${chips}</div></div>` +
-        `<button type="button" class="btn primary fc-build" data-act="build" ${info.ready ? "" : "disabled"}>${escapeHtml(buildLabel)}</button>` +
-        (pickSt ? `<p class="muted">Kostet ${escapeHtml(terrPriceText(pick))}.</p>` : "") +
-        `<p>${escapeHtml(nextLine)}</p>` +
-        `<div><p class="fc-h">Karten${stockCards ? ` · liegt bereit: ${escapeHtml(CARD(stockCards).name)}` : ""}</p>` +
-        (buys.length ? `<div class="fc-cards">${buys.join("")}</div>` : "") +
-        (cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : "") + `</div>` +
+        `<p class="muted">Je Runde: ${escapeHtml(incomeText(inc))}</p>` +
+        `<div class="fc-sec"><p class="fc-h">Figuren bauen</p>${figs.join("")}${nextLine}</div>` +
+        (king ? `<div class="fc-sec"><p class="fc-h">König verbessern</p>${king}</div>` : "") +
+        (cards.length || cardsNote || stockCard ? `<div class="fc-sec"><p class="fc-h">Karten</p>${cards.join("")}${stockCard}${cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : ""}</div>` : "") +
         (tradeI >= 0 ? `<button type="button" class="btn fc-shift" data-act="trade">${escapeHtml(actionLabel(live.legal[tradeI], f).split(";")[0])}</button>` : "") +
         (canShift ? `<button type="button" class="btn fc-shift" data-act="shift">${shiftMode ? "Abbrechen" : "Fabrik rücken (statt eines Zuges)"}</button>` : "") +
         relocSection(f, info, acting, moveI) +
         (shiftStuck ? `<p class="muted">Fabrik rücken: kein Zielfeld. Ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett).</p>` : "") + `</div>`;
     }
-    card.className = `faccard ${cls}`;
+    card.className = `faccard ${cls}${open ? " open" : ""}`;
     card.innerHTML = `<div class="fc-head" data-act="toggle" role="button" tabindex="0" aria-expanded="${open}"><span class="fc-dot"></span>` +
       `<span class="fc-sum"><b>${escapeHtml(title)}</b><small>${escapeHtml(sub)}</small></span><span class="fc-tog">${open ? "▾" : "▸"}</span></div>${body}`;
     card.hidden = false;
@@ -2307,7 +2576,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const fac = f.factories.find((x) => x.owner === p);
     const king = f.pieces.find((x) => x.king && x.owner === p);
     if (!fac || fac.building > 0 || !king) return null;
-    const stock = `${catUnits(fac.storage, 1)}× Kat 1 und ${catUnits(fac.storage, 2)}× Kat 2`;
+    const stock = `${catUnits(fac.storage, 1)}× Eisen und ${catUnits(fac.storage, 2)}× Gold`;
     if (king.cell === fac.cell) {
       return { ok: false, short: "König von der Fabrik ziehen", ri: null,
         why: `Der König steht noch auf der Fabrik (${cellName(fac.cell)}). Zieh ihn auf das Feld, auf dem die neue Fabrik stehen soll: ein Feld deines Landes, das mit der Fabrik verbunden ist.` };
@@ -2339,7 +2608,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       `Bis die Fabrik steht: kein Ertrag, alle Figuren wehrlos, König gesperrt.`;
     return `<div class="fc-sec"><p class="fc-h">Fabrik umziehen · der König baut sie auf seinem Feld</p>` +
       `<button type="button" class="btn fc-shift" data-act="rebuild" ${can ? "" : "disabled"}>${escapeHtml(label)}</button>` +
-      `<p>${escapeHtml(rs.why)}</p><p class="muted">${escapeHtml(steps)}</p></div>`;
+      `<p>${escapeHtml(rs.why)}</p>${explain(escapeHtml(steps))}</div>`;
   }
   /** Version 3: Hinweis im Zugkasten, solange der Umzug (oder der Neubau nach einer Zerstoerung) noch nicht geht. */
   function relocTurnHint(f) {
@@ -2352,7 +2621,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const fac = f.factories.find((x) => x.owner === me);
     if (!fac) return `Fabrik neu bauen: zieh den König auf ein Feld deines Landes; dann steht hier ein Knopf (kostenlos, ${c.terr_rebuild} Runden).`;
     const rs = relocStatus(f, me);
-    return rs ? `Fabrik umziehen geht noch nicht: ${rs.short}. Alle Schritte stehen in der Fabrik-Karte am Brett (Klick auf die Leiste); der Knopf erscheint dann auch hier.` : "";
+    return rs ? `Fabrik umziehen geht noch nicht: ${rs.short}. Alle Schritte stehen im Menü der Fabrik (Klick auf die Fabrik); der Knopf erscheint dann auch hier.` : "";
   }
   /** Version 3: die Karte einer Fabrik im Bau: nur der Stand, nichts zu klicken. */
   function renderBuildingCard(card, info) {
@@ -2368,11 +2637,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Platz neben der Fabrik waehlen, an dem die Karte moeglichst wenig verdeckt (Figuren, Felder). */
   function placeFactoryCard(card, info) {
-    // 2D: die Karte liegt in der Seite direkt unter dem Brett, nicht ueber den Feldern.
-    const target = view3d ? canvas.parentElement : $("facDock");
+    // 2D: die geschlossene Leiste liegt in der Seite direkt unter dem Brett, nicht ueber den Feldern; das offene
+    // Menue ploppt in beiden Ansichten neben der Fabrik auf.
+    const floating = view3d || facOpen;
+    const target = floating ? canvas.parentElement : $("facDock");
     if (card.parentElement !== target) target.appendChild(card);
-    card.classList.toggle("docked", !view3d);
-    if (!view3d) { card.style.left = ""; card.style.top = ""; return; }
+    card.classList.toggle("docked", !floating);
+    if (!floating) { card.style.left = ""; card.style.top = ""; return; }
     const W = geo.cssW, H = geo.cssH, cw = card.offsetWidth, ch = card.offsetHeight;
     const f = R.frames[fi];
     const at = (cell) => { const [x, y] = R.board.cells[cell]; return iso(x, y); };
@@ -2401,10 +2672,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     card.style.top = Math.round(best.y) + "px";
   }
   $("facCard").addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-lv],[data-buy],[data-act]");
+    const t = ev.target.closest("[data-lv],[data-buy],[data-build],[data-pick],[data-act]");
     if (!t) return;
     if (t.dataset.lv) { facPick = Number(t.dataset.lv); renderFactoryCard(); requestAnimationFrame(draw); return; }
-    if (t.dataset.buy) { humanAct(Number(t.dataset.buy)); return; }
+    if (t.dataset.build) {
+      const i = live ? live.legal.findIndex((a) => a.type === "build_unit" && a.level === Number(t.dataset.build)) : -1;
+      if (i >= 0) { facOpen = false; facPick = null; humanAct(i); }
+      return;
+    }
+    if (t.dataset.pick) { facOpen = false; renderFactoryCard(); pickCard(t.dataset.pick); return; }
+    if (t.dataset.buy) { facOpen = false; humanAct(Number(t.dataset.buy)); return; }
+    if (t.dataset.act === "close") { facClose(); return; }
     if (t.dataset.act === "build") { facBuild(); return; }
     if (t.dataset.act === "shift") {
       shiftMode = !shiftMode;
@@ -2421,8 +2699,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     if (t.dataset.act === "toggle") { facOpen = !facOpen; renderFactoryCard(); }
   });
-  /** Ein Klick (oder Esc) aufs Brett klappt die Karte wieder zu, damit sie keine Felder verdeckt. */
-  function facClose() { if (facOpen) { facOpen = false; renderFactoryCard(); } }
+  /** Ein Klick (oder Esc) aufs Brett klappt das Menue wieder zu, damit es keine Felder verdeckt. */
+  let facClosedAt = 0;
+  function facClose() { if (facOpen) { facOpen = false; facClosedAt = performance.now(); renderFactoryCard(); } }
   canvas.addEventListener("pointerdown", facClose);
   function renderStock(f) {
     const p = focusPlayer(f);
@@ -2464,12 +2743,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const c1 = (r) => category(r) === 1;
     if (cost.foreign_color > units((r) => c1(r) && r !== own)) miss.push(`${cost.foreign_color}× fremde Farbe`);
     const needColor = cost.color + cost.foreign_color;
-    if (needColor > units(c1) && cost.color) miss.push(`${needColor - units(c1)}× Farbe`);
+    if (needColor > units(c1) && cost.color) miss.push(`${needColor - units(c1)}× ${resName(1)}`);
     for (const c of [2, 3]) {
       const need = cost["k" + c], needKinds = cost["k" + c + "_kinds"];
       const have = units((r) => category(r) === c), haveKinds = kinds((r) => category(r) === c);
-      if (need > have) miss.push(`${need - have}× ${RES_NAME[c]}`);
-      else if (needKinds > haveKinds) miss.push(`${RES_NAME[c]} in ${needKinds - haveKinds} weiteren Farbe${needKinds - haveKinds > 1 ? "n" : ""}`);
+      if (need > have) miss.push(`${need - have}× ${resName(c)}`);
+      else if (needKinds > haveKinds) miss.push(`${resName(c)} in ${needKinds - haveKinds} weiteren Farbe${needKinds - haveKinds > 1 ? "n" : ""}`);
     }
     return miss;
   }
@@ -2483,6 +2762,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
    *  Gefuellt in der Farbe der Einheit, die dort bezahlt wuerde; gestrichelt, wenn sie fehlt. */
   function slotSvg(kind, color) {
     const filled = color !== null && color !== undefined;
+    if (isTerr() && kind >= 1 && kind <= 3) return symSvg(CAT_SYM[kind], 18, null, !filled, KAT_NAME[kind]);
     const fill = filled ? color : "none";
     const stroke = filled ? "rgba(0,0,0,.6)" : "currentColor";
     const attrs = `fill="${fill}" stroke="${stroke}" stroke-width="1.6"${filled ? "" : ' stroke-dasharray="2.6 2"'}`;
@@ -2513,9 +2793,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const c1 = (r) => category(r) === 1;
     const groups = [
       { kind: 1, label: "fremde Farbe", name: "fremde Farbe", slots: take((r) => c1(r) && r !== own, cost.foreign_color, 0) },
-      { kind: 1, label: "", name: "Farbe", slots: take(c1, cost.color, 0) },
-      { kind: 2, label: cost.k2_kinds > 1 ? `in ${cost.k2_kinds} Farben` : "", name: "Quader", slots: take((r) => category(r) === 2, cost.k2, cost.k2_kinds) },
-      { kind: 3, label: cost.k3_kinds > 1 ? `in ${cost.k3_kinds} Farben` : "", name: "Ball", slots: take((r) => category(r) === 3, cost.k3, cost.k3_kinds) },
+      { kind: 1, label: "", name: resName(1), slots: take(c1, cost.color, 0) },
+      { kind: 2, label: cost.k2_kinds > 1 ? `in ${cost.k2_kinds} Farben` : "", name: resName(2), slots: take((r) => category(r) === 2, cost.k2, cost.k2_kinds) },
+      { kind: 3, label: cost.k3_kinds > 1 ? `in ${cost.k3_kinds} Farben` : "", name: resName(3), slots: take((r) => category(r) === 3, cost.k3, cost.k3_kinds) },
     ].filter((g) => g.slots.length);
     const missing = groups.reduce((s, g) => s + g.slots.filter((x) => x === null).length, 0);
     return { groups, missing };
@@ -2559,7 +2839,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ? "Eine Karte pro Zug, zusätzlich zu deinem Zug. Bezahlt wird aus einem Ort: dem Gepäck des Königs oder einer Fabrik."
       : "Eine Karte pro Zug, zusätzlich zum Zug. Bezahlt wird aus einem Ort: Gepäck des Königs oder eine Fabrik.";
     $("marketLegend").innerHTML =
-      `<span>${slotSvg(1, null)} Farbe (Kat 1)</span><span>${slotSvg(2, null)} Quader (Kat 2)</span><span>${slotSvg(3, null)} Ball (Kat 3)</span>` +
+      (isTerr()
+        ? `<span>${symSvg("iron", 18)} Eisen (Kat 1)</span><span>${symSvg("gold", 18)} Gold (Kat 2)</span><span>${symSvg("bread", 18)} Brot (Kat 3)</span>`
+        : `<span>${slotSvg(1, null)} Farbe (Kat 1)</span><span>${slotSvg(2, null)} Quader (Kat 2)</span><span>${slotSvg(3, null)} Ball (Kat 3)</span>`) +
       `<span class="lg-note">${p === null || p === undefined ? "Preis der Karte." : "Gefüllt: hast du am besten Ort, gestrichelt: fehlt noch."}</span>`;
     const places = p === null || p === undefined || !f.alive[p] ? [] : [["Gepäck des Königs", (f.carried || [])[p] || []]]
       .concat(f.factories.filter((x) => x.owner === p).map((x) => [`Fabrik ${cellName(x.cell)}`, x.storage]));
@@ -2654,14 +2936,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const per = (c.terr_ripen || []).slice(0, c.terr_cats || 3).map((n) => n || "jede").join(" / ");
         const v3 = ["Version 3", ...extra,
           `Figuren nur aus Fläche: ${[1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow || 2, l - 1) * (l >= 2 ? c.terr_up_mult || 1 : 1)).join(" / ")}`,
-          c.terr_bonus ? `Ernte alle ${(c.terr_ripen || []).slice(0, 2).map((n) => n || "jede").join(" / ")} Runden (Kat 1 / 2)` : `Ernte alle ${per} Runden (Kat 1 / 2 / 3)`,
-          c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Kat 1 + ${c.terr_move_k2} Kat 2, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${c.terr_rebuild} Runden` : "kein Fabrik-Umzug",
+          c.terr_bonus ? `Ernte alle ${(c.terr_ripen || []).slice(0, 2).map((n) => n || "jede").join(" / ")} Runden (Eisen / Gold)` : `Ernte alle ${per} Runden (Eisen / Gold / Brot)`,
+          c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Eisen + ${c.terr_move_k2} Gold, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${c.terr_rebuild} Runden` : "kein Fabrik-Umzug",
           c.terr_bonus ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
           c.terr_occupy ? (c.terr_control ? "Erntezähler läuft mit eigener Figur auf dem Feld oder in ihrem Einflussbereich" : "Erntezähler läuft nur mit eigener Figur auf dem Feld") : "Erntezähler läuft ohne Figur",
+          c.terr_upkeep ? "Unterhalt: jede Figur kostet je Runde ihre Stufe in Fläche (bei Minus löst sich eine Figur auf)" : "",
+          c.terr_kingup ? `König-Upgrade mit Gold (${c.terr_kingup_price || 1} je Zugfeld)` : "",
           c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
           c.terr_cardany ? `Karten wirken auf jede eigene Figur (auch gebaute)${c.terr_stack ? ", mehrfach auf dieselbe (Stufe n höchstens n−1 mal)" : ""}` : "Karten wirken auf die nächste gebaute Figur",
           cut, score];
-        return v3.join(" · ");
+        return v3.filter(Boolean).join(" · ");
       }
       if (c.terr_grow >= 2) {
         const prices = [1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow, l - 1) * (l >= 2 ? c.terr_up_mult || 1 : 1)).join(" / ");
@@ -2867,7 +3151,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         left = `, noch ${stock - (h ? h[2] : 0)}`;
       }
       if (bonusOn() && info.category === 3) {
-        return `${RES_NAME[3]} (Kat 3), Farbe: ${home} – wird nicht geerntet: k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich`;
+        return `${resName(3)} (Kat 3), Farbe: ${home} – wird nicht geerntet: k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich`;
       }
       const wait = cycleOn() ? harvestIn(f, cell, res) : regrowLeft(f, cell, res);
       const ripening = !(f.regrow || []).some(([c, r]) => c === cell && r === res);
@@ -2878,7 +3162,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         : ripening
         ? `, reift: erster Ertrag in ${wait} Runde${wait > 1 ? "n" : ""}`
         : `, abgebaut, wieder da in ${wait} Runde${wait > 1 ? "n" : ""}`;
-      return `${RES_NAME[info.category]} (Kat ${info.category}), Farbe: ${home}${left}${back}`;
+      return `${resName(info.category)} (Kat ${info.category}), Farbe: ${home}${left}${back}`;
     });
     const extraHere = (f.extra_deposits || []).find(([c]) => c === cell);
     const used = R.deposits[cell].length + (extraHere ? extraHere[1].length : 0) - deps.length;
@@ -2976,6 +3260,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["crystal", "Kat 1, Hauptrohstoff. Farbe = Ecke, zu der er gehört; Limette, Braun, Silber, Cyan = Zentrumsfarben. Nach dem Abbau 20 Runden weg (bei Quadern 5, bei Bällen 3); der König erntet es beim Betreten und trägt es im Gepäck: damit baut er eine Fabrik oder bringt eine neue Farbe in eine Fabrik (höhere Stufe)."],
       ["ingot", "Quader (Kat 2) in der Farbe seiner Region. Nach dem Abbau weg, nach 5 Runden wieder da (blass mit Zahl = Runden bis dahin)."],
       ["grain", "Ball (Kat 3) in der Farbe seiner Region. Nach 3 Runden wieder da."],
+      ["rim", "Gebietsmodus: Rand der Kachel in der Farbe des Vorkommens (Eisen grau-blau, Gold gelb, Brot braun). Steht eine Figur auf dem Feld, zeigt ein Abzeichen am Feldrand, was darunter liegt."],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
       ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
       ["land", "Gebietsmodus: Land in der Farbe des Spielers. Jedes Feld auf dem Weg einer Figur wird ihre Farbe, betritt ein Gegner es, kippt es um."],
@@ -2999,10 +3284,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const textTerr = {
       king: "König: färbt wie jede Figur seinen Weg. Fällt er, ist der Spieler raus.",
       factory: "Fabrik: die einzige des Spielers, auf seiner Startecke. Hier erscheinen neue Figuren; am Zugende sammelt sie die Fläche aller mit ihr verbundenen Felder. Betritt ein Gegner sie, wird sie zerstört.",
-      pill: "Lager an der Fabrik: Summe je Kategorie (Raute Kat 1, Quadrat Kat 2, Kreis Kat 3) in der Farbe des Besitzers.",
-      crystal: "Kat 1 (Raute), Hauptrohstoff. Weiß, solange das Feld niemandem gehört; sobald es einem Spieler gehört, in dessen Farbe. Die Fabrik sammelt ihn am Zugende, wenn das Feld mit ihr verbunden ist (er wird nie leergebaut).",
-      ingot: "Quader (Kat 2, Quadrat): weiß, bis das Feld jemandem gehört, dann in dessen Farbe.",
-      grain: "Ball (Kat 3, Kreis): weiß, bis das Feld jemandem gehört, dann in dessen Farbe.",
+      pill: "Lager an der Fabrik: Summe je Kategorie als Symbol mit Zahl (Eisen, Gold, Brot).",
+      crystal: "Eisen (Kat 1, Erzbrocken), Hauptrohstoff. Die Fabrik sammelt es am Zugende, wenn das Feld mit ihr verbunden ist (es wird nie leergebaut).",
+      ingot: "Gold (Kat 2, Goldbarren): damit verbesserst du den König direkt, ohne Karte (Preis: je zusätzlichem Zugfeld 1 Gold), und es bezahlt Karten.",
+      grain: "Brot (Kat 3, Laib): lässt die Fläche wachsen.",
+      rim: "Rand der Kachel in der Farbe des Vorkommens (Eisen grau-blau, Gold gelb, Brot braun), unabhängig vom Besitzer: das Land zeigt den Besitzer, der Rand den Rohstoff. Steht eine Figur auf dem Feld, zeigt ein Abzeichen am Feldrand, was darunter liegt.",
     };
     const v2 = terr && !!(R.config && R.config.terr_exact);
     let ttx = textTerr, t2x = text2d;
@@ -3011,8 +3297,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         unit1: "Bauer (Stufe 1): zieht genau 1 Feld geradeaus und schlägt dort. Zahl = Stufe, Punkte = Reichweite.",
         unit2: "Stufe n zieht genau n Felder geradeaus wie ein Turm, nicht durch Figuren. Krieger (2) mit Helm, Ritter (3) mit Helmbusch, Held (4) mit Umhang.",
         unitCards: `Karten an der Figur (wirken auf ${cardAnyOn() ? "eine Figur deiner Wahl, auch eine schon gebaute; beim Verbessern blitzt es" : "die nächste gebaute"}): −1 = Kürzer (ein Feld weniger), L = Ecke (einmal um die Ecke), Bogen = Sprung (über eine Figur)${stackOn() ? "; mehrfach: −2 = zweimal Kürzer, Treppe = mehrere Ecken, mehrere Bögen = mehrere Sprünge" : ""}.`,
-        crystal: "Kat 1 (Raute). Weiß, solange das Feld niemandem gehört; dann in der Farbe des Besitzers. Der erste Ertrag kommt, wenn dir das Feld 3 Runden gehört (die Zahl auf dem blassen Vorkommen zählt herunter); danach jede Runde, solange es mit der Fabrik verbunden ist. Umfärben setzt die Uhr zurück.",
-        ingot: "Quader (Kat 2, Quadrat): wie Kat 1, aber erst nach 10 Runden Besitz. Rohstoffe sind nur für Karten da.",
+        crystal: "Eisen (Kat 1). Der erste Ertrag kommt, wenn dir das Feld 3 Runden gehört (die Zahl auf dem blassen Vorkommen zählt herunter); danach jede Runde, solange es mit der Fabrik verbunden ist. Umfärben setzt die Uhr zurück.",
+        ingot: "Gold (Kat 2): wie Eisen, aber erst nach 10 Runden Besitz. Gold ist für den König und für Karten da.",
       };
       t2x = { ...text2d, unit1: ttx.unit1, unit2: ttx.unit2, unitCards: "Karten als weiße Abzeichen: −1 = Kürzer, L = Ecke, Bogen = Sprung." };
     }
@@ -3022,19 +3308,19 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ttx = { ...ttx,
         factory: "Fabrik: die einzige des Spielers. Hier erscheinen neue Figuren; am Zugende sammelt sie die Fläche aller mit ihr verbundenen Felder. Betritt ein Gegner sie, wird sie zerstört; der König baut sie dann auf eigenem Land in " + (R.config.terr_rebuild || 3) + " Runden neu. Auch freiwillig kann er sie auf sein Feld umsetzen (Dauer = halbe Entfernung, aufgerundet; der Tooltip über deinem Land nennt sie vorab). Bis sie steht: kein Ertrag, alle Figuren wehrlos, der König gesperrt.",
         pill: R.config.terr_bonus
-          ? "Lager an der Fabrik: Summe je Kategorie (Raute Kat 1, Quadrat Kat 2) in der Farbe des Besitzers."
-          : "Lager an der Fabrik: Summe je Kategorie (Raute Kat 1, Quadrat Kat 2, Kreis Kat 3) in der Farbe des Besitzers. Kat 3 lässt sich in der Fabrik gegen Fläche tauschen: k Stück ergeben 2^k.",
-        crystal: `Kat 1 (Raute), Hauptrohstoff. Weiß, solange das Feld niemandem gehört; dann in der Farbe des Besitzers. Die Zahl zählt herunter (alle ${pr[0] || 3} Runden): bei 0 erntet die Fabrik es einmal, dann beginnt der Zähler von vorn. Ohne stehende Fabrik oder ohne Anbindung steht der Zähler still; ein Umfärben setzt ihn zurück.${R.config.terr_occupy ? " Er läuft nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (Zahl grau mit Pausenbalken = er steht still)." : ""}`,
-        ingot: `Quader (Kat 2, Quadrat): wie Kat 1, Erntezeit ${pr[1] || 10} Runden. Rohstoffe gibt es für Karten (und für den Fabrik-Umzug, wenn er etwas kosten soll).`,
+          ? "Lager an der Fabrik: Eisen und Gold als Symbol mit Zahl (Brot wird nicht gelagert)."
+          : "Lager an der Fabrik: Eisen, Gold, Brot als Symbol mit Zahl. Brot lässt sich in der Fabrik gegen Fläche tauschen: k Stück ergeben 2^k.",
+        crystal: `Eisen (Kat 1), Hauptrohstoff. Die Zahl zählt herunter (alle ${pr[0] || 3} Runden): bei 0 erntet die Fabrik es einmal, dann beginnt der Zähler von vorn. Ohne stehende Fabrik oder ohne Anbindung steht der Zähler still; ein Umfärben setzt ihn zurück.${R.config.terr_occupy ? " Er läuft nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (Zahl grau mit Pausenbalken = er steht still)." : ""}`,
+        ingot: `Gold (Kat 2, Goldbarren): wie Eisen, Erntezeit ${pr[1] || 10} Runden. Gold verbessert den König direkt (je zusätzlichem Zugfeld ${(R.king_up && R.king_up.price) || 1} Gold) und bezahlt Karten und den Fabrik-Umzug, wenn er etwas kosten soll.`,
         grain: R.config.terr_bonus
-          ? "Ball (Kat 3, Kreis): wird nicht geerntet. Jeder Ball auf deinem mit der Fabrik verbundenen Land zählt: k Bälle bringen dir am Ende jedes Zugs zusätzlich 2^k Fläche (2, 4, 8, 16 …), ohne Zähler. Umfärben nimmt ihn dir."
-          : `Ball (Kat 3, Kreis): wie Kat 1, Erntezeit ${pr[2] || 10} Runden. Das Lager tauscht ihn gegen Fläche: k Stück ergeben 2^k Fläche.`,
+          ? "Brot (Kat 3, Laib): wird nicht geerntet. Jedes Brot-Feld auf deinem mit der Fabrik verbundenen Land zählt: k Felder bringen dir am Ende jedes Zugs zusätzlich 2^k Fläche (2, 4, 8, 16 …), ohne Zähler. Umfärben nimmt es dir."
+          : `Brot (Kat 3, Laib): wie Eisen, Erntezeit ${pr[2] || 10} Runden. Das Lager tauscht es gegen Fläche: k Stück ergeben 2^k Fläche.`,
         helpless: "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an einer stehenden Fabrik hängt (zum Beispiel, solange die Fabrik im Bau ist): sie färbt nichts und kann nicht schlagen.",
       };
       t2x = { ...t2x, unit1: ttx.unit1, unit2: ttx.unit2, unitCards: "Karten als weiße Abzeichen: −1 = Kürzer, L = Ecke, Bogen = Sprung." };
     }
     const noGrain = v2 && R.config.terr_cats === 2;
-    const shown = terr ? items.filter(([k]) => k !== "loot" && k !== "barrel" && !(noGrain && k === "grain")) : items;
+    const shown = terr ? items.filter(([k]) => k !== "loot" && k !== "barrel" && !(noGrain && k === "grain")) : items.filter(([k]) => k !== "rim");
     const dl = $("legend");
     dl.innerHTML = "";
     const saved = geo;
@@ -3070,9 +3356,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           else drawPill(20, 13, [PLAYER[0].color], [[2, "5", PLAYER[0].color], [3, "7", PLAYER[1].color]], 2);
         }
         geo = { W: 46 };
-        if (kind === "crystal") drawCrystal(20, 34, 22, terr ? RES_NEUTRAL : PLAYER[3].color);
-        if (kind === "ingot") drawIngot(20, 28, 24, terr ? RES_NEUTRAL : PLAYER[0].color);
-        if (kind === "grain") drawGrain(20, 32, 24, terr ? RES_NEUTRAL : PLAYER[1].color);
+        if (terr && (kind === "crystal" || kind === "ingot" || kind === "grain")) drawSymbol({ crystal: "iron", ingot: "gold", grain: "bread" }[kind], 20, 21, 34);
+        else if (kind === "crystal") drawCrystal(20, 34, 22, PLAYER[3].color);
+        else if (kind === "ingot") drawIngot(20, 28, 24, PLAYER[0].color);
+        else if (kind === "grain") drawGrain(20, 32, 24, PLAYER[1].color);
+        if (kind === "rim") legendRim(lc, false);
         if (kind === "barrel") drawBarrel(20, 34, 40);
         if (kind === "loot") drawLoot(20, 28);
         if (kind === "land") {
@@ -3093,6 +3381,19 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     geo = saved;
   }
 
+  /** Legendenbild: Kachel mit Rand in der Rohstoff-Farbe und Abzeichen darauf (Figur steht auf dem Feld). */
+  function legendRim(lc, flat) {
+    lc.fillStyle = mixHex(PLAYER[0].color, "#ffffff", 0.5);
+    lc.fillRect(5, 5, 30, 30);
+    lc.lineJoin = "round";
+    lc.strokeStyle = "rgba(20,24,32,0.5)"; lc.lineWidth = 4.5; lc.strokeRect(6.5, 6.5, 27, 27);
+    lc.strokeStyle = CAT_COLOR[2]; lc.lineWidth = 2.6; lc.strokeRect(6.5, 6.5, 27, 27);
+    lc.beginPath(); lc.arc(12, 29, 5.5, 0, Math.PI * 2);
+    lc.fillStyle = "rgba(255,255,255,0.96)"; lc.fill(); lc.lineWidth = 1.6; lc.strokeStyle = CAT_COLOR[2]; lc.stroke();
+    drawSymbol("gold", 12, 29, 8.5);
+    lc.fillStyle = PLAYER[0].color; lc.beginPath(); lc.arc(23, 17, 6.5, 0, Math.PI * 2); lc.fill();
+    lc.lineWidth = 1.4; lc.strokeStyle = "rgba(0,0,0,0.6)"; lc.stroke();
+  }
   /** Legendenbild in der 2D-Ansicht (Mitte des 40x40-Bildes ist 20/20). */
   const legendV2 = () => isTerr() && !!(R.config && R.config.terr_exact);
   function legendFlat(kind, lc) {
@@ -3107,9 +3408,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (isTerr()) drawPill(20, 13, [], [[1, "9", PLAYER[0].color], [2, "5", PLAYER[0].color], [3, "7", PLAYER[0].color]], 0);
       else drawPill(20, 13, [PLAYER[0].color], [[2, "5", PLAYER[0].color], [3, "7", PLAYER[1].color]], 2);
     }
-    if (kind === "crystal") flatGlyph(1, 20, 20, 9, isTerr() ? RES_NEUTRAL : PLAYER[3].color);
-    if (kind === "ingot") flatGlyph(2, 20, 20, 9, isTerr() ? RES_NEUTRAL : PLAYER[0].color);
-    if (kind === "grain") flatGlyph(3, 20, 20, 9, isTerr() ? RES_NEUTRAL : PLAYER[1].color);
+    if (isTerr() && (kind === "crystal" || kind === "ingot" || kind === "grain")) drawSymbol({ crystal: "iron", ingot: "gold", grain: "bread" }[kind], 20, 20, 30);
+    else if (kind === "crystal") flatGlyph(1, 20, 20, 9, PLAYER[3].color);
+    else if (kind === "ingot") flatGlyph(2, 20, 20, 9, PLAYER[0].color);
+    else if (kind === "grain") flatGlyph(3, 20, 20, 9, PLAYER[1].color);
+    if (kind === "rim") legendRim(lc, true);
     if (kind === "barrel") flatGlyph(4, 20, 20, 9, "#9a6a3c");
     if (kind === "loot") drawLoot(20, 22);
     if (kind === "land") {
@@ -3243,7 +3546,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     requestAnimationFrame(draw);
   }
   function boardClick(cell) {
-    if (!canAct()) return;
+    if (!canAct()) {
+      // Auch ausser der Reihe zeigt ein Klick auf die eigene Fabrik, was sie kann und wann.
+      if (cell !== null && isTerr()) facClick(cell);
+      return;
+    }
     const f = R.frames[fi];
     if (shiftMode) {
       const k = cell === null ? -1 : live.legal.findIndex((a) => a.type === "shift_factory" && a.to === cell);
@@ -3270,11 +3577,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (i >= 0) { humanAct(i); return; }
     }
     const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
-    if (!piece && cell !== null && isTerr() && facClick(cell)) return;
+    if (cell !== null && isTerr() && (!piece || !destinations(piece.id).length) && facClick(cell)) return;
     // Andere Figuren (auch gegnerische) und Figuren ohne Zug: nur ihre Ziehfelder zeigen.
     if (!(piece && destinations(piece.id).length) && inspectAt(cell)) { selected = null; return; }
     inspect = null;
     selected = piece && destinations(piece.id).length ? piece.id : null;
+    // Steht eine ziehbare Figur auf der Fabrik, wird sie gewaehlt, und das Menue geht trotzdem auf.
+    if (selected !== null && cell !== null && isTerr() && facClick(cell)) return;
     renderTurnBox();
     requestAnimationFrame(draw);
   }
@@ -3514,7 +3823,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Karten", fields: [
       { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
     ] },
-    { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400; in Version 3 ab Stufe 2 noch einmal doppelt: 200 / 400 / 800). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Rohstoffe sind weiß, bis das Feld jemandem gehört; dann haben sie dessen Farbe.", fields: [
+    { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400; in Version 3 ab Stufe 2 noch einmal doppelt: 200 / 400 / 800). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Die Rohstoffe heißen Eisen (Kat 1), Gold (Kat 2) und Brot (Kat 3); die Kachel trägt einen Rand in der Farbe des Vorkommens.", fields: [
       { key: "terr_ver", label: "Regelstufe (3, 2 oder 1)", ph: () => "3", hint: () => "3 = Version 3 (Erntezähler, Fabrik-Umzug, Kat 3 als Flächenbonus); 2 = Version 2; 1 = Version 1 (Referenz: Zugweite bis n, Preise mit Rohstoffen, sofortiger Ertrag)." },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
       { key: "terr_grow", label: "Preisfaktor je Stufe", ph: () => "2", hint: () => "Stufe n kostet Bauer mal Faktor hoch (n−1): 50 / 100 / 200 / 400 (Version 3: ab Stufe 2 dazu der Faktor „Figurenpreis ab Stufe 2 mal“). 0 = Preise der Version 1 (nur mit Version 1 sinnvoll)." },
@@ -3542,6 +3851,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_cardany", label: "Karten auf jede eigene Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung wirken sofort auf eine eigene Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2, nicht auf den König); 0 = sie liegen neben der Fabrik und wirken auf die nächste gebaute Figur." },
       { key: "terr_stack", label: "Karten mehrfach auf eine Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung dürfen mehrmals auf dieselbe Figur gelegt werden, so oft es Sinn hat (Stufe n höchstens n−1 mal: Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld); 0 = jede Karte nur einmal je Figur. Braucht „Karten auf jede eigene Figur“." },
       { key: "terr_cardlock", label: "Karte sperrt die Figur", ph: () => "1", hint: () => "1 = die verbesserte Figur (beim Königs-Boost der König) darf in diesem Zug nicht ziehen; 2 = Verbessern ist der ganze Zug; 0 = Karten kosten keinen Zug." },
+      { key: "terr_upkeep", label: "Unterhalt je Figur", ph: () => "1", hint: () => "1 = jede Figur kostet am Ende deines Zugs ihre Stufe in Fläche (der König nichts), abgezogen nach dem Einkommen. Reicht die Fläche nicht, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung); 0 = kein Unterhalt." },
+      { key: "terr_kingup", label: "König-Upgrade mit Gold", ph: () => "1", hint: () => "1 = der Königs-Boost liegt immer aus (keine Karte nötig) und kostet Gold (Kat 2): je zusätzlichem Zugfeld so viel wie „Gold je Zugfeld“ (Quadrat 4 / 4 / 8 Felder, Sechseck 6 / 6 / 12; auf dem Dreieck gibt es keinen Boost); 0 = der Boost kommt nur als Karte aus dem Markt." },
+      { key: "terr_kingup_price", label: "Gold je zusätzlichem Zugfeld", ph: () => "1", hint: () => "Stufe 1 auf dem Quadrat bringt 4 Zugfelder und kostet dann 4 Gold, Stufe 2 noch einmal 4, Stufe 3 8." },
       { key: "terr_control", label: "Kontrollfelder", ph: () => "0", hint: () => "1 = ein Feld gilt auch als bearbeitet (Erntezähler läuft, geerntet wird), wenn es im Einflussbereich einer eigenen Figur auf verbundenem Land liegt: Felder geradeaus bis zur Reichweite, bis zur ersten Figur; beim König die Nachbarfelder. Braucht „Zähler nur mit eigener Figur“." },
       { key: "terr_up_mult", label: "Figurenpreis ab Stufe 2 mal", ph: () => (menuVer() === 3 ? "2" : "1"), hint: () => "Version 3: Stufe 1 kostet 50, die höheren 2 × (100 / 200 / 400) = 200 / 400 / 800 Fläche." },
       { key: "terr_trade", label: "Kat 3 tauschen (alte Fassung)", ph: () => "0", hint: () => "1 = geerntetes Kat 3 lässt sich gegen 2^k Fläche tauschen; nur zusammen mit „Kat 3: 2^k Fläche je Runde“ = 0." },
@@ -3554,7 +3866,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "center_mix", label: "Kat 2/3 in der Mitte", ph: () => "0", hint: () => "Zusätzliche Felder jeder Regionsfarbe rund um die Kartenmitte." },
     ] },
   ];
-  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), und sind billiger, Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik kostenlos umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
+  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), und sind billiger, Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik kostenlos umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Brot-Felder (Kat 3) bringen jede Runde zusätzlich 2^k Fläche. Jede Figur kostet je Runde ihre Stufe an Unterhalt (bei Minus löst sich eine Figur auf), und der König wird direkt mit Gold verbessert.";
   const MENU_KEY = "spacevitan-menu-v4";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
@@ -3887,7 +4199,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const fac = f.factories.find((x) => x.owner === f.current), c = R.config;
       if (!fac) return `Fabrik neu bauen auf ${cellName(king.cell)}: kostenlos, ${c.terr_rebuild} Runden; dabei bist du wehrlos und der König darf sich nicht bewegen`;
       const n = relocRounds(fac.cell, king.cell);
-      const cost = [c.terr_move_k1 ? `${c.terr_move_k1}× Kat 1` : "", c.terr_move_k2 ? `${c.terr_move_k2}× Kat 2` : ""].filter(Boolean).join(" + ") || "nichts";
+      const cost = relocCostText();
       return `Fabrik hierher umziehen (${cellName(fac.cell)} → ${cellName(king.cell)}): kostet ${cost}, dauert ${n} Runde${n === 1 ? "" : "n"}; so lange kein Ertrag, alle Figuren wehrlos, König gesperrt`;
     }
     if (a.type === "trade") {
@@ -3910,7 +4222,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const blocked = f.pieces.some((x) => x.cell === fac.cell);
     const afford = ((f.area || [])[me] || 0) >= terrPrice(1).area;
     if (blocked && afford) return "Die Fabrik ist besetzt: zieh die Figur von der Fabrik, dann kannst du bauen.";
-    if (facState && facState.R === R && facState.ready) return `Deine Fabrik ist bereit: ein Klick auf sie baut ${unitTitle(facState.pick)} (Stufe ${facState.pick}). Die Stufe wählst du in der Fabrik-Karte am Brett.`;
+    if (facState && facState.R === R && facState.ready) return `Deine Fabrik ist bereit (${unitTitle(facState.pick)}, Stufe ${facState.pick}): Klick auf die Fabrik öffnet das Menü mit allem, was du jetzt kaufen kannst.`;
     const stuck = f.pieces.filter((x) => x.owner === me && helpless(f, x)).length;
     const note = stuck ? ` ${stuck} deiner Figuren ${stuck === 1 ? "ist" : "sind"} vom Land abgeschnitten (blass): sie färben nichts und können nicht schlagen.` : "";
     return `Tippe eine Figur an: das Land färbt sich auf dem ganzen Weg. Was nicht mehr an der Fabrik hängt, ist nichts wert.${note}`;

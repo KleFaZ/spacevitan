@@ -102,26 +102,37 @@ als Standard, *Alles zuruecksetzen* leert sie. Die Einstellungen merkt sich der 
 schickt die Seite sie als Text `territory=1,name=wert,...` an `sv_set_rules` (`crates/web`); die
 Namen sind dieselben wie bei `--rule`. Die Regeln der laufenden Partie stehen in der Zusammenfassung.
 
-**Fabrik-Karte (Version 1.1, nur beim Spielen):** Neben der eigenen Fabrik steht eine kleine Leiste:
-welche Figur gerade gebaut werden kann (gruener Rahmen um die Fabrik), und wie viele Runden es bei
-der aktuellen Flaeche bis zur naechsten Stufe dauert (Flaeche und Rohstoffe, je nach Einkommen aus
-dem verbundenen Land; "nie", wenn dafuer kein Vorkommen angebunden ist). Ein Klick auf die Fabrik
-baut die gewaehlte Figur, vorgewaehlt ist die hoechste bezahlbare. Ein Klick auf die Leiste klappt sie
-auf: dort waehlt man auch eine kleinere Stufe, sieht das Einkommen und die Karten, die jetzt kaufbar
-sind. Ein Klick aufs Brett (oder Esc) klappt sie wieder zu, damit sie keine Felder verdeckt. Die
-Rechnung steht im Viewer (`terrIncome`, `terrLevelStatus`), der Spielkern aendert sich nicht.
+**Fabrik-Menue (nur beim Spielen):** Ein **Klick auf die eigene Fabrik** laesst ein Menue mit allen Aktionen aufploppen
+(ein zweiter Klick, ein Klick aufs Brett oder Esc schliesst es; steht eine ziehbare Figur auf der Fabrik, wird sie
+gewaehlt und das Menue geht trotzdem auf). Es zeigt: die vier **Figuren** mit Stufe, Unterhalt, Preis als Symbole mit
+`vorhanden/noetig` und "Bauen" (gruen, wenn bezahlbar und die Fabrik frei ist) oder dem Grund ("in 6 Runden", "Fabrik
+besetzt", "nicht am Zug"); das **Koenigs-Upgrade**; die **Karten** des Marktes (bezahlbar: gruen, sonst "fehlt: 2× Eisen",
+"keine passende Figur", "schon gekauft"); Kat 3 tauschen, Fabrik ruecken und Fabrik umziehen. Ausser der Reihe zeigt der
+Klick dasselbe, nur grau mit "nicht am Zug". Die Leiste neben der Fabrik (Stand in einem Satz) bleibt und klappt dasselbe
+Menue per Klick auf. Die Rechnung steht im Viewer (`terrIncome`, `terrLevelStatus`, `renderFactoryCard`), der Spielkern
+aendert sich dafuer nicht.
 
-**Farben:** Spielfelder haben die Farbe ihres Besitzers. Rohstoffe sind **weiss**, solange das Feld
-niemandem gehoert; sobald es einem Spieler gehoert, nehmen sie dessen Farbe an (Lager an der
-Fabrik: Summe je Kategorie in der Farbe des Besitzers). Das ist nur Anzeige: Preise und Lager
-zaehlen im Gebietsmodus nach Kategorie.
+**Farben und Symbole:** Spielfelder haben die Farbe ihres Besitzers. Die Rohstoffe haben **feste Namen, Symbole und
+Farben**: Kat 1 = **Eisen** (Erzbrocken, grau-blau), Kat 2 = **Gold** (Goldbarren, gelb), Kat 3 = **Brot** (Laib, braun),
+unabhaengig vom Besitzer (das Land zeigt den Besitzer, das Symbol den Rohstoff). Jede Kachel mit Vorkommen traegt einen
+**Rand in der Farbe des Rohstoffs** (zwei Vorkommen: zwei Raender ineinander); er liegt unter allen Figuren und bleibt
+am Feldrand sichtbar. Steht eine Figur oder die Fabrik auf dem Feld, zeigt ausserdem ein **Abzeichen** am Feldrand, was
+darunter liegt. Die Flaeche hat ein Symbol je Brettform (Quadrat, Sechseck, Dreieck) in der Spielerfarbe; die Figuren
+1 bis 4 sind Scheiben mit der Stufenzahl und Randfarbe (weiss, silber, rot, gold) wie auf dem 2D-Brett. Alle Symbole
+stehen einmal als Pfade in `symLayers` (`viewer/index.html`) und zeichnen Brett (Path2D) wie Menue (Inline-SVG).
+Das ist nur Anzeige: Preise und Lager zaehlen im Gebietsmodus nach Kategorie.
 
 **Uebersicht rechts neben dem Brett (Version 3):** Die rechte Spalte ist eine Uebersicht fuer den Spieler, der du bist
-(in Bot-Partien und bei mehreren Menschen: der gerade Ziehende): Lager der Fabrik (Flaeche und Rohstoffe), Einkommen je
-Runde, je Figurenstufe was noch fehlt oder in wie vielen Runden sie bezahlbar ist, die Karte neben der Fabrik, darunter
-der Kartenmarkt mit dem, was zum Kaufen noch fehlt. Lange Erklaerungen sind eingeklappt. Partie-Angaben (Seed, Regeln,
-Spielerkacheln, "Dieser Zug", Bedienung, Legende) stehen eingeklappt ganz unten unter *Weitere Angaben*. Auf schmalen
-Bildschirmen (unter 900 px) liegt die Uebersicht unter dem Brett.
+(in Bot-Partien und bei mehreren Menschen: der gerade Ziehende). Oben vier Kacheln: **Flaeche** (Symbol je Brettform in
+der Spielerfarbe), **Eisen**, **Gold** und **Brot**, je mit dem Bestand und in Klammern dem Zuwachs, der am Ende deines
+Zugs dazukommt, zum Beispiel `142 (+11)`; negativ steht rot da. Bei der Flaeche ist der Zuwachs netto (Land + Brot-Bonus −
+Unterhalt), eine Zeile darunter rechnet ihn vor. Brot hat kein Lager: die Kachel zeigt die Zahl der verbundenen
+Brot-Felder, der Bonus steht in der Zeile darunter. Darunter die **Figuren 1 bis 4** als Symbol: **grau**, solange sie
+nicht bezahlbar sind, **in Farbe und mit gruenem Rahmen**, sobald sie es sind, mit `vorhanden/noetig` je Preisbestandteil
+und "in n Runden"/"bereit"/"nie" (nie = kein Einkommen dafuer); dazu die **Koenigs-Stufe** mit Gold. Dann die Karte neben
+der Fabrik und der Kartenmarkt. Lange Erklaerungen sind eingeklappt. Partie-Angaben (Seed, Regeln, Spielerkacheln, "Dieser
+Zug", Bedienung, Legende) stehen eingeklappt unter *Weitere Angaben*. Auf schmalen Bildschirmen (unter 900 px) liegt die
+Uebersicht unter dem Brett.
 
 **Wege vorplanen (Premoves):** Eigene Figur anklicken, dann mit der Maus ueber das Zielfeld
 fahren und **Shift** halten: der kuerzeste freie Weg wird gestrichelt gezeigt. **Shift+Klick**
@@ -489,6 +500,9 @@ spielbar).
 | `terr_stack` | 1 | **Karten mehrfach auf dieselbe Figur**: Kuerzer, Ecke und Sprung duerfen so oft auf eine Figur, wie es logisch Sinn hat: Stufe `n` hoechstens `n - 1` mal (der letzte Schritt ist das Ziel). Kuerzer ×k: die Figur zieht `n`, `n-1`, ... bis `n-k` Felder (Stufe 3 mit zwei Karten: 3, 2 oder 1); Ecke ×k: bis zu `k` Ecken auf dem Weg; Sprung ×k: ueber bis zu `k` Figuren. `Perks::shorten`, `bend`, `hop` sind jetzt Zaehler (`u8`); im Zustands-JSON stehen Zahlen statt true/false. 0 = jede Karte nur einmal je Figur wie bisher. Braucht `terr_cardany`; auch `terr_control` zaehlt die Spruenge |
 | `terr_cardlock` | 1 | **Karte sperrt die Figur**: 1 = die Figur, die eine Karte bekommt (beim Koenigs-Boost der Koenig), darf in diesem Zug nicht mehr ziehen (Zugfelder leer; `State::card_lock`, am Zugende geloescht); 0 = nichts; 2 = der Kauf beendet den ganzen Zug (Kuerzer, Ecke, Sprung, Koenigs-Boost; "Fabrik ruecken" nicht). Der Kauf bleibt ein Teil des Zuges, nur eine Karte je Zug; die gesperrte Figur kann aber noch durch eine andere Figur geschlagen werden |
 | `terr_up_mult` | 2 | Figuren ab Stufe 2 kosten das `terr_up_mult`-Fache (Stufe 1 bleibt bei `terr_area`): bei 2 sind es 50 / 200 / 400 / 800 Flaeche (Version 2: 50 / 100 / 200 / 400) |
+| `terr_upkeep` | 1 | **Unterhalt je Figur**: am Ende des eigenen Zuges, nach dem Einkommen, kostet jede Figur ihre Stufe in Flaeche (Bauer 1 ... Held 4, der Koenig nichts). Reicht die Flaeche nicht, loest sich so lange eine Figur auf, bis sie bei 0 liegt: zuerst die kleinste Figur, die den Fehlbetrag **allein** deckt, gibt es keine, die groesste (bei gleicher Stufe die zuletzt gebaute); ohne Rueckerstattung. Der Unterhalt gehoert zum Einkommen: steht die Fabrik nicht (zerstoert oder im Bau), faellt er nicht an. `Event::Upkeep`, `Event::Dissolved`; `Config::terr_upkeep` |
+| `terr_kingup` | 1 | **Koenigs-Upgrade mit Gold**: der Koenigs-Boost liegt immer aus (nicht mehr im Markt, `draw_market_territory(.., kingup)`) und kostet **Kat 2 (Gold)**: `terr_kingup_price` je zusaetzlichem Zugfeld, das der Koenig auf freiem Brett dadurch bekommt. Quadrat 4 / 4 / 8 Felder (Stufe 1 / 2 / 3, also 4 / 4 / 8 Gold), Sechseck 6 / 6 / 12; auf dem Dreieck gibt es keine Zugfelder zusaetzlich, dort bleibt der Boost aus. Der Kauf ist weiter der Karten-Kauf des Zuges (hoechstens einer je Zug, mit `terr_cardlock=1` ruht der Koenig danach). Der Boost wirkt nun auch auf dem Sechseckbrett (`king_boost_moves`); `Game::king_upgrade_on`, `king_boost_extra`, `territory_offers` |
+| `terr_kingup_price` | 1 | Gold je zusaetzlichem Zugfeld des Koenigs (nur mit `terr_kingup`) |
 | `terr_control` | 0 | **Kontrollfelder** (Schalter, Standard aus): als bearbeitet zaehlen (Zaehler, Ernte, Kat-3-Bonus) auch alle Felder in Zugreichweite einer eigenen Figur: gerade Strahlen bis zur Reichweite, der erste Stein (egal wessen) stoppt den Strahl, ein Sprung geht ueber genau einen; der Koenig kontrolliert seine Nachbarn. Figuren, die nicht auf mit der Fabrik verbundenem Land stehen, kontrollieren nichts. Braucht `terr_occupy` (`Game::worked_cells`) |
 | `kat3_spread` | 1 | Kat-3-Felder gleichmaessig: je Ecke zwei **einzelne** Felder statt einer Ader aus zwei (`cells3 = 2`, `veins3 = 1`), die Startpunkte nach groesstem Abstand zu den bisherigen Kat-3-Feldern und zum Brettrand gewaehlt, im eigenen Gebiet mindestens 2 Felder vom Start entfernt |
 | `terr_move` | 1 | **Fabrik-Umzug / Neubau durch den Koenig** (`Action::RebuildFactory`, JSON `rebuild_factory`), siehe unten |
@@ -673,6 +687,24 @@ ist als der Bot ohne Umzug (50 %), laesst sich bei 40 Partien (rund 8 Prozentpun
   beieinander (20 : 20 beim Stapeln), `gierig` und `zufall` sind klar schwaecher.
 - Die Sitzverteilung der Bots auf den neuen Brettern liegt bei den kleinen Stichproben im Rauschen; einen echten
   Fairness-Test gibt es nur fuer die Symmetrie der Ecken, nicht fuer die Rohstoffverteilung jeder Brettform.
+
+**Sechste Aenderung der Version 3: Unterhalt, Koenigs-Upgrade mit Gold, Symbole.**
+
+- **Unterhalt** (`terr_upkeep=1`, siehe Tabelle): jede Figur kostet je Runde ihre Stufe. Gemessen mit den Bots
+  (2 Spieler): rund 590 Flaeche Unterhalt je Partie gegen etwa 7 000 bis 8 000 Flaeche Einkommen, also eine **milde Bremse**,
+  und nur etwa 0,03 aufgeloeste Figuren je Partie mit den normalen Bots; die Bots bauen so, dass die Flaeche nie unter
+  0 faellt. Der Sieganteil der Bots untereinander aendert sich innerhalb des Rauschens. Spuerbar wird er nur, wenn Figuren
+  billig sind (zum Beispiel `terr_pawn=1,terr_up_mult=1`, `flaeche` gegen `flaeche`, 30 Partien: 0,37 aufgeloeste Figuren je Partie). Ein Mensch, der viele
+  Helden kauft und die Flaeche kurz haelt, wird ihn merken; das ist die Absicht.
+- **Koenigs-Upgrade mit Gold** (`terr_kingup=1`): Kat 2 hatte bisher fast nur den Boost und die Karten zu bezahlen; jetzt
+  ist Gold der direkte Weg, den Koenig zu verbessern, ohne dass die Karte im Markt liegen muss. Der Preis ist die Zahl der
+  zusaetzlichen Zugfelder (Quadrat 4 / 4 / 8).
+- **Anzeige**: Symbole und Namen fuer Flaeche, Eisen, Gold, Brot und die Figuren, Uebersicht mit Zuwachs, Rand der
+  Ressourcen-Kacheln und Fabrik-Menue (siehe oben). `terr_upkeep`, `terr_kingup` und `terr_kingup_price` stehen im
+  Startmenue in der Gruppe *Version 3*. Neue Events im Viewer: `upkeep` ("Unterhalt von A: −4 Fläche") und `dissolved`
+  (roter Rahmen um das Feld der aufgeloesten Figur). Die Start-JSON enthaelt `king_up: {on, extra: [a, b, c], price}`.
+- **Abgeschnittenes Land ist wehrlos**: alles, was nicht ueber Nachbarfelder an der Fabrik haengt, ist wehrlos (die Figuren
+  darauf faerben nichts und schlagen nicht); das war schon so (`connected_land`, `helpless`) und aendert sich nicht.
 
 ## Karten
 
