@@ -474,6 +474,9 @@ spielbar).
 | `terr_cycle` | 1 | **Erntezaehler**: jedes Vorkommen hat einen Zaehler (`State::age`, Erntetakte seit dem letzten Besitzerwechsel). Ist er abgelaufen, wird es einmal geerntet, dann beginnt er von vorn. Periode je Kategorie `terr_ripen` = 3 / 10 (Kat 1 / 2). Der Zaehler laeuft nur, wenn eine **stehende** Fabrik das Feld ueber verbundenes Land erreicht, sonst steht er still und es wird nichts geerntet. Ein Umfaerben des Feldes setzt ihn zurueck. Periode 0 = jede Runde |
 | `terr_bonus` | 1 | **Kat 3 als Flaechenbonus**: Kat 3 wird nicht geerntet und liegt nie im Lager. Am Ende jedes eigenen Zuges bringen die `k` Kat-3-Felder auf dem mit der stehenden Fabrik **verbundenen** Land zusaetzlich `2^k` Flaeche (`Game::kat3_bonus`; `k = 0` bringt nichts, gedeckelt bei `2^20`). Kein Zaehler, jede Runde. `Event::Income` traegt `kat3` und `bonus` |
 | `terr_trade` | 0 | Alte Fassung (Version 3 vor der Aenderung): Kat 3 wird geerntet (`terr_ripen3`) und mit `Action::TradeKat3` einmalig gegen `2^k` Flaeche getauscht. Geht nur zusammen mit `terr_bonus=0` |
+| `terr_occupy` | 1 | **Zaehler nur mit eigener Figur**: der Erntezaehler eines Feldes (und damit seine Ernte) laeuft nur, wenn am Ende des eigenen Zuges eine **eigene Figur (auch der Koenig)** auf dem Feld steht. Sonst **pausiert** er, ohne zurueckgesetzt zu werden. Umfaerben setzt ihn weiter zurueck; die Flaeche des Feldes zaehlt weiter, der Kat-3-Bonus bleibt passiv (`Game::own_piece_at`, `territory.rs`). Braucht `terr_cycle` |
+| `terr_cardany` | 1 | **Karten auf jede eigene Figur**: Kuerzer, Ecke und Sprung wirken sofort auf eine gewaehlte eigene Figur, auch eine schon gebaute (`Action::BuyCard { target: Some(Figur) }`, `Event::CardBought` traegt `target`). Nicht auf den Koenig, nicht auf Stufe 1 (Reichweite < 2), nicht wenn sie die Faehigkeit schon hat. Der Kartenplatz neben der Fabrik bleibt nur fuer "Fabrik ruecken"; Koenigs-Boost wirkt wie bisher sofort. Braucht den Kartensatz von Version 2 |
+| `terr_card_mult` | 8 (Version 2: 16) | Kartenpreise mal `terr_card_mult` / 16 (mindestens 1): Kuerzer 3, Ecke 5, Sprung 4, Fabrik ruecken 3 Kat 1, Koenigs-Boost 1 Kat 2 je Stufe |
 | `terr_move` | 1 | **Fabrik-Umzug / Neubau durch den Koenig** (`Action::RebuildFactory`, JSON `rebuild_factory`), siehe unten |
 | `terr_move_k1`, `terr_move_k2` | 4, 2 | Preis des freiwilligen Umzugs aus dem Lager der Fabrik (Annahme, nicht von der Regel vorgegeben) |
 | `terr_rebuild` | 3 | Bauzeit in Runden, wenn die Fabrik zerstoert wurde (fest, egal wo, kostenlos) |
@@ -529,6 +532,33 @@ Was daran auffaellt:
   0,1 bis 0,7. Drei wehrlose Runden sind ein Fenster, das die Bots selten ausnutzen.
 - **Partien sind laenger geworden** (Spiegel mit `stark`: 87 auf 97 Runden, 14 von 16 erst in der Wertung).
 - **Vorteil des ersten Spielers** ist mit 16 bis 40 Partien nicht von Zufall zu trennen (`stark`-Spiegel: A nur 31 %).
+
+**Zaehler nur mit Figur, Karten auf jede Figur (zweite Aenderung der Version 3).** Der Viewer zeigt den pausierten
+Zaehler grau mit Pausenbalken; der Tooltip eines verbundenen Feldes sagt, ob es gerade bearbeitet wird. Ein Klick auf
+**irgendeine** Figur (auch eine gegnerische, auch wenn man nicht am Zug ist) blendet alle ihre Ziehfelder ein (rot =
+schlagen), ein zweiter Klick oder Esc blendet sie aus (`sv_destinations` im Spielkern, aendert nichts am Spiel). Eine
+Karte, die eine gebaute Figur verbessert, loest einen **Blitz** auf dieser Figur aus (Schein, Ring, Strahl, der
+Kartenname steigt auf; mit "weniger Bewegung" im System ohne Strahl und kuerzer). Kartenkauf im Viewer: Karte im Markt
+anklicken, dann die golden markierte Figur auf dem Brett (Esc bricht ab).
+
+Messung (2 Spieler, Seeds ab 100, 40 Partien Spiegel, 20 Partien je Sitz fuer `stark` mit `--nodes 2000`; wieder nur
+ein Stresstest, bei dieser Stichprobe rauscht jede Zahl um 15 Prozentpunkte):
+
+| | vorher (Bonus-Fassung) | jetzt |
+|---|---|---|
+| Ernte Kat 1 / Kat 2 je Partie (`flaeche`-Spiegel) | 114 / 13 | 44 / 9 |
+| Karten je Partie (`flaeche`-Spiegel) | 6 | 12 |
+| Runden im Schnitt (`flaeche`-Spiegel) | 67 | 77 |
+| `stark` gegen `flaeche` (beide Sitze) | 92 % `stark` | 88 % `stark` (35 von 40) |
+
+- Die Ernte sinkt auf gut ein Drittel, weil ein Feld nur zaehlt, solange jemand darauf steht. Die Bots bewerten das
+  (`flaeche`: ein Vorkommen ohne Figur ist nur ein Drittel wert; `stark`: Gewicht `work` fuer eigene Figuren auf
+  verbundenen Kat-1/2-Feldern); die Ernte bleibt trotzdem niedrig (ob andere Gewichte mehr herausholen, ist nicht
+  untersucht).
+- Der Fabrik-Umzug (4 Kat 1 + 2 Kat 2) ist damit selten bezahlbar: Kat 2 kommt nur etwa 9-mal je Partie, davon ein
+  Teil an den Gegner. Wer ihn haeufiger will, senkt `terr_move_k1` / `terr_move_k2` oder `terr_ripen2`.
+- Die Karten sind jetzt billig genug, dass der Flaechen-Bot sie 12-mal je Partie kauft (vorher 6): Kuerzer 175,
+  Sprung 111, Koenigs-Boost 110, Ecke 99 Kaeufe in 40 Partien.
 
 **Sonde: lohnt ein Umzug zur Mitte?** (`cargo test --release -p game_core rush_probe -- --ignored --nocapture`, 40
 Partien je Zeile, beide Sitze). Ein Hilfsbot (`Rusher` in `v3_tests.rs`, kein Teil des Spiels) schickt den Koenig zur

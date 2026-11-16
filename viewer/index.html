@@ -464,6 +464,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   let liveR = null;    // vorbereitete laufende Partie (waechst Zug fuer Zug)
   let botTimer = null;
   let selected = null; // ausgewaehlte eigene Figur
+  let cardMode = null; // Version 3: { card } = Karte gewaehlt, die Figur dafuer steht noch aus
+  let inspect = null;  // { R, fi, id, cells } = Ziehfelder einer beliebig angeklickten Figur (auch gegnerisch)
+  let fx = [];         // Blitze: eine Karte hat eine Figur verbessert { R, id, start, dur, card }
   // Premoves: Wege, die eine Figur ueber mehrere eigene Zuege von selbst geht.
   let routes = [];       // [{ piece, owner, cells: [Startfeld, ..., Ziel] }]
   let ctrlPath = null;   // Strg gehalten: einzeln angeklickte Kacheln { piece, cells }
@@ -888,6 +891,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Version 3: Kat 3 wird nicht geerntet, k verbundene Kat-3-Felder bringen je Runde 2^k Flaeche dazu. */
   const bonusOn = () => !!(R.config && R.config.terr_bonus);
   const bonusArea = (k) => (k > 0 ? Math.pow(2, Math.min(k, 20)) : 0);
+  /** Version 3: der Erntezaehler eines Feldes laeuft nur, solange eine eigene Figur darauf steht. */
+  const occupyOn = () => !!(R.config && R.config.terr_occupy);
+  /** Version 3: Karten wirken sofort auf eine gewaehlte eigene Einheit (auch eine schon gebaute). */
+  const cardAnyOn = () => !!(R.config && R.config.terr_cardany);
+  /** Steht auf dem Feld eine Figur seines Besitzers (also: laeuft dort der Erntezaehler)? */
+  function isWorked(f, cell) {
+    const owner = f.land ? f.land[cell] : -1;
+    return owner !== null && owner !== undefined && owner >= 0 && f.pieces.some((x) => x.cell === cell && x.owner === owner);
+  }
   /** Dauer eines Umzugs der Fabrik von Feld `from` nach `to`: halbe Entfernung, aufgerundet, mindestens 1 Runde. */
   const relocRounds = (from, to) => Math.max(1, Math.ceil(boardDist(from, to) / 2));
   const roundsWord = (n) => `${n} Runde${n === 1 ? "" : "n"}`;
@@ -931,7 +943,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (bonusOn() && category(res) === 3) return { n: 0, faded: false };
     if (cycleOn()) {
       const n = harvestIn(f, cell, res);
-      return { n: n > 0 && harvestPeriod(res) > 0 ? n : 0, faded: false };
+      const wait = n > 0 && harvestPeriod(res) > 0 ? n : 0;
+      return { n: wait, faded: false, paused: wait > 0 && occupyOn() && !isWorked(f, cell) };
     }
     const n = regrowLeft(f, cell, res);
     return { n, faded: n > 0 };
@@ -942,6 +955,22 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const extra = (f.extra_deposits || []).find(([c]) => c === cell);
     const all = extra ? R.deposits[cell].concat(extra[1]) : R.deposits[cell];
     return all.filter((res) => !gone.has(cell + ":" + res));
+  }
+  /** Die Zahl am Vorkommen; pausiert (Besetzungsregel, keine eigene Figur darauf): grau, mit zwei kleinen Balken. */
+  function countdownLabel(text, px, py, fs, paused, dim) {
+    ctx.globalAlpha = dim ? 0.5 : paused ? 0.7 : 0.95;
+    ctx.font = `700 ${fs}px ${cssVar("--font-data") || "monospace"}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.strokeText(text, px, py);
+    ctx.fillStyle = paused ? "#7a8480" : "#1c2420"; ctx.fillText(text, px, py);
+    if (paused) {
+      const bw = Math.max(1.5, fs * 0.13), bh = fs * 0.55, bx = px + fs * 0.62 + (text.length > 1 ? fs * 0.3 : 0);
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fillRect(bx - bw * 1.6 - 1, py - bh / 2 - 1, bw * 3.2 + 2 + bw, bh + 2);
+      ctx.fillStyle = "#7a8480";
+      ctx.fillRect(bx - bw * 1.6, py - bh / 2, bw, bh);
+      ctx.fillRect(bx + bw * 0.6, py - bh / 2, bw, bh);
+    }
   }
   function drawDeposits(cell, dim) {
     if (geo.flat) return drawDepositsFlat(cell, dim);
@@ -962,14 +991,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       else if (cat === 2) drawIngot(px, py, s, col);
       else if (cat === 3) drawGrain(px, py, s, col);
       else drawBarrel(px, py, s, col);
-      if (wait) {
-        ctx.globalAlpha = dim ? 0.5 : 0.95;
-        const fs = Math.max(9, Math.round(geo.W * 0.2));
-        ctx.font = `700 ${fs}px ${cssVar("--font-data") || "monospace"}`;
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.strokeText(String(wait), px, py - s * 0.3);
-        ctx.fillStyle = "#1c2420"; ctx.fillText(String(wait), px, py - s * 0.3);
-      }
+      if (wait) countdownLabel(String(wait), px, py - s * 0.3, Math.max(9, Math.round(geo.W * 0.2)), dw.paused, dim);
     });
     ctx.globalAlpha = 1;
   }
@@ -1367,13 +1389,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const dw = depositWait(f, cell, res), wait = dw.n;
       ctx.globalAlpha = dw.faded ? 0.25 : dim ? 0.4 : 1;
       flatGlyph(category(res), px, py, s, resColor(res, cellOwnerAt(f, cell)));
-      if (wait) {
-        ctx.globalAlpha = dim ? 0.5 : 0.95;
-        ctx.font = `700 ${Math.max(10, Math.round(U * 0.24))}px ${cssVar("--font-data") || "monospace"}`;
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.strokeText(String(wait), px, py + 0.5);
-        ctx.fillStyle = "#1c2420"; ctx.fillText(String(wait), px, py + 0.5);
-      }
+      if (wait) countdownLabel(String(wait), px, py + 0.5, Math.max(10, Math.round(U * 0.24)), dw.paused, dim);
     });
     ctx.globalAlpha = 1;
   }
@@ -1538,7 +1554,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (e.type === "reconnected") outlineCell(e.cell, PLAYER[e.owner].color, 0.3);
     }
     if (hoverCell !== null) outlineCell(hoverCell, cssVar("--ink") || "#000", 0);
-    if (canAct()) {
+    if (canAct() && cardMode) {
+      // Karte gewaehlt: die Figuren, auf die sie passt, leuchten golden.
+      for (const [a] of cardBuys(cardMode.card)) {
+        const t = f.byId.get(a.target);
+        if (t) outlineCell(t.cell, "#e0a100", 0.3);
+      }
+    } else if (canAct()) {
       const accent = cssVar("--accent") || "#2f55a4";
       if (selected !== null && f.byId.get(selected)) {
         const me = f.byId.get(selected);
@@ -1553,6 +1575,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           const p = f.byId.get(id);
           if (p) outlineCell(p.cell, accent, 0);
         }
+      }
+    }
+
+    // Ziehfelder einer angeklickten Figur (auch gegnerisch oder wenn man nicht am Zug ist)
+    if (inspectValid()) {
+      const me = f.byId.get(inspect.id);
+      const col = PLAYER[me.owner].color;
+      outlineCell(me.cell, col, 0.3);
+      for (const to of inspect.cells) {
+        const hostile = f.pieces.some((q) => q.cell === to && q.owner !== me.owner) ||
+          f.factories.some((x) => x.cell === to && x.owner !== me.owner);
+        markCell(to, hostile ? HOSTILE : col);
       }
     }
 
@@ -1634,7 +1668,89 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     canvas.dataset.pieces = String(f.pieces.length);
     canvas.dataset.frame = String(fi);
 
-    if (tween) requestAnimationFrame(draw);
+    drawFx(now);
+    if (tween || fx.length) requestAnimationFrame(draw);
+  }
+
+  /** Beim Schritt auf `f`: fuer jede Karte, die eine gebaute Figur verbessert, ein Blitz. */
+  function startFx(f) {
+    const now = performance.now();
+    for (const e of f.events) {
+      if (e.type !== "card_bought" || e.target === null || e.target === undefined) continue;
+      if (f.byId.get(e.target)) fx.push({ R, id: e.target, start: now, dur: reduceMotion ? 600 : 1200, card: e.card });
+    }
+  }
+  /** Der Blitz: Schein, Ring, flackernder Strahl von oben und der Kartenname, der aufsteigt. */
+  function drawFx(now) {
+    if (!fx.length) return;
+    if (now === undefined) now = performance.now();
+    fx = fx.filter((e) => e.R === R && now - e.start < e.dur);
+    const f = R.frames[fi];
+    for (const e of fx) {
+      const piece = f.byId.get(e.id);
+      if (!piece) continue;
+      const t = Math.max(0, Math.min(1, (now - e.start) / e.dur));
+      const [x, y] = R.board.cells[piece.cell];
+      const [cx, cy] = iso(x, y);
+      const u = geo.W;
+      ctx.save();
+      // weisses Aufblitzen des Feldes
+      if (t < 0.3) {
+        cellPath(piece.cell, 0.92);
+        ctx.globalAlpha = 0.85 * (1 - t / 0.3);
+        ctx.fillStyle = "#fffbe0";
+        ctx.fill();
+      }
+      // goldener Schein
+      const glow = Math.pow(1 - t, 1.4);
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, u * 1.15);
+      g.addColorStop(0, `rgba(255,246,170,${0.95 * glow})`);
+      g.addColorStop(0.5, `rgba(255,206,64,${0.5 * glow})`);
+      g.addColorStop(1, "rgba(255,200,40,0)");
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, u * 1.15, 0, Math.PI * 2);
+      ctx.fill();
+      // Ring, der sich weitet
+      ctx.globalAlpha = 1 - t;
+      ctx.strokeStyle = "#ffd23f";
+      ctx.lineWidth = Math.max(2, u * 0.07);
+      ctx.beginPath();
+      ctx.arc(cx, cy, u * (0.3 + 0.9 * t), 0, Math.PI * 2);
+      ctx.stroke();
+      // Blitzstrahl von oben (flackert), bei reduzierter Bewegung weggelassen
+      if (!reduceMotion && t < 0.5 && Math.floor(t * 18) % 3 !== 2) {
+        const pts = [[0.3, -1.9], [-0.06, -1.2], [0.2, -1.1], [-0.16, -0.45], [0.1, -0.4], [-0.04, 0.06]];
+        ctx.globalAlpha = 1;
+        ctx.lineJoin = "miter";
+        ctx.lineCap = "round";
+        for (const [w, col, blur] of [[0.16, "#ffb703", u * 0.5], [0.06, "#ffffff", 0]]) {
+          ctx.beginPath();
+          pts.forEach(([px, py], i) => (i ? ctx.lineTo(cx + px * u, cy + py * u) : ctx.moveTo(cx + px * u, cy + py * u)));
+          ctx.shadowColor = "#ffd23f";
+          ctx.shadowBlur = blur;
+          ctx.lineWidth = Math.max(2, w * u);
+          ctx.strokeStyle = col;
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      }
+      // Kartenname steigt auf
+      const label = "+ " + CARD(e.card).name;
+      const size = Math.max(12, u * 0.34);
+      ctx.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+      ctx.font = `700 ${size}px system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const ty = cy - u * (0.85 + 0.55 * t);
+      ctx.lineWidth = Math.max(3, size * 0.22);
+      ctx.strokeStyle = "rgba(40,28,0,0.85)";
+      ctx.strokeText(label, cx, ty);
+      ctx.fillStyle = "#ffe27a";
+      ctx.fillText(label, cx, ty);
+      ctx.restore();
+    }
   }
 
   function drawPiece(p, x, y) {
@@ -1849,11 +1965,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const inc = { area: 0, 1: 0, 2: 0, 3: 0, 4: 0, k3: 0, bonus: 0 };
     if (!f.land || !f.anchored[p]) return inc;
     const y = (R.config && R.config.terr_yield) || 1;
+    // Mit der Besetzungsregel zaehlt nur, wo am Ende des Zugs eine eigene Figur steht (so wie es jetzt aussieht).
+    const mine = occupyOn() ? new Set(f.pieces.filter((x) => x.owner === p).map((x) => x.cell)) : null;
     for (let c = 0; c < f.land.length; c++) {
       if (f.land[c] !== p || !f.linked[c]) continue;
       inc.area++;
       for (const res of liveDeposits(f, c)) {
         if (bonusOn() && category(res) === 3) { inc.k3++; continue; }
+        if (mine && !mine.has(c)) continue;
         if (cycleOn() ? harvestIn(f, c, res) === 1 : !ripenLeft(f, c, res)) inc[category(res)] += y;
       }
     }
@@ -1894,7 +2013,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!r || !r.some((n) => n > 0)) return "";
     if (cycleOn()) {
       const bits = r.slice(0, bonusOn() ? 2 : R.config.terr_cats || 4).map((n, i) => (n > 0 ? `Kat ${i + 1} alle ${n}` : "")).filter(Boolean);
-      return ` – aber jedes Vorkommen nur einmal je Erntezeit (${bits.join(", ")} Runden); die Zahl darauf zählt herunter, bei 0 wird geerntet und es fängt von vorn an. Der Zähler läuft nur bei stehender Fabrik und verbundenem Feld; ein Umfärben setzt ihn zurück`;
+      return ` – aber jedes Vorkommen nur einmal je Erntezeit (${bits.join(", ")} Runden); die Zahl darauf zählt herunter, bei 0 wird geerntet und es fängt von vorn an. Der Zähler läuft nur bei stehender Fabrik und verbundenem Feld${occupyOn() ? ", und nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (sonst pausiert er)" : ""}; ein Umfärben setzt ihn zurück`;
     }
     const bits = r.map((n, i) => (n > 0 ? `Kat ${i + 1} nach ${n}` : "")).filter(Boolean);
     return ` – aber erst, wenn das Feld dir ${bits.join(", ")} Runden gehört (die Zahl auf dem Vorkommen zählt herunter; ein Umfärben setzt sie zurück)`;
@@ -1937,7 +2056,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       rows.push(`<div class="loc ladder${st.ok ? " ok" : ""}"><b>Stufe ${level} · ${unitTitle(level)} – ${wait}</b><div class="res">${bits.join("")}</div></div>`);
     }
     const sc = (f.stored_card || [])[p];
-    rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – ${sc === "factory_shift" ? "rückt die Fabrik einmal diagonal (statt eines Zuges)." : "wirkt auf die nächste gebaute Figur."}` : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit)."}</span></div>`);
+    const empty = cardAnyOn()
+      ? "Keine. „Fabrik rücken“ liegt hier, bis du sie benutzt. Kürzer, Ecke und Sprung wirken gleich auf eine Figur deiner Wahl (auch eine schon gebaute)."
+      : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit).";
+    rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – ${sc === "factory_shift" ? "rückt die Fabrik einmal diagonal (statt eines Zuges)." : "wirkt auf die nächste gebaute Figur."}` : empty}</span></div>`);
     return rows;
   }
 
@@ -2336,7 +2458,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const p = focusPlayer(f);
     const acting = canAct();
     const own = p === null || p === undefined ? -1 : ownColorOf(p);
-    $("marketNote").textContent = isTerr()
+    $("marketNote").textContent = isTerr() && cardAnyOn()
+      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König); klicke die Karte, dann die Figur. „Fabrik rücken“ liegt neben der Fabrik, bis du sie benutzt; der Königs-Boost wirkt sofort auf den König."
+      : isTerr()
       ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Sie liegt neben der Fabrik und wirkt auf die nächste gebaute Figur; es passt nur eine."
       : acting
       ? "Eine Karte pro Zug, zusätzlich zu deinem Zug. Bezahlt wird aus einem Ort: dem Gepäck des Königs oder einer Fabrik."
@@ -2358,15 +2482,29 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (mult > 1) cost = { ...cost, color: cost.color * mult, foreign_color: cost.foreign_color * mult, k2: cost.k2 * mult, k3: cost.k3 * mult };
       const best = places.length ? bestPlace(cost, places, own) : null;
       const ready = best && best.plan.missing === 0;
-      const cardText = isTerr() ? c.text.replace(/ Preis je Reichweite der Figur\./, "") : c.text;
-      li.innerHTML = `<b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(cardText)}` +
+      const cardTxt = isTerr() ? cardText(c).replace(/ Preis je Reichweite der Figur\./, "") : c.text;
+      li.innerHTML = `<b>${escapeHtml(c.name)}</b>${c.set ? " <small>(Set)</small>" : ""} – ${escapeHtml(cardTxt)}` +
         (c.per_range ? `<span class="cost">Kosten: ${escapeHtml(costText(c))}. Gezeigt: Reichweite ${minRange}.</span>` : "") +
         `<div class="slots" role="group" aria-label="${escapeHtml("Kosten: " + costText(c))}">${slotsHtml(cost, best ? best.plan : null)}</div>` +
         (best ? `<span class="where${ready ? " ok" : ""}">${ready ? "Reicht" : "Am nächsten dran"}: ${escapeHtml(best.name)}</span>` : "");
       if (acting) {
         const options = [];
         live.legal.forEach((a, i) => { if (a.type === "buy" && a.card === c.key) options.push([a, i]); });
-        if (options.length) {
+        if (options.length && buyNeedsPiece(options)) {
+          // Version 3: die Karte wirkt auf eine Figur deiner Wahl; der Klick darauf waehlt sie auf dem Brett.
+          li.classList.add("can");
+          const box = document.createElement("div");
+          box.className = "buy";
+          const active = cardMode && cardMode.card === c.key;
+          const b = document.createElement("button");
+          b.type = "button"; b.className = "btn" + (active ? "" : " primary");
+          b.textContent = active ? "Abbrechen (Esc)" : "Kaufen: Figur wählen";
+          b.addEventListener("click", () => pickCard(c.key));
+          box.appendChild(b);
+          li.appendChild(box);
+          const names = options.map(([a]) => f.byId.get(a.target)).filter(Boolean).map((t) => `${pieceLabel(t)} auf ${cellName(t.cell)}`);
+          li.insertAdjacentHTML("beforeend", `<span class="where ok">${active ? "Klicke jetzt die golden markierte Figur auf dem Brett. " : ""}Passt auf: ${escapeHtml(names.join(", "))}</span>`);
+        } else if (options.length) {
           li.classList.add("can");
           const box = document.createElement("div");
           box.className = "buy";
@@ -2382,9 +2520,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           li.insertAdjacentHTML("beforeend", `<span class="missing">In diesem Zug wurde schon eine Karte gekauft.</span>`);
         } else {
           const miss = best ? shortfall(cost, best.inv, own) : [];
-          const slotFull = isTerr() && c.key !== "king_boost" && (f.stored_card || [])[p];
+          const onPiece = cardAnyOn() && c.target === "unit";
+          const slotFull = isTerr() && c.key !== "king_boost" && !onPiece && (f.stored_card || [])[p];
           const boostMax = c.key === "king_boost" && cardFactor(c, p) > 3;
+          const noPiece = onPiece && best && !miss.length;
           const text = boostMax ? "Der König hat schon alle drei Boost-Stufen."
+            : noPiece ? "Keine deiner Figuren passt: die Karte wirkt auf eine Figur ab Stufe 2, die das noch nicht kann (nicht auf den König)."
             : slotFull ? "Der Kartenplatz neben der Fabrik ist belegt: erst die liegende Karte mit einer gebauten Figur aufbrauchen."
             : best && miss.length
             ? `Es fehlt noch: ${miss.join(", ")}.`
@@ -2413,6 +2554,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           c.terr_bonus ? `Ernte alle ${(c.terr_ripen || []).slice(0, 2).map((n) => n || "jede").join(" / ")} Runden (Kat 1 / 2)` : `Ernte alle ${per} Runden (Kat 1 / 2 / 3)`,
           c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Kat 1 + ${c.terr_move_k2} Kat 2, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${c.terr_rebuild} Runden` : "kein Fabrik-Umzug",
           c.terr_bonus ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
+          c.terr_occupy ? "Erntezähler läuft nur mit eigener Figur auf dem Feld" : "Erntezähler läuft ohne Figur",
+          c.terr_cardany ? "Karten wirken auf jede eigene Figur (auch gebaute)" : "Karten wirken auf die nächste gebaute Figur",
           cut, score];
         return v3.join(" · ");
       }
@@ -2559,6 +2702,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function goTo(i, animate) {
     if (!R) return;
     const next = Math.max(0, Math.min(R.frames.length - 1, i));
+    if (animate && next === fi + 1) startFx(R.frames[next]);
+    else fx = [];
+    if (next !== fi) inspect = null;
     if (animate && next === fi + 1 && !reduceMotion) {
       tween = { from: fi, to: next, start: performance.now(), dur: Math.min(380, Number($("speed").value) * 0.75) };
     } else {
@@ -2622,7 +2768,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const wait = cycleOn() ? harvestIn(f, cell, res) : regrowLeft(f, cell, res);
       const ripening = !(f.regrow || []).some(([c, r]) => c === cell && r === res);
       const back = !wait ? "" : cycleOn()
-        ? `, Ernte in ${wait} Runde${wait > 1 ? "n" : ""} (Zähler läuft nur bei stehender Fabrik und verbundenem Feld)`
+        ? `, Ernte in ${wait} Runde${wait > 1 ? "n" : ""}` + (occupyOn()
+          ? (isWorked(f, cell) ? " (eine eigene Figur steht darauf: der Zähler läuft)" : " – der Zähler pausiert, bis am Ende deines Zugs eine eigene Figur auf dem Feld steht")
+          : " (Zähler läuft nur bei stehender Fabrik und verbundenem Feld)")
         : ripening
         ? `, reift: erster Ertrag in ${wait} Runde${wait > 1 ? "n" : ""}`
         : `, abgebaut, wieder da in ${wait} Runde${wait > 1 ? "n" : ""}`;
@@ -2691,10 +2839,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!downAt || !R || !geo) return;
     const moved = Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]);
     downAt = null;
-    if (moved > 10 || !canAct()) return;
+    if (moved > 10) return;
     $("tip").hidden = true;
     const rect = canvas.getBoundingClientRect();
     const cell = cellAt(ev.clientX - rect.left, ev.clientY - rect.top);
+    if (!canAct()) {
+      // Nicht am Zug: ein Klick auf eine Figur zeigt trotzdem ihre Ziehfelder.
+      if (canInspect() && !inspectAt(cell) && inspect) clearInspect();
+      return;
+    }
     if (ev.shiftKey) routeClick(cell, "auto");
     else if (ev.ctrlKey || ev.metaKey) routeClick(cell, "tile");
     else boardClick(cell);
@@ -2748,7 +2901,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ttx = { ...textTerr,
         unit1: "Bauer (Stufe 1): zieht genau 1 Feld geradeaus und schlägt dort. Zahl = Stufe, Punkte = Reichweite.",
         unit2: "Stufe n zieht genau n Felder geradeaus wie ein Turm, nicht durch Figuren. Krieger (2) mit Helm, Ritter (3) mit Helmbusch, Held (4) mit Umhang.",
-        unitCards: "Karten an der Figur (wirken auf die nächste gebaute): −1 = Kürzer (ein Feld weniger), L = Ecke (einmal um die Ecke), Bogen = Sprung (über eine Figur).",
+        unitCards: `Karten an der Figur (wirken auf ${cardAnyOn() ? "eine Figur deiner Wahl, auch eine schon gebaute; beim Verbessern blitzt es" : "die nächste gebaute"}): −1 = Kürzer (ein Feld weniger), L = Ecke (einmal um die Ecke), Bogen = Sprung (über eine Figur).`,
         crystal: "Kat 1 (Raute). Weiß, solange das Feld niemandem gehört; dann in der Farbe des Besitzers. Der erste Ertrag kommt, wenn dir das Feld 3 Runden gehört (die Zahl auf dem blassen Vorkommen zählt herunter); danach jede Runde, solange es mit der Fabrik verbunden ist. Umfärben setzt die Uhr zurück.",
         ingot: "Quader (Kat 2, Quadrat): wie Kat 1, aber erst nach 10 Runden Besitz. Rohstoffe sind nur für Karten da.",
       };
@@ -2762,7 +2915,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         pill: R.config.terr_bonus
           ? "Lager an der Fabrik: Summe je Kategorie (Raute Kat 1, Quadrat Kat 2) in der Farbe des Besitzers."
           : "Lager an der Fabrik: Summe je Kategorie (Raute Kat 1, Quadrat Kat 2, Kreis Kat 3) in der Farbe des Besitzers. Kat 3 lässt sich in der Fabrik gegen Fläche tauschen: k Stück ergeben 2^k.",
-        crystal: `Kat 1 (Raute), Hauptrohstoff. Weiß, solange das Feld niemandem gehört; dann in der Farbe des Besitzers. Die Zahl zählt herunter (alle ${pr[0] || 3} Runden): bei 0 erntet die Fabrik es einmal, dann beginnt der Zähler von vorn. Ohne stehende Fabrik oder ohne Anbindung steht der Zähler still; ein Umfärben setzt ihn zurück.`,
+        crystal: `Kat 1 (Raute), Hauptrohstoff. Weiß, solange das Feld niemandem gehört; dann in der Farbe des Besitzers. Die Zahl zählt herunter (alle ${pr[0] || 3} Runden): bei 0 erntet die Fabrik es einmal, dann beginnt der Zähler von vorn. Ohne stehende Fabrik oder ohne Anbindung steht der Zähler still; ein Umfärben setzt ihn zurück.${R.config.terr_occupy ? " Er läuft nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (Zahl grau mit Pausenbalken = er steht still)." : ""}`,
         ingot: `Quader (Kat 2, Quadrat): wie Kat 1, Erntezeit ${pr[1] || 10} Runden. Rohstoffe gibt es für Karten und den Fabrik-Umzug.`,
         grain: R.config.terr_bonus
           ? "Ball (Kat 3, Kreis): wird nicht geerntet. Jeder Ball auf deinem mit der Fabrik verbundenen Land zählt: k Bälle bringen dir am Ende jedes Zugs zusätzlich 2^k Fläche (2, 4, 8, 16 …), ohne Zähler. Umfärben nimmt ihn dir."
@@ -2877,11 +3030,85 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       showPlayError(err.message);
     }
   }
+  function canInspect() {
+    return mode === "play" && !!live && R === liveR && fi === R.frames.length - 1;
+  }
+  function inspectValid() {
+    return !!inspect && inspect.R === R && inspect.fi === fi && !!R.frames[fi].byId.get(inspect.id);
+  }
+  function clearInspect() {
+    if (!inspect) return;
+    inspect = null;
+    renderTurnBox();
+    requestAnimationFrame(draw);
+  }
+  /** Klick auf eine beliebige Figur: ihre Ziehfelder einblenden (ein zweiter Klick blendet sie aus). */
+  function inspectAt(cell) {
+    if (cell === null || !canInspect()) return false;
+    const piece = R.frames[fi].pieces.find((q) => q.cell === cell);
+    if (!piece) return false;
+    if (inspectValid() && inspect.id === piece.id) { clearInspect(); return true; }
+    try {
+      inspect = { R, fi, id: piece.id, cells: callWasm("sv_destinations", piece.id).cells };
+    } catch (err) {
+      inspect = null;
+      showPlayError(err.message);
+      return false;
+    }
+    routeNote = "";
+    renderTurnBox();
+    requestAnimationFrame(draw);
+    return true;
+  }
+  function inspectText() {
+    const piece = R.frames[fi].byId.get(inspect.id);
+    const who = piece.owner === R.frames[fi].current ? "" : ` von Spieler ${playerName(piece.owner)}`;
+    const n = inspect.cells.length;
+    const what = `${pieceLabel(piece)}${who} auf ${cellName(piece.cell)}`;
+    if (!n) return `${what}: hat gerade kein Ziehfeld.`;
+    return `${what}: ${n} ${n === 1 ? "Ziehfeld" : "Ziehfelder"} (rot = schlagen). Noch einmal anklicken oder Esc blendet sie aus.`;
+  }
   function destinations(pieceId) {
     return live.legal.filter((a) => a.type === "move" && a.piece === pieceId).map((a) => a.to);
   }
   function movablePieces() {
     return [...new Set(live.legal.filter((a) => a.type === "move").map((a) => a.piece))];
+  }
+  /** Kartentext; mit Karten auf gebaute Figuren gilt "die naechste Figur" nicht mehr. */
+  function cardText(c) {
+    return cardAnyOn() && c.target === "unit" ? c.text.replace(/^Die nächste Figur/, "Eine Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2)") : c.text;
+  }
+  /** Erlaubte Kaeufe einer Karte als [Aktion, Index in der Liste]. */
+  const cardBuys = (key) => (live && canAct() ? live.legal.map((a, i) => [a, i]).filter(([a]) => a.type === "buy" && a.card === key) : []);
+  /** Braucht der Kauf eine Figur als Ziel (Karten auf gebaute Figuren)? */
+  const buyNeedsPiece = (opts) => opts.length > 0 && opts.every(([a]) => a.target !== null && a.target !== undefined);
+  function cardMissText(c, piece) {
+    const why = piece.king ? "Der König bekommt keine Figurenkarten (für ihn gibt es den Königs-Boost)."
+      : piece.range < 2 ? "Eine Figur der Stufe 1 zieht nur ein Feld: da gibt es nichts zu kürzen, keine Ecke und keinen Sprung."
+      : piece.perks && piece.perks[c.key] ? "Diese Figur kann das schon."
+      : "Die Karte passt nicht auf diese Figur.";
+    return `„${c.name}“ passt nicht auf ${pieceLabel(piece)} auf ${cellName(piece.cell)}. ${why}`;
+  }
+  /** Ein Klick auf eine Karte: ohne Ziel gleich kaufen, sonst die Figur auf dem Brett waehlen lassen. */
+  function pickCard(key) {
+    const opts = cardBuys(key);
+    if (!opts.length) return;
+    if (!buyNeedsPiece(opts)) { humanAct(opts[0][1]); return; }
+    if (cardMode && cardMode.card === key) { stopCardMode(); return; }
+    cardMode = { card: key };
+    selected = null; ctrlPath = null; shiftMode = false; inspect = null;
+    routeNote = "";
+    renderPanel();
+    requestAnimationFrame(draw);
+    // Die Karte liegt unter dem Brett: das Brett ins Bild holen, damit man die Figur gleich anklicken kann.
+    const wrap = canvas.closest(".board-wrap") || canvas;
+    wrap.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+  function stopCardMode() {
+    if (!cardMode) return;
+    cardMode = null;
+    renderPanel();
+    requestAnimationFrame(draw);
   }
   function boardClick(cell) {
     if (!canAct()) return;
@@ -2892,12 +3119,29 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (k >= 0) { humanAct(k); return; }
       renderFactoryCard();
     }
+    if (cardMode) {
+      const hit = cell === null ? null : cardBuys(cardMode.card).find(([a]) => { const t = f.byId.get(a.target); return t && t.cell === cell; });
+      if (hit) { humanAct(hit[1]); return; }
+      const other = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
+      if (other) {
+        routeNote = cardMissText(CARD(cardMode.card), other);
+        renderTurnBox();
+        requestAnimationFrame(draw);
+        return;
+      }
+      cardMode = null;
+      routeNote = "";
+      renderPanel();
+    }
     if (cell !== null && selected !== null) {
       const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === cell);
       if (i >= 0) { humanAct(i); return; }
     }
     const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
     if (!piece && cell !== null && isTerr() && facClick(cell)) return;
+    // Andere Figuren (auch gegnerische) und Figuren ohne Zug: nur ihre Ziehfelder zeigen.
+    if (!(piece && destinations(piece.id).length) && inspectAt(cell)) { selected = null; return; }
+    inspect = null;
     selected = piece && destinations(piece.id).length ? piece.id : null;
     renderTurnBox();
     requestAnimationFrame(draw);
@@ -3111,7 +3355,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Karten", fields: [
       { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
     ] },
-    { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) liegen neben der Fabrik und wirken auf die nächste Figur; „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Rohstoffe sind weiß, bis das Feld jemandem gehört; dann haben sie dessen Farbe.", fields: [
+    { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Rohstoffe sind weiß, bis das Feld jemandem gehört; dann haben sie dessen Farbe.", fields: [
       { key: "terr_ver", label: "Regelstufe (3, 2 oder 1)", ph: () => "3", hint: () => "3 = Version 3 (Erntezähler, Fabrik-Umzug, Kat 3 als Flächenbonus); 2 = Version 2; 1 = Version 1 (Referenz: Zugweite bis n, Preise mit Rohstoffen, sofortiger Ertrag)." },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
       { key: "terr_grow", label: "Preisfaktor je Stufe", ph: () => "2", hint: () => "Stufe n kostet Bauer mal Faktor hoch (n−1): 50 / 100 / 200 / 400. 0 = Preise der Version 1 (nur mit Version 1 sinnvoll)." },
@@ -3126,15 +3370,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_reconnect", label: "Wehrlose Figur wieder anbinden", ph: () => "1", hint: () => "1 = steht sie neben ihrem verbundenen Land, ist sie aktiv und färbt ihr Feld; 0 = aus" },
       { key: "terr_enclose", label: "Umschlossene neutrale Fläche", ph: () => "1", hint: () => "1 = ganz umschlossene neutrale Fläche geht an die umschließende Farbe; 0 = aus" },
       { key: "terr_enclose_edge", label: "Brettrand zählt als Wand", ph: () => "0", hint: () => "0 = eine neutrale Fläche am Brettrand wird nie umschlossen; 1 = der Rand ist eine Wand (ein „L“ aus der Ecke holt ein Quadrat)" },
-      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => "16", hint: () => "Preise der Karten mal diese Zahl durch 16 (Version 2: Ecke 10 Kat 1, Königs-Boost 3 Kat 2 je Stufe)." },
+      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => { const v = $("rule_terr_ver"); return (v && v.value.trim() !== "" ? Number(v.value) : 3) === 3 ? "8" : "16"; }, hint: () => "Preise der Karten mal diese Zahl durch 16. Version 2 (16): Kürzer 6, Ecke 10, Sprung 8, Fabrik rücken 6 Kat 1, Königs-Boost 3 Kat 2 je Stufe. Version 3 (8): Kürzer 3, Ecke 5, Sprung 4, Fabrik rücken 3, Königs-Boost 1 Kat 2 je Stufe." },
     ] },
-    { title: "Version 3: Fabrik, Ernte, Rohstoffe", wide: true, grid: true, note: "Fabrik-Umzug: der König baut die Fabrik auf seinem Feld (verbundenes Land) neu, die alte fällt weg und ihr Lager zieht mit um; das kostet Rohstoffe und dauert die halbe Entfernung vom alten Platz (aufgerundet, mindestens 1 Runde; der Tooltip über deinem Land nennt die Dauer vorab). Wurde die Fabrik zerstört, baut er sie auf eigenem Land fest in 3 Runden neu (kostenlos). Während des Baus gibt es kein Einkommen, die Erntezähler stehen still, das Land ist nicht verbunden (alle Figuren wehrlos, sie färben nichts), der König darf sich nicht bewegen. Erntezähler: jedes Vorkommen wird alle N Runden einmal geerntet, dann beginnt es von vorn. Kat 3 wird nicht geerntet: k Kat-3-Felder auf dem mit der Fabrik verbundenen Land bringen am Ende jedes eigenen Zugs zusätzlich 2^k Fläche (kein Feld: nichts).", fields: [
+    { title: "Version 3: Fabrik, Ernte, Rohstoffe", wide: true, grid: true, note: "Fabrik-Umzug: der König baut die Fabrik auf seinem Feld (verbundenes Land) neu, die alte fällt weg und ihr Lager zieht mit um; das kostet Rohstoffe und dauert die halbe Entfernung vom alten Platz (aufgerundet, mindestens 1 Runde; der Tooltip über deinem Land nennt die Dauer vorab). Wurde die Fabrik zerstört, baut er sie auf eigenem Land fest in 3 Runden neu (kostenlos). Während des Baus gibt es kein Einkommen, die Erntezähler stehen still, das Land ist nicht verbunden (alle Figuren wehrlos, sie färben nichts), der König darf sich nicht bewegen. Erntezähler: jedes Vorkommen wird alle N Runden einmal geerntet, dann beginnt es von vorn; er läuft aber nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (sonst pausiert er). Kat 3 wird nicht geerntet: k Kat-3-Felder auf dem mit der Fabrik verbundenen Land bringen am Ende jedes eigenen Zugs zusätzlich 2^k Fläche (kein Feld: nichts).", fields: [
       { key: "terr_cycle", label: "Erntezähler je Vorkommen", ph: () => "1", hint: () => "1 = jedes Vorkommen wird alle N Runden (Erntezeit) einmal geerntet; 0 = Version 2 (nach der Reifezeit jede Runde)." },
       { key: "terr_move", label: "König baut die Fabrik neu", ph: () => "1", hint: () => "1 = Umzug und Neubau nach einer Zerstörung erlaubt; 0 = aus." },
       { key: "terr_move_k1", label: "Umzug: Kat 1", ph: () => "4", hint: () => "Kosten aus dem Lager der Fabrik." },
       { key: "terr_move_k2", label: "Umzug: Kat 2", ph: () => "2" },
       { key: "terr_rebuild", label: "Neubau nach Zerstörung (Runden)", ph: () => "3", hint: () => "Fest, egal wo; beim Umzug zählt die Entfernung." },
       { key: "terr_bonus", label: "Kat 3: 2^k Fläche je Runde", ph: () => "1", hint: () => "1 = k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich, Kat 3 wird nicht geerntet; 0 = Kat 3 wird wie Kat 1 geerntet." },
+      { key: "terr_occupy", label: "Zähler nur mit eigener Figur", ph: () => "1", hint: () => "1 = der Erntezähler eines Feldes läuft nur, wenn am Ende deines Zugs eine eigene Figur (auch der König) darauf steht, sonst pausiert er (ohne Rückstellung); 0 = er läuft immer. Nur mit Erntezähler." },
+      { key: "terr_cardany", label: "Karten auf jede eigene Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung wirken sofort auf eine eigene Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2, nicht auf den König); 0 = sie liegen neben der Fabrik und wirken auf die nächste gebaute Figur." },
       { key: "terr_trade", label: "Kat 3 tauschen (alte Fassung)", ph: () => "0", hint: () => "1 = geerntetes Kat 3 lässt sich gegen 2^k Fläche tauschen; nur zusammen mit „Kat 3: 2^k Fläche je Runde“ = 0." },
       { key: "cells2", label: "Kat 2: Felder je Ecke", ph: () => "1", hint: () => "Rohstoffmenge: Felder je Ader (Version 2 hatte 2 Adern mit je 2 Feldern, dazu Felder in der Mitte)." },
       { key: "cells3", label: "Kat 3: Felder je Ecke", ph: () => "2", hint: () => "Eine Ader mit so vielen zusammenhängenden Feldern je Ecke." },
@@ -3144,7 +3390,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "center_mix", label: "Kat 2/3 in der Mitte", ph: () => "0", hint: () => "Zusätzliche Felder jeder Regionsfarbe rund um die Kartenmitte." },
     ] },
   ];
-  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 10 Runden, einmal ernten, dann von vorn), weniger Rohstoffe plus Kat 3, der König kann die Fabrik umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
+  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 10 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur und sind billiger, weniger Rohstoffe plus Kat 3, der König kann die Fabrik umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
   const MENU_KEY = "spacevitan-menu-v3";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
@@ -3356,6 +3602,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function humanAct(i) {
     if (!canAct()) return;
     shiftMode = false;
+    cardMode = null;
+    inspect = null;
     try {
       const out = callWasm("sv_apply", i);
       selected = null;
@@ -3486,19 +3734,30 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       hint = `Spieler ${playerName(now.current)} (Bot) ist am Zug …`;
     } else {
       hint = hotseat ? `Spieler ${playerName(now.current)} ist am Zug.` : "Du bist am Zug (Spieler A, rot).";
-      sub = selected !== null
+      sub = cardMode
+        ? `Karte „${CARD(cardMode.card).name}“: klicke die golden markierte Figur, die sie bekommen soll (Esc bricht ab).`
+        : selected !== null
         ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur. Shift zeigt den ganzen Weg, Shift+Klick läuft ihn automatisch; Strg+Klick wählt Kacheln einzeln (Strg loslassen = los)."
         : isTerr() ? territorySub(now) : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
       if (routes.length) sub = `Eine Route läuft von selbst weiter (Esc bricht ab). ${sub}`;
       if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
     }
+    if (inspectValid()) sub = inspectText() + (sub ? " " + sub : "");
     if (fi < last) sub = "Du siehst einen früheren Zug. " + sub;
     $("hint").innerHTML = escapeHtml(hint) + (sub ? `<small>${escapeHtml(sub)}</small>` : "");
     $("toNow").hidden = fi >= last;
     const actions = $("actions");
     actions.innerHTML = "";
     if (canAct()) {
+      if (cardMode) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn";
+        b.textContent = "Kartenwahl abbrechen (Esc)";
+        b.addEventListener("click", stopCardMode);
+        actions.appendChild(b);
+      }
       if (routes.length) {
         const b = document.createElement("button");
         b.type = "button";
@@ -3722,6 +3981,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (e.key === "Escape") {
       facClose();
       if (shiftMode) { shiftMode = false; routeNote = ""; renderFactoryCard(); renderTurnBox(); }
+      if (cardMode) { routeNote = ""; stopCardMode(); }
+      if (inspect) { inspect = null; renderTurnBox(); requestAnimationFrame(draw); }
     }
     if (e.key === "Escape" && mode === "play" && (routes.length || ctrlPath || selected !== null)) {
       selected = null;
@@ -3776,6 +4037,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; },
     get live() { return live; }, get mode() { return mode; }, get selected() { return selected; },
     get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
+    get cardMode() { return cardMode; }, get inspect() { return inspect; }, get fx() { return fx; },
     get ready() { return wasm !== null; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },
