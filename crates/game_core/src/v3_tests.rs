@@ -212,7 +212,7 @@ fn ready_to_move() -> Game {
 }
 
 #[test]
-fn moving_the_factory_costs_resources_and_takes_half_the_distance_rounded_up() {
+fn moving_the_factory_is_free_and_takes_half_the_distance_rounded_up() {
     let mut g = ready_to_move();
     assert!(g.legal_actions().contains(&Action::RebuildFactory));
     let old = g.home_factory(P0).unwrap().cell;
@@ -234,10 +234,10 @@ fn moving_the_factory_costs_resources_and_takes_half_the_distance_rounded_up() {
         e,
         Event::FactoryRebuilding { rounds: 2, from: Some(from), .. } if *from == old
     )));
-    // Preis: 4 Kat 1 und 2 Kat 2 aus dem Lager; der Rest zieht mit um.
-    assert_eq!(storage_of(&g, P0, typ(&g, 0, 1)), 1);
-    assert_eq!(storage_of(&g, P0, typ(&g, 0, 2)), 1);
-    assert_eq!(g.state.ledger.spent_on_moves, 6);
+    // Der Umzug kostet nichts: das ganze Lager zieht mit um.
+    assert_eq!(storage_of(&g, P0, typ(&g, 0, 1)), 5);
+    assert_eq!(storage_of(&g, P0, typ(&g, 0, 2)), 3);
+    assert_eq!(g.state.ledger.spent_on_moves, 0);
     assert_eq!(g.current_player(), P1);
 }
 
@@ -254,7 +254,7 @@ fn the_duration_is_half_the_distance_rounded_up_and_at_least_one() {
     // Der Plan des Koenigs nennt dieselbe Zahl schon vor dem Zug.
     let mut g = ready_to_move();
     let (rounds, price) = g.rebuild_plan(P0).expect("Umzug moeglich");
-    assert_eq!((rounds, price), (2, [4, 2]));
+    assert_eq!((rounds, price), (2, [0, 0]));
     g.apply(Action::RebuildFactory).unwrap();
     assert_eq!(g.home_factory(P0).unwrap().building, rounds);
 }
@@ -428,8 +428,10 @@ fn the_move_needs_connected_land_the_price_and_another_cell() {
     g.setup_teleport(king, far);
     assert!(!g.legal_actions().contains(&Action::RebuildFactory));
 
-    // Ohne genug Rohstoffe im Lager.
+    // Mit einem Preis (Schalter terr_move_k1 / terr_move_k2): ohne genug Rohstoffe im Lager nicht.
     let mut g = blank();
+    g.config.terr_move_k1 = 4;
+    g.config.terr_move_k2 = 2;
     strip(&mut g, P0, 4);
     let king = king_id(&g, P0);
     let at = c(&g, 3, 0);
@@ -885,6 +887,103 @@ fn whole_games_in_v3_keep_every_invariant_on_every_board() {
             })
             .collect();
         play(players, seed, 60, bots);
+    }
+}
+
+// ----- Brett frei waehlbar, faire Ecken, Auffuell-Bots ------------------------------------------
+
+#[test]
+fn fair_corner_sets_follow_the_symmetry_of_the_board() {
+    use crate::config::{corners_are_fair, fair_corners, fair_player_count};
+    // Quadrat: zwei gegenueber, drei gehen nicht (vierter Platz mit Bot), vier alle.
+    assert_eq!(fair_corners(4, 2), vec![0, 2]);
+    assert_eq!(fair_player_count(4, 2), 2);
+    assert_eq!(fair_player_count(4, 3), 4);
+    assert_eq!(fair_player_count(4, 4), 4);
+    assert!(!corners_are_fair(4, &[0, 1, 2]));
+    // Sechseck: 2, 3 und 4 gehen, 5 nicht (sechster Platz mit Bot).
+    assert_eq!(fair_corners(6, 2), vec![0, 3]);
+    assert_eq!(fair_corners(6, 3), vec![0, 2, 4]);
+    assert_eq!(fair_corners(6, 4), vec![0, 1, 3, 4]);
+    for (k, want) in [(2, 2), (3, 3), (4, 4), (5, 6), (6, 6)] {
+        assert_eq!(fair_player_count(6, k), want, "Sechseck, {k} Spieler");
+    }
+    // Dreieck: zwei und drei gehen immer.
+    assert_eq!(fair_player_count(3, 2), 2);
+    assert_eq!(fair_player_count(3, 3), 3);
+    // Fuenfeck und Siebeneck: ausser zwei Spielern nur alle Ecken.
+    for n in [5usize, 7] {
+        assert_eq!(fair_player_count(n, 2), 2, "{n}-Eck");
+        for k in 3..=n {
+            assert_eq!(fair_player_count(n, k), n, "{n}-Eck, {k} Spieler");
+        }
+    }
+    // Achteck: 4 und 8 gehen, 3 wird 4, 5 bis 7 werden 8.
+    for (k, want) in [(2, 2), (3, 4), (4, 4), (5, 8), (6, 8), (7, 8), (8, 8)] {
+        assert_eq!(fair_player_count(8, k), want, "Achteck, {k} Spieler");
+    }
+    // Jede gewaehlte faire Menge ist wirklich fair und hat die verlangte Groesse.
+    for n in 3..=8usize {
+        for k in 2..=n {
+            let m = fair_player_count(n, k);
+            let c = fair_corners(n, m);
+            assert_eq!(c.len(), m);
+            assert!(corners_are_fair(n, &c), "{n} Ecken, {m} Spieler: {c:?}");
+        }
+    }
+}
+
+#[test]
+fn the_board_shape_is_free_and_corners_follow_the_fair_choice() {
+    let mut c = Config::new(3, 1);
+    c.board_corners = 6;
+    assert_eq!(c.grid_kind(), crate::board::GridKind::Hex);
+    assert_eq!(c.corner_count(), 6);
+    assert_eq!(c.player_corners(), vec![0, 2, 4]);
+    assert!(c.validate().is_ok());
+    c.board_corners = 4;
+    assert_eq!(c.grid_kind(), crate::board::GridKind::Square);
+    c.players = 5;
+    assert!(c.validate().is_err(), "mehr Spieler als Ecken");
+    c.players = 3;
+    c.board_corners = 3;
+    assert_eq!(c.grid_kind(), crate::board::GridKind::Triangle);
+    assert_eq!(
+        Config::new(2, 1).player_corners(),
+        vec![0, 2],
+        "Standard unveraendert"
+    );
+    c.board_corners = 9;
+    assert!(c.validate().is_err());
+}
+
+#[test]
+fn every_player_count_plays_on_every_board() {
+    for n in 3..=8usize {
+        for k in 2..=n {
+            for seed in [1u64, 2, 3] {
+                let mut cfg = Config::new(k as u8, seed);
+                cfg.territory = true;
+                cfg.set_v3(true);
+                cfg.board_corners = n as u8;
+                cfg.max_rounds = 30;
+                cfg.score_after = 30;
+                let mut g = Game::new(cfg)
+                    .unwrap_or_else(|e| panic!("{n} Ecken, {k} Spieler, Seed {seed}: {e}"));
+                let mut bots: Vec<Box<dyn Bot>> = (0..k)
+                    .map(|i| Box::new(RandomBot::new(seed + i as u64)) as Box<dyn Bot>)
+                    .collect();
+                let mut steps = 0;
+                while g.outcome().is_none() && steps < 400 {
+                    let me = g.current_player().idx();
+                    let a = bots[me].choose(&g);
+                    g.apply(a).unwrap();
+                    g.check_invariants()
+                        .unwrap_or_else(|e| panic!("{n} Ecken, {k} Spieler, Zug {steps}: {e}"));
+                    steps += 1;
+                }
+            }
+        }
     }
 }
 

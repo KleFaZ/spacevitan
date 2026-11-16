@@ -168,6 +168,10 @@ pub struct Config {
     /// oft es logisch geht (Stufe `n`: hoechstens `n - 1` mal, sonst gaebe es nichts mehr zu
     /// kuerzen, zu knicken oder zu ueberspringen).
     pub terr_stack: bool,
+    /// Brettform unabhaengig von der Spielerzahl: 0 = wie bisher nach Spielerzahl, sonst die
+    /// Eckenzahl 3 (Dreieck), 4 (Quadrat) oder 5 bis 8 (Vieleck aus Sechsecken). Dann gilt
+    /// `players <= board_corners`, und die Ecken der Spieler waehlt `fair_corners`.
+    pub board_corners: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -258,6 +262,7 @@ impl Config {
             terr_control: false,
             kat3_spread: false,
             terr_stack: false,
+            board_corners: 0,
         }
     }
 
@@ -269,8 +274,9 @@ impl Config {
         self.set_v2(on);
         self.terr_cycle = on;
         self.terr_move = u32::from(on);
-        self.terr_move_k1 = if on { 4 } else { 0 };
-        self.terr_move_k2 = if on { 2 } else { 0 };
+        // Der Umzug der Fabrik kostet keine Rohstoffe (nur Zeit: halbe Entfernung, kein Ertrag).
+        self.terr_move_k1 = 0;
+        self.terr_move_k2 = 0;
         self.terr_rebuild = if on { 3 } else { 0 };
         self.terr_trade = false;
         self.terr_bonus = on;
@@ -397,6 +403,7 @@ impl Config {
             "terr_control" => self.terr_control = value != 0,
             "kat3_spread" => self.kat3_spread = value != 0,
             "terr_stack" => self.terr_stack = value != 0,
+            "board_corners" => self.board_corners = as_u32(value)?.min(255) as u8,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
             "veins3" => self.veins_per_type[2] = as_u32(value)?,
@@ -442,9 +449,14 @@ impl Config {
 
     /// Welches Gitter zur Spielerzahl gehoert.
     pub fn grid_kind(&self) -> GridKind {
-        match self.players {
-            3 => GridKind::Triangle,
-            5..=8 => GridKind::Hex,
+        let n = if self.board_corners != 0 {
+            self.board_corners
+        } else {
+            self.players
+        };
+        match (self.board_corners != 0, n) {
+            (_, 3) => GridKind::Triangle,
+            (_, 5..=8) => GridKind::Hex,
             _ => GridKind::Square,
         }
     }
@@ -461,6 +473,13 @@ impl Config {
     pub fn validate(&self) -> Result<(), ConfigError> {
         if !(2..=8).contains(&self.players) {
             return Err(ConfigError::UnsupportedPlayers(self.players));
+        }
+        if self.board_corners != 0
+            && (!(3..=8).contains(&self.board_corners) || self.players > self.board_corners)
+        {
+            return Err(ConfigError::Invalid(
+                "board_corners: 3 bis 8, und nicht weniger Ecken als Spieler",
+            ));
         }
         let (min, max) = self.side_range();
         if !(min..=max).contains(&self.side) {
@@ -598,7 +617,7 @@ impl Config {
         match self.grid_kind() {
             GridKind::Square => Board::square(self.side),
             GridKind::Triangle => Board::triangle(self.side),
-            GridKind::Hex => Board::hex_polygon(self.players as usize, self.side),
+            GridKind::Hex => Board::hex_polygon(self.corner_count(), self.side),
         }
     }
 
@@ -607,12 +626,16 @@ impl Config {
         match self.grid_kind() {
             GridKind::Square => 4,
             GridKind::Triangle => 3,
+            GridKind::Hex if self.board_corners != 0 => self.board_corners as usize,
             GridKind::Hex => self.players as usize,
         }
     }
 
     /// Welche Ecke jeder Spieler bekommt. Bei 2 Spielern gegenueber (Ecken 0 und 2).
     pub fn player_corners(&self) -> Vec<usize> {
+        if self.board_corners != 0 {
+            return fair_corners(self.board_corners as usize, self.players as usize);
+        }
         match self.players {
             2 => vec![0, 2],
             n => (0..n as usize).collect(),
@@ -628,6 +651,87 @@ impl Config {
             n => base.min(n.min(MAX_CATEGORIES as u32) as u8),
         }
     }
+}
+
+/// Alle Ecken-Abbildungen eines regelmaessigen Vielecks mit `n` Ecken (Drehungen und
+/// Spiegelungen) als Tabelle: `table[g][i]` ist die Ecke, auf die `i` abgebildet wird.
+fn corner_symmetries(n: usize) -> Vec<Vec<usize>> {
+    let mut out = Vec::with_capacity(2 * n);
+    for j in 0..n {
+        out.push((0..n).map(|i| (i + j) % n).collect());
+        out.push((0..n).map(|i| (j + n - i) % n).collect());
+    }
+    out
+}
+
+/// Sind alle Spieler auf diesen Ecken gleich gestellt? Das gilt, wenn das Brett eine Drehung
+/// oder Spiegelung hat, die die Eckenmenge in sich abbildet und jede Spielerecke auf jede
+/// andere bringt: Jeder Spieler hat dann dieselben Nachbarn in denselben Abstaenden.
+pub fn corners_are_fair(n: usize, corners: &[usize]) -> bool {
+    if corners.len() <= 1 {
+        return true;
+    }
+    let mut mask = 0u32;
+    for &c in corners {
+        mask |= 1 << c;
+    }
+    let keeps: Vec<Vec<usize>> = corner_symmetries(n)
+        .into_iter()
+        .filter(|g| corners.iter().all(|&c| mask & (1 << g[c]) != 0))
+        .collect();
+    let first = corners[0];
+    corners.iter().all(|&c| keeps.iter().any(|g| g[first] == c))
+}
+
+/// Alle Eckenmengen der Groesse `k` (aufsteigend sortiert, in Zahlenreihenfolge).
+fn corner_subsets(n: usize, k: usize) -> Vec<Vec<usize>> {
+    let mut out = Vec::new();
+    for mask in 0u32..(1 << n) {
+        if mask.count_ones() as usize == k {
+            out.push((0..n).filter(|&i| mask & (1 << i) != 0).collect());
+        }
+    }
+    out
+}
+
+/// Kleinster Abstand zweier Spielerecken rund um das Vieleck (Schritte entlang des Rands).
+fn min_corner_gap(n: usize, corners: &[usize]) -> usize {
+    let mut best = n;
+    for (a, &x) in corners.iter().enumerate() {
+        for &y in &corners[a + 1..] {
+            let d = y - x;
+            best = best.min(d.min(n - d));
+        }
+    }
+    best
+}
+
+/// Die Ecken fuer `k` Spieler auf einem Brett mit `n` Ecken: wenn es eine faire Verteilung gibt
+/// (siehe `corners_are_fair`), die mit dem groessten Mindestabstand (bei Gleichstand die
+/// kleinste in Zahlenreihenfolge); sonst die mit dem groessten Mindestabstand.
+pub fn fair_corners(n: usize, k: usize) -> Vec<usize> {
+    let k = k.min(n);
+    let all = corner_subsets(n, k);
+    let pick = |fair_only: bool| {
+        all.iter()
+            .filter(|s| !fair_only || corners_are_fair(n, s))
+            .max_by(|a, b| {
+                min_corner_gap(n, a)
+                    .cmp(&min_corner_gap(n, b))
+                    .then_with(|| b.cmp(a))
+            })
+            .cloned()
+    };
+    pick(true).or_else(|| pick(false)).unwrap_or_default()
+}
+
+/// Wie viele Spieler am Tisch sitzen muessen, damit niemand einen Vorteil hat: die kleinste
+/// Zahl `m >= k` (hoechstens `n`), fuer die es eine faire Eckenverteilung gibt. Die fehlenden
+/// `m - k` Plaetze besetzen Auffuell-Bots.
+pub fn fair_player_count(n: usize, k: usize) -> usize {
+    (k.min(n)..=n)
+        .find(|&m| corners_are_fair(n, &fair_corners(n, m)))
+        .unwrap_or(n)
 }
 
 #[cfg(test)]

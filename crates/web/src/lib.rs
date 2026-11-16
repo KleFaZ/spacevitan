@@ -120,19 +120,107 @@ pub extern "C" fn sv_in_reserve(len: u32) -> *mut u8 {
 /// Namen und Zahlen werden gleich geprueft; ob die Werte zusammenpassen, zeigt erst die Partie.
 #[no_mangle]
 pub extern "C" fn sv_set_rules(len: u32) -> i32 {
-    let result = INPUT.with(|i| {
+    let result = (|| {
+        let text = read_input(len)?;
+        // Probelauf auf einer Wegwerf-Einstellung: so schlaegt ein Tippfehler hier fehl und
+        // nicht erst beim Start.
+        Config::new(2, 0).set_all(&text)?;
+        RULES.with(|r| *r.borrow_mut() = text.clone());
+        Ok(format!("{{\"rules\":{}}}", quote(&text)))
+    })();
+    finish(result)
+}
+
+fn read_input(len: u32) -> Result<String, String> {
+    INPUT.with(|i| {
         let buf = i.borrow();
         let bytes = buf
             .get(..len as usize)
-            .ok_or_else(|| "Regeltext fehlt im Eingabepuffer".to_string())?;
-        let text =
-            std::str::from_utf8(bytes).map_err(|_| "Regeltext ist kein UTF-8".to_string())?;
-        // Probelauf auf einer Wegwerf-Einstellung: so schlaegt ein Tippfehler hier fehl und
-        // nicht erst beim Start.
-        Config::new(2, 0).set_all(text)?;
-        RULES.with(|r| *r.borrow_mut() = text.trim().to_string());
-        Ok(format!("{{\"rules\":{}}}", quote(text.trim())))
-    });
+            .ok_or_else(|| "Text fehlt im Eingabepuffer".to_string())?;
+        std::str::from_utf8(bytes)
+            .map(|t| t.trim().to_string())
+            .map_err(|_| "Text ist kein UTF-8".to_string())
+    })
+}
+
+fn parse_numbers(text: &str, sep: char) -> Result<Vec<u64>, String> {
+    text.split(sep)
+        .map(|part| {
+            part.trim()
+                .parse::<u64>()
+                .map_err(|_| format!("\"{}\" ist keine Zahl", part.trim()))
+        })
+        .collect()
+}
+
+/// Wie viele Spieler am Tisch sitzen muessen, damit niemand einen Vorteil hat. Der Text im
+/// Eingabepuffer lautet `ecken,spieler,auffuellen` (z. B. `6,5,1`: Sechseck, 5 Spieler, mit
+/// Auffuell-Bots); Antwort `{"players":m,"added":m-k,"fair":bool,"corners":[...]}`. Ohne
+/// Auffuellen (`0`) bleibt es bei der verlangten Spielerzahl, die Ecken sind dann moeglichst
+/// weit auseinander gewaehlt, aber nicht unbedingt fair.
+#[no_mangle]
+pub extern "C" fn sv_plan(len: u32) -> i32 {
+    let result = (|| {
+        let nums = parse_numbers(&read_input(len)?, ',')?;
+        let [corners, players, fill] = nums[..] else {
+            return Err("Erwartet: ecken,spieler,auffuellen".to_string());
+        };
+        let (n, k) = (corners as usize, players as usize);
+        if !(3..=8).contains(&n) || k < 2 || k > n {
+            return Err(format!(
+                "{k} Spieler passen nicht auf ein Brett mit {n} Ecken"
+            ));
+        }
+        let total = if fill != 0 {
+            game_core::config::fair_player_count(n, k)
+        } else {
+            k
+        };
+        let ring = game_core::config::fair_corners(n, total);
+        let list: Vec<String> = ring.iter().map(|c| c.to_string()).collect();
+        Ok(format!(
+            "{{\"players\":{total},\"added\":{},\"fair\":{},\"corners\":[{}]}}",
+            total - k,
+            game_core::config::corners_are_fair(n, &ring),
+            list.join(",")
+        ))
+    })();
+    finish(result)
+}
+
+/// Neue Partie mit frei gewaehlter Brettform und einzeln gewaehlten Plaetzen. Der Text im
+/// Eingabepuffer lautet `seed|side|ecken|plaetze`: `side` 0 = Standard, `ecken` 0 = Brett nach
+/// Spielerzahl, sonst 3 bis 8; `plaetze` sind die Platzarten (siehe oben) durch Kommas, ihre
+/// Anzahl ist die Spielerzahl (Auffuell-Bots stehen schon darin, siehe `sv_plan`).
+#[no_mangle]
+pub extern "C" fn sv_new_game_list(len: u32) -> i32 {
+    let result = (|| {
+        let text = read_input(len)?;
+        let parts: Vec<&str> = text.split('|').collect();
+        let [seed, side, corners, seats] = parts[..] else {
+            return Err("Erwartet: seed|side|ecken|plaetze".to_string());
+        };
+        let seed = parse_numbers(seed, ',')?[0];
+        let side = parse_numbers(side, ',')?[0] as u32;
+        let corners = parse_numbers(corners, ',')?[0];
+        let seats = parse_numbers(seats, ',')?
+            .into_iter()
+            .map(|c| seat_kind(c as u32))
+            .collect::<Result<Vec<_>, _>>()?;
+        let players = u8::try_from(seats.len())
+            .map_err(|_| format!("{} Spieler sind zu viele", seats.len()))?;
+        let mut config = Config::new(players, seed);
+        RULES.with(|r| config.set_all(&r.borrow()))?;
+        if side != 0 {
+            config.side = side;
+        }
+        config.board_corners =
+            u8::try_from(corners).map_err(|_| "Eckenzahl zu gross".to_string())?;
+        let session = Session::new(config, &seats)?;
+        let json = session.start_json();
+        SESSION.with(|cell| *cell.borrow_mut() = Some(session));
+        Ok(json)
+    })();
     finish(result)
 }
 
@@ -239,6 +327,57 @@ mod tests {
         assert!(json.contains("\"seed\":7,"));
         assert!(json.contains("\"seats\":[\"mensch\",\"gierig\"]"));
         assert!(json.contains("\"human_to_move\":true"));
+    }
+
+    fn put(text: &str) -> u32 {
+        let ptr = sv_in_reserve(text.len() as u32);
+        unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), ptr, text.len()) };
+        text.len() as u32
+    }
+
+    #[test]
+    fn the_plan_fills_the_table_with_bots_until_every_corner_is_fair() {
+        // Quadrat, 3 Spieler: ein Bot kommt dazu.
+        assert_eq!(sv_plan(put("4,3,1")), 0);
+        let json = out();
+        assert!(
+            json.contains("\"players\":4,\"added\":1,\"fair\":true"),
+            "{json}"
+        );
+        // Ohne Auffuellen bleibt es bei 3 und ist nicht fair.
+        assert_eq!(sv_plan(put("4,3,0")), 0);
+        let json = out();
+        assert!(
+            json.contains("\"players\":3,\"added\":0,\"fair\":false"),
+            "{json}"
+        );
+        // Sechseck: 3 und 4 gehen, 5 wird 6.
+        for (k, want) in [(3, 3), (4, 4), (5, 6)] {
+            assert_eq!(sv_plan(put(&format!("6,{k},1"))), 0);
+            assert!(out().contains(&format!("\"players\":{want},")), "{k}");
+        }
+        assert_eq!(sv_plan(put("4,5,1")), 1);
+        assert_eq!(sv_plan(put("6,3")), 1);
+    }
+
+    #[test]
+    fn a_game_can_start_on_any_board_with_a_seat_per_player() {
+        // Sechseck, drei Plaetze: Mensch, stark, flaeche.
+        assert_eq!(sv_new_game_list(put("5|0|6|2,3,4")), 0, "{}", out());
+        let json = out();
+        assert!(
+            json.contains("\"seats\":[\"mensch\",\"stark\",\"flaeche\"]"),
+            "{json}"
+        );
+        assert!(json.contains("\"player_corners\":[0,2,4]"), "{json}");
+        // Quadrat, vier Plaetze, das vierte ein Auffuell-Bot.
+        assert_eq!(sv_new_game_list(put("5|0|4|2,0,0,0")), 0);
+        assert_eq!(
+            sv_new_game_list(put("5|0|4|2,0,0,0,0")),
+            1,
+            "5 Spieler auf 4 Ecken"
+        );
+        assert_eq!(sv_new_game_list(put("5|0|4")), 1);
     }
 
     #[test]
