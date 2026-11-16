@@ -164,6 +164,10 @@ pub struct Config {
     /// Kartengenerator: Kat-3-Vorkommen liegen moeglichst gleichmaessig verteilt (groesster
     /// Abstand zu den schon gesetzten) statt in zufaelligen Adern.
     pub kat3_spread: bool,
+    /// Version 3: Kuerzer, Ecke und Sprung duerfen mehrmals auf dieselbe Figur gelegt werden, so
+    /// oft es logisch geht (Stufe `n`: hoechstens `n - 1` mal, sonst gaebe es nichts mehr zu
+    /// kuerzen, zu knicken oder zu ueberspringen).
+    pub terr_stack: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -253,6 +257,7 @@ impl Config {
             terr_cardlock: 0,
             terr_control: false,
             kat3_spread: false,
+            terr_stack: false,
         }
     }
 
@@ -277,6 +282,7 @@ impl Config {
         self.terr_cardlock = u32::from(on);
         self.terr_control = false;
         self.kat3_spread = on;
+        self.terr_stack = on;
         // Karten kosten in Version 3 die Haelfte des Grundpreises (16 = voll).
         self.terr_card_mult = if on { 8 } else { 16 };
         if on {
@@ -390,6 +396,7 @@ impl Config {
             "terr_cardlock" => self.terr_cardlock = as_u32(value)?,
             "terr_control" => self.terr_control = value != 0,
             "kat3_spread" => self.kat3_spread = value != 0,
+            "terr_stack" => self.terr_stack = value != 0,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
             "veins3" => self.veins_per_type[2] = as_u32(value)?,
@@ -545,6 +552,11 @@ impl Config {
         if self.terr_cardlock > 2 {
             return Err(ConfigError::Invalid(
                 "terr_cardlock: 0 (nichts), 1 (Figur gesperrt) oder 2 (ganzer Zug)",
+            ));
+        }
+        if self.terr_stack && !self.terr_cardany {
+            return Err(ConfigError::Invalid(
+                "terr_stack braucht terr_cardany (Karten, die auf einer gebauten Figur liegen)",
             ));
         }
         if self.terr_control && !self.terr_occupy {

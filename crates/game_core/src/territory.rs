@@ -283,20 +283,29 @@ impl Game {
     }
 
     /// Version 3 (`terr_cardany`): kann `card` auf diese Figur gelegt werden? Nur auf Einheiten
-    /// (nicht den Koenig), nur, wenn sie noch nichts davon kann, und erst ab Reichweite 2: eine
-    /// Figur mit Reichweite 1 zieht ein Feld, da gibt es nichts zu kuerzen, keine Ecke und keinen
-    /// Sprung ueber ein Zwischenfeld (und Figuren werden nie hoeher).
+    /// (nicht den Koenig) und erst ab Reichweite 2: eine Figur mit Reichweite 1 zieht ein Feld,
+    /// da gibt es nichts zu kuerzen, keine Ecke und keinen Sprung ueber ein Zwischenfeld (und
+    /// Figuren werden nie hoeher). Ohne `terr_stack` geht jede Karte nur einmal auf eine Figur;
+    /// mit `terr_stack` so oft, wie es logisch Sinn hat: eine Figur der Reichweite `r` zieht
+    /// hoechstens `r` Schritte, davon bleiben `r - 1` Schritte, die man verkuerzen, mit einer
+    /// Ecke verlassen oder mit einem Sprung ueber eine Figur gehen kann (der letzte Schritt
+    /// ist das Ziel).
     pub fn card_fits_piece(&self, card: Card, piece: &Piece) -> bool {
         let PieceKind::Unit { range, .. } = &piece.kind else {
             return false;
         };
-        let has = match card {
+        let have = match card {
             Card::Shorten => piece.perks.shorten,
             Card::Bend => piece.perks.bend,
             Card::Hop => piece.perks.hop,
             _ => return false,
         };
-        !has && *range >= 2
+        let most = if self.config.terr_stack {
+            range.saturating_sub(1)
+        } else {
+            u8::from(*range >= 2)
+        };
+        have < most
     }
 
     /// Was `player` fuer `card` aus dem Lager seiner Fabrik zahlen wuerde.
@@ -743,10 +752,9 @@ impl Game {
             return;
         };
         let base = *range + self.charge_bonus(piece.owner);
-        let mut lengths = vec![base as usize];
-        if piece.perks.shorten && base >= 2 {
-            lengths.push(base as usize - 1);
-        }
+        // Die Laenge `base`, dazu je Karte Kuerzer ein Schritt weniger (mindestens 1 Feld).
+        let shorter = usize::from(piece.perks.shorten).min(usize::from(base).saturating_sub(1));
+        let lengths: Vec<usize> = (0..=shorter).map(|i| usize::from(base) - i).collect();
         let mut path = Vec::with_capacity(5);
         for len in lengths {
             self.walk_from(
@@ -769,8 +777,8 @@ impl Game {
         cell: CellId,
         dir: Option<usize>,
         left: usize,
-        bend: bool,
-        hop: bool,
+        bends: u8,
+        hops: u8,
         path: &mut Vec<CellId>,
         emit: &mut dyn FnMut(CellId, &[CellId]),
     ) {
@@ -783,7 +791,7 @@ impl Game {
                 None => false,
                 Some(prev) if prev == d => false,
                 Some(prev) => {
-                    if !bend || d == board.opposite(prev) {
+                    if bends == 0 || d == board.opposite(prev) {
                         continue;
                     }
                     true
@@ -799,14 +807,21 @@ impl Game {
                     emit(next, path);
                 }
             } else {
-                let bend_left = bend && !turning;
+                let bends_left = if turning { bends - 1 } else { bends };
                 match occupant {
                     None => {
-                        self.walk_from(owner, next, Some(d), left - 1, bend_left, hop, path, emit)
+                        self.walk_from(owner, next, Some(d), left - 1, bends_left, hops, path, emit)
                     }
-                    Some(_) if hop => {
-                        self.walk_from(owner, next, Some(d), left - 1, bend_left, false, path, emit)
-                    }
+                    Some(_) if hops > 0 => self.walk_from(
+                        owner,
+                        next,
+                        Some(d),
+                        left - 1,
+                        bends_left,
+                        hops - 1,
+                        path,
+                        emit,
+                    ),
                     Some(_) => {}
                 }
             }
@@ -1330,12 +1345,12 @@ impl Game {
                 }
                 PieceKind::Unit { range, .. } => {
                     for dir in 0..board.dir_count() {
-                        let mut hop = piece.perks.hop;
+                        let mut hops = piece.perks.hop;
                         for cell in board.line(piece.cell, dir, *range as usize) {
                             out[cell.idx()] = true;
                             if self.state.piece_at(cell).is_some() {
-                                if hop {
-                                    hop = false;
+                                if hops > 0 {
+                                    hops -= 1;
                                 } else {
                                     break;
                                 }

@@ -1267,8 +1267,8 @@ fn a_unit_card_goes_on_a_chosen_existing_unit_at_once() {
     };
     assert!(all.contains(&bend));
     let events = g.apply(bend).unwrap();
-    assert!(g.state.pieces[&three].perks.bend, "wirkt sofort");
-    assert!(!g.state.pieces[&two].perks.bend);
+    assert!(g.state.pieces[&three].perks.bend > 0, "wirkt sofort");
+    assert_eq!(g.state.pieces[&two].perks.bend, 0);
     assert_eq!(
         g.state.stored_card[P0.idx()],
         None,
@@ -1284,9 +1284,19 @@ fn a_unit_card_goes_on_a_chosen_existing_unit_at_once() {
     // Ein Kauf pro Zug.
     assert!(buys(&g).is_empty());
     g.state.bought_this_turn = false;
-    // Dieselbe Karte nicht noch einmal auf dieselbe Figur, aber eine andere darauf.
+    // Stufe 3 darf bis zu zwei Ecken tragen; ohne Stapeln nur eine, aber eine andere Karte geht.
     let again = buys(&g);
-    assert!(!again.contains(&bend));
+    assert!(
+        again.contains(&bend),
+        "zweite Ecke: Stufe 3 hat zwei Schritte zum Knicken"
+    );
+    assert!(again.iter().any(|a| matches!(
+        a,
+        Action::BuyCard { card: Card::Hop, target: Some(t), .. } if *t == three
+    )));
+    g.config.terr_stack = false;
+    let again = buys(&g);
+    assert!(!again.contains(&bend), "ohne Stapeln nur einmal");
     assert!(again.iter().any(|a| matches!(
         a,
         Action::BuyCard { card: Card::Hop, target: Some(t), .. } if *t == three
@@ -1399,7 +1409,7 @@ fn the_card_lock_can_be_switched_off_or_cost_the_whole_turn() {
     buy(&mut g, Card::Bend, Some(a));
     assert_eq!(g.current_player(), P1, "der Kauf beendet den Zug");
     assert_eq!(g.state.card_lock, None);
-    assert!(g.state.pieces[&a].perks.bend);
+    assert!(g.state.pieces[&a].perks.bend > 0);
     // Fabrik ruecken ist keine Verbesserung und kostet hier keinen Zug.
     let mut g = card_game(&[Card::FactoryShift]);
     g.config.terr_cardlock = 2;
@@ -1419,6 +1429,149 @@ fn units_from_level_two_cost_twice_as_much_in_version_3() {
     let g = with_deposits_cfg(old, &[]);
     let prices: Vec<u32> = (1..=4).map(|l| g.unit_price(l).area).collect();
     assert_eq!(prices, [50, 100, 200, 400], "ohne den Faktor wie Version 2");
+}
+
+// ----- Karten mehrfach auf dieselbe Figur (`terr_stack`) -----------------------------------------
+
+/// Die Figuren, auf die der Spieler jetzt eine Karte legen koennte.
+fn card_targets(g: &Game) -> Vec<PieceId> {
+    buys(g)
+        .into_iter()
+        .filter_map(|a| match a {
+            Action::BuyCard { target, .. } => target,
+            _ => None,
+        })
+        .collect()
+}
+
+/// Naechster Kauf im selben Zug (ein Kauf je Zug ist hier nicht das Thema): Markt und Zaehler
+/// zuruecksetzen.
+fn stock_up_for(g: &mut Game, card: crate::cards::Card) {
+    g.state.bought_this_turn = false;
+    g.state.market = vec![card];
+}
+
+#[test]
+fn shorten_stacks_up_to_the_level_minus_one() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Shorten]);
+    g.config.terr_cardlock = 0;
+    let two = g.setup_unit(P0, c(&g, 2, 6), 2, 2);
+    let three = g.setup_unit(P0, c(&g, 5, 5), 3, 3);
+    let four = g.setup_unit(P0, c(&g, 1, 8), 4, 4);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 60);
+    // Stufe 3 zieht genau 3 Felder: 4 Ziele. Jede Karte gibt eine Laenge dazu.
+    assert_eq!(g.piece_destinations(three).len(), 4);
+    buy(&mut g, Card::Shorten, Some(three));
+    assert_eq!(g.state.pieces[&three].perks.shorten, 1);
+    assert_eq!(g.piece_destinations(three).len(), 8, "3 oder 2 Felder");
+    stock_up_for(&mut g, Card::Shorten);
+    assert!(card_targets(&g).contains(&three), "ein zweites Mal");
+    buy(&mut g, Card::Shorten, Some(three));
+    assert_eq!(g.state.pieces[&three].perks.shorten, 2);
+    assert_eq!(g.piece_destinations(three).len(), 12, "3, 2 oder 1 Feld");
+    stock_up_for(&mut g, Card::Shorten);
+    assert!(
+        !card_targets(&g).contains(&three),
+        "kuerzer als 1 Feld gibt es nicht"
+    );
+    // Stufe 2: nur einmal, Stufe 4: dreimal.
+    buy(&mut g, Card::Shorten, Some(two));
+    stock_up_for(&mut g, Card::Shorten);
+    assert!(!card_targets(&g).contains(&two));
+    for n in 0..3 {
+        assert!(card_targets(&g).contains(&four), "Stufe 4, Karte {}", n + 1);
+        buy(&mut g, Card::Shorten, Some(four));
+        stock_up_for(&mut g, Card::Shorten);
+    }
+    assert_eq!(g.state.pieces[&four].perks.shorten, 3);
+    assert!(!card_targets(&g).contains(&four));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn without_the_stack_switch_every_card_goes_on_a_figure_only_once() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Shorten]);
+    g.config.terr_cardlock = 0;
+    g.config.terr_stack = false;
+    let four = g.setup_unit(P0, c(&g, 4, 4), 4, 4);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 60);
+    buy(&mut g, Card::Shorten, Some(four));
+    stock_up_for(&mut g, Card::Shorten);
+    assert!(!card_targets(&g).contains(&four), "wie in Version 2");
+    let mut cfg = v3_config(2);
+    cfg.terr_cardany = false;
+    assert!(cfg.validate().is_err(), "terr_stack braucht terr_cardany");
+    assert!(v3_config(2).terr_stack && !Config::new(2, 1).terr_stack);
+}
+
+#[test]
+fn a_second_corner_card_allows_two_turns_on_the_way() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Bend]);
+    g.config.terr_cardlock = 0;
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 3, 3);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 60);
+    // Rechts, hoch, links endet neben dem Start: dafuer braucht der Weg zwei Ecken.
+    let hook = c(&g, 5, 6);
+    buy(&mut g, Card::Bend, Some(unit));
+    assert!(
+        !g.piece_destinations(unit).contains(&hook),
+        "eine Ecke reicht nicht"
+    );
+    stock_up_for(&mut g, Card::Bend);
+    assert!(card_targets(&g).contains(&unit));
+    buy(&mut g, Card::Bend, Some(unit));
+    assert_eq!(g.state.pieces[&unit].perks.bend, 2);
+    assert!(g.piece_destinations(unit).contains(&hook), "zwei Ecken");
+    stock_up_for(&mut g, Card::Bend);
+    assert!(
+        !card_targets(&g).contains(&unit),
+        "bei Stufe 3 nicht mehr als zwei Ecken (der letzte Schritt ist das Ziel)"
+    );
+}
+
+#[test]
+fn a_second_hop_card_jumps_over_two_figures() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Hop]);
+    g.config.terr_cardlock = 0;
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 3, 3);
+    g.setup_unit(P0, c(&g, 6, 5), 1, 1);
+    g.setup_unit(P1, c(&g, 7, 5), 1, 1);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 60);
+    let far = c(&g, 8, 5);
+    assert!(!g.piece_destinations(unit).contains(&far));
+    buy(&mut g, Card::Hop, Some(unit));
+    assert!(
+        !g.piece_destinations(unit).contains(&far),
+        "ein Sprung bringt nur ueber eine Figur"
+    );
+    stock_up_for(&mut g, Card::Hop);
+    buy(&mut g, Card::Hop, Some(unit));
+    assert_eq!(g.state.pieces[&unit].perks.hop, 2);
+    assert!(g.piece_destinations(unit).contains(&far), "zwei Spruenge");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_control_area_follows_the_second_hop_card() {
+    let g0 = v3_game(&[]);
+    let k1 = typ(&g0, 0, 1);
+    let mut g = control_game(&[((2, 0), k1)]);
+    strip(&mut g, P0, 5);
+    let id = g.setup_unit(P0, c(&g, 5, 0), 3, 3);
+    g.setup_unit(P1, c(&g, 4, 0), 1, 1);
+    g.setup_unit(P1, c(&g, 3, 0), 1, 1);
+    g.state.pieces.get_mut(&id).unwrap().perks.hop = 1;
+    assert!(!g.worked_cells(P0)[c(&g, 2, 0).idx()]);
+    g.state.pieces.get_mut(&id).unwrap().perks.hop = 2;
+    assert!(g.worked_cells(P0)[c(&g, 2, 0).idx()]);
 }
 
 // ----- Kontrollfelder (`terr_control`) ----------------------------------------------------------
@@ -1488,7 +1641,7 @@ fn control_stops_at_the_first_figure_and_a_helpless_figure_controls_nothing() {
     assert!(!worked[c(&g, 3, 0).idx()], "dahinter ist nichts mehr");
     // Mit Sprungfeder sieht sie eine Figur weiter.
     let id = g.state.piece_at(c(&g, 5, 0)).unwrap().id;
-    g.state.pieces.get_mut(&id).unwrap().perks.hop = true;
+    g.state.pieces.get_mut(&id).unwrap().perks.hop = 1;
     assert!(g.worked_cells(P0)[c(&g, 3, 0).idx()]);
     // Eine Figur ausserhalb des verbundenen Landes beherrscht nichts.
     let mut g = control_game(&deps);

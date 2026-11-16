@@ -1060,9 +1060,18 @@ impl Game {
             Card::Lance => self.target_mut(target).perks.lance = true,
             Card::Spring => self.target_mut(target).perks.spring = true,
             Card::Horse => self.target_mut(target).perks.horse = true,
-            Card::Shorten => self.target_mut(target).perks.shorten = true,
-            Card::Bend => self.target_mut(target).perks.bend = true,
-            Card::Hop => self.target_mut(target).perks.hop = true,
+            Card::Shorten => {
+                let p = &mut self.target_mut(target).perks;
+                p.shorten = p.shorten.saturating_add(1);
+            }
+            Card::Bend => {
+                let p = &mut self.target_mut(target).perks;
+                p.bend = p.bend.saturating_add(1);
+            }
+            Card::Hop => {
+                let p = &mut self.target_mut(target).perks;
+                p.hop = p.hop.saturating_add(1);
+            }
             Card::KingBoost => {
                 let pp = &mut self.state.player_perks[actor.idx()];
                 pp.king_boost = (pp.king_boost + 1).min(crate::state::MAX_KING_BOOST);

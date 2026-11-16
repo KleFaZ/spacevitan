@@ -89,12 +89,15 @@ pub struct Perks {
     pub spring: bool,
     /// Springt auf jedes Feld im Abstand 2 (Pferd).
     pub horse: bool,
-    /// Version 2: darf einen Schritt weniger ziehen (Kuerzer).
-    pub shorten: bool,
-    /// Version 2: darf auf dem Weg einmal um die Ecke gehen (Ecke).
-    pub bend: bool,
-    /// Version 2: darf auf dem Weg ueber eine Figur springen (Sprung).
-    pub hop: bool,
+    /// Version 2: wie oft die Karte Kuerzer auf der Figur liegt: darf so viele Schritte weniger
+    /// ziehen (Stufe 3 mit 2: 3, 2 oder 1 Feld). Ohne `terr_stack` hoechstens 1.
+    pub shorten: u8,
+    /// Version 2: wie oft die Karte Ecke auf der Figur liegt: darf auf dem Weg so oft um die
+    /// Ecke gehen. Ohne `terr_stack` hoechstens 1.
+    pub bend: u8,
+    /// Version 2: wie oft die Karte Sprung auf der Figur liegt: darf auf dem Weg so oft ueber
+    /// eine Figur springen. Ohne `terr_stack` hoechstens 1.
+    pub hop: u8,
 }
 
 impl Perks {

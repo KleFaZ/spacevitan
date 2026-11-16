@@ -490,7 +490,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -535,7 +535,8 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_up_mult,
         c.terr_cardlock,
         c.terr_control,
-        c.kat3_spread
+        c.kat3_spread,
+        c.terr_stack
     );
     format!(
         r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{}"#,

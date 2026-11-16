@@ -203,7 +203,7 @@ fn a_move_paints_the_whole_straight_path() {
 fn shorten_allows_one_step_less() {
     let mut g = blank();
     let p = unit_at(&mut g, 3, 4, 4);
-    g.state.pieces.get_mut(&p).unwrap().perks.shorten = true;
+    g.state.pieces.get_mut(&p).unwrap().perks.shorten = 1;
     let d = dests(&g, p);
     for x in [
         (1, 4),
@@ -221,7 +221,7 @@ fn shorten_allows_one_step_less() {
     // Ein Bauer kann nicht auf null verkuerzen.
     g.state.remove_piece(p);
     let pawn = unit_at(&mut g, 1, 2, 2);
-    g.state.pieces.get_mut(&pawn).unwrap().perks.shorten = true;
+    g.state.pieces.get_mut(&pawn).unwrap().perks.shorten = 1;
     assert_eq!(dests(&g, pawn).len(), 4);
 }
 
@@ -230,7 +230,7 @@ fn bend_allows_one_turn_on_the_way() {
     let mut g = blank();
     let p = unit_at(&mut g, 2, 4, 4);
     assert!(!dests(&g, p).contains(&(5, 5)));
-    g.state.pieces.get_mut(&p).unwrap().perks.bend = true;
+    g.state.pieces.get_mut(&p).unwrap().perks.bend = 1;
     let d = dests(&g, p);
     // Zwei Schritte mit einer Ecke: ein Schritt und dann einer zur Seite.
     for x in [(5, 5), (3, 3), (5, 3), (3, 5)] {
@@ -246,7 +246,7 @@ fn bend_allows_one_turn_on_the_way() {
 fn bend_with_a_blocked_corner_uses_the_other_way_round() {
     let mut g = blank();
     let p = unit_at(&mut g, 2, 4, 4);
-    g.state.pieces.get_mut(&p).unwrap().perks.bend = true;
+    g.state.pieces.get_mut(&p).unwrap().perks.bend = 1;
     // (5,4) ist besetzt: nach (5,5) geht es noch ueber (4,5).
     let block = c(&g, 5, 4);
     g.setup_unit(P0, block, 1, 1);
@@ -263,7 +263,7 @@ fn hop_allows_passing_over_one_figure_but_not_two() {
     let a = c(&g, 2, 4);
     g.setup_unit(P0, a, 1, 1);
     assert!(!dests(&g, p).contains(&(4, 4)));
-    g.state.pieces.get_mut(&p).unwrap().perks.hop = true;
+    g.state.pieces.get_mut(&p).unwrap().perks.hop = 1;
     assert!(dests(&g, p).contains(&(4, 4)), "ueber eine Figur");
     let b = c(&g, 3, 4);
     g.setup_unit(P1, b, 1, 1);
@@ -276,8 +276,8 @@ fn hop_and_bend_work_together() {
     let p = unit_at(&mut g, 3, 4, 4);
     {
         let perks = &mut g.state.pieces.get_mut(&p).unwrap().perks;
-        perks.hop = true;
-        perks.bend = true;
+        perks.hop = 1;
+        perks.bend = 1;
     }
     let block = c(&g, 5, 4);
     g.setup_unit(P1, block, 1, 1);
@@ -777,7 +777,7 @@ fn the_area_bot_buys_a_king_boost_and_a_unit_card_in_v2() {
     g.apply(second).unwrap();
     let unit = g.state.piece_at(g.map.start_cell(P0)).unwrap();
     assert!(
-        unit.perks.bend,
+        unit.perks.bend > 0,
         "die gekaufte Ecke wirkt auf die neue Figur"
     );
 }
