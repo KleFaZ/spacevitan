@@ -1325,6 +1325,8 @@ fn recolouring_still_starts_the_count_over_with_the_rule_on() {
 fn card_game(cards: &[crate::cards::Card]) -> Game {
     let mut g = v3_game(&[]);
     g.state.market = cards.to_vec();
+    // Viel Flaeche, damit der Unterhalt der Testfiguren keine aufloest.
+    g.state.area = vec![10_000; 2];
     g
 }
 
@@ -1479,7 +1481,7 @@ fn the_king_boost_locks_the_king() {
     let mut g = card_game(&[Card::KingBoost]);
     let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
     let k2 = typ(&g, 0, 2);
-    stock(&mut g, P0, k2, 3);
+    stock(&mut g, P0, k2, 4);
     let king = king_id(&g, P0);
     assert!(moves_of(&g, king) > 0);
     buy(&mut g, Card::KingBoost, None);
@@ -1858,4 +1860,285 @@ fn the_area_bot_puts_a_card_on_its_best_existing_unit() {
         matches!(a, Action::BuyCard { card: Card::Bend, target: Some(t), .. } if t == best),
         "{a:?}"
     );
+}
+
+// ----- Fuenfte Aenderung: Unterhalt der Figuren und Koenigs-Upgrade mit Kat 2 -------------------
+
+fn give_area(g: &mut Game, p: PlayerId, n: u32) {
+    g.state.area[p.idx()] = n;
+}
+
+/// Flaeche und Bonus, die der Ertrag von `p` gerade bringt (ohne Unterhalt gerechnet).
+fn earned(g: &Game, p: PlayerId) -> u32 {
+    let mut probe = g.clone();
+    probe.config.terr_upkeep = false;
+    income(&mut probe, p)
+        .iter()
+        .find_map(|e| match e {
+            Event::Income { area, bonus, .. } => Some(area + bonus),
+            _ => None,
+        })
+        .expect("Ertrag")
+}
+
+#[test]
+fn every_figure_costs_its_level_in_area_each_round() {
+    let mut g = v3_game(&[]);
+    g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    g.setup_unit(P0, c(&g, 4, 0), 3, 3);
+    give_area(&mut g, P0, 100);
+    assert_eq!(g.territory_upkeep(P0), Some(5), "der Koenig zahlt nichts");
+    let e = earned(&g, P0);
+    let ev = income(&mut g, P0);
+    assert!(
+        ev.contains(&Event::Upkeep {
+            player: P0,
+            paid: 5
+        }),
+        "{ev:?}"
+    );
+    assert_eq!(g.state.area[0], 100 + e - 5);
+    assert!(!ev.iter().any(|x| matches!(x, Event::Dissolved { .. })));
+}
+
+#[test]
+fn upkeep_can_be_switched_off_and_is_not_charged_without_income() {
+    let mut g = v3_game(&[]);
+    g.setup_unit(P0, c(&g, 3, 0), 4, 4);
+    give_area(&mut g, P0, 100);
+    g.config.terr_upkeep = false;
+    let ev = income(&mut g, P0);
+    assert!(!ev.iter().any(|x| matches!(x, Event::Upkeep { .. })));
+    assert_eq!(g.territory_upkeep(P0), None);
+    // Waehrend die Fabrik gebaut wird, gibt es weder Ertrag noch Unterhalt.
+    g.config.terr_upkeep = true;
+    let fid = g.home_factory(P0).unwrap().id;
+    g.state.factories.get_mut(&fid).unwrap().building = 2;
+    give_area(&mut g, P0, 0);
+    let ev = income(&mut g, P0);
+    assert!(!ev
+        .iter()
+        .any(|x| matches!(x, Event::Upkeep { .. } | Event::Dissolved { .. })));
+    assert_eq!(g.pieces_of(P0).count(), 2, "nichts loest sich auf");
+    assert_eq!(g.state.area[0], 0);
+}
+
+#[test]
+fn a_negative_area_dissolves_the_smallest_figure_that_covers_the_shortfall() {
+    let mut g = v3_game(&[]);
+    let a = g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    let b = g.setup_unit(P0, c(&g, 4, 0), 1, 1);
+    let hero = g.setup_unit(P0, c(&g, 5, 0), 4, 4);
+    // Unterhalt 6, nach dem Ertrag liegen 5 in der Kasse: es fehlt 1.
+    let e = earned(&g, P0);
+    give_area(&mut g, P0, 5 - e);
+    let ev = income(&mut g, P0);
+    // Eine Stufe-1-Figur (die zuletzt gebaute) deckt das Minus allein; der Held bleibt.
+    assert_eq!(
+        ev.iter()
+            .filter_map(|x| match x {
+                Event::Dissolved { piece, level, .. } => Some((*piece, *level)),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![(b, 1)]
+    );
+    assert!(
+        ev.contains(&Event::Upkeep {
+            player: P0,
+            paid: 5
+        }),
+        "{ev:?}"
+    );
+    assert_eq!(g.state.area[0], 0);
+    assert!(g.state.pieces.contains_key(&a) && g.state.pieces.contains_key(&hero));
+    assert!(!g.state.pieces.contains_key(&b));
+    assert!(
+        g.state.occupant[c(&g, 4, 0).idx()].is_none(),
+        "das Feld ist frei"
+    );
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn a_deep_minus_dissolves_the_largest_figure_first_until_it_is_covered() {
+    let mut g = v3_game(&[]);
+    let a = g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    let b = g.setup_unit(P0, c(&g, 4, 0), 1, 1);
+    let hero = g.setup_unit(P0, c(&g, 5, 0), 4, 4);
+    // Unterhalt 6, in der Kasse 1: es fehlen 5, keine Figur deckt das allein. Der Held geht,
+    // dann fehlt noch 1: eine Stufe-1-Figur.
+    let e = earned(&g, P0);
+    give_area(&mut g, P0, 1 - e);
+    let ev = income(&mut g, P0);
+    let gone: Vec<(PieceId, u8)> = ev
+        .iter()
+        .filter_map(|x| match x {
+            Event::Dissolved { piece, level, .. } => Some((*piece, *level)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(gone, vec![(hero, 4), (b, 1)]);
+    assert!(g.state.pieces.contains_key(&a));
+    assert!(
+        ev.contains(&Event::Upkeep {
+            player: P0,
+            paid: 1
+        }),
+        "{ev:?}"
+    );
+    assert_eq!(g.state.area[0], 0, "nie unter 0");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn a_cut_off_figure_still_costs_upkeep() {
+    let mut g = v3_game(&[]);
+    // Auf Land, das nicht mit der Fabrik zusammenhaengt: wehrlos, aber nicht gratis.
+    paint(&mut g, P0, &[(8, 8)]);
+    let far = g.setup_unit(P0, c(&g, 8, 8), 3, 3);
+    give_area(&mut g, P0, 50);
+    assert!(!g.piece_connected(&g.state.pieces[&far]), "abgeschnitten");
+    let ev = income(&mut g, P0);
+    assert!(
+        ev.contains(&Event::Upkeep {
+            player: P0,
+            paid: 3
+        }),
+        "{ev:?}"
+    );
+}
+
+#[test]
+fn the_king_upgrade_is_always_offered_and_costs_gold_by_the_new_fields() {
+    use crate::cards::Card;
+    let mut g = v3_game(&[]);
+    assert!(g.king_upgrade_on());
+    assert!(
+        !g.state.market.contains(&Card::KingBoost),
+        "der Boost wird nicht mehr gezogen, er liegt immer aus"
+    );
+    let k2 = typ(&g, 0, 2);
+    let king = king_id(&g, P0);
+    // Quadrat: Stufe 1 bringt 4 Diagonalfelder, Stufe 2 vier Felder zwei geradeaus, Stufe 3 acht (L).
+    assert_eq!(g.territory_card_price_for(P0, Card::KingBoost), [0, 4, 0]);
+    let king_boost = |g: &Game| {
+        buys(g).into_iter().any(|a| {
+            matches!(
+                a,
+                Action::BuyCard {
+                    card: Card::KingBoost,
+                    ..
+                }
+            )
+        })
+    };
+    stock(&mut g, P0, k2, 3);
+    assert!(!king_boost(&g), "3 Kat 2 reichen nicht");
+    stock(&mut g, P0, k2, 1);
+    assert!(king_boost(&g));
+    buy(&mut g, Card::KingBoost, None);
+    assert_eq!(g.state.player_perks[0].king_boost, 1);
+    assert_eq!(storage_of(&g, P0, k2), 0);
+    assert_eq!(
+        g.state.card_lock,
+        Some(king),
+        "der Koenig ruht in diesem Zug"
+    );
+    assert_eq!(g.territory_card_price_for(P0, Card::KingBoost), [0, 4, 0]);
+    g.state.player_perks[0].king_boost = 2;
+    assert_eq!(g.territory_card_price_for(P0, Card::KingBoost), [0, 8, 0]);
+    g.state.player_perks[0].king_boost = 3;
+    assert!(
+        !g.territory_card_takeable(P0, Card::KingBoost),
+        "hoechste Stufe"
+    );
+}
+
+#[test]
+fn the_old_king_boost_card_stays_when_the_upgrade_switch_is_off() {
+    use crate::cards::Card;
+    let mut cfg = v3_config(2);
+    cfg.terr_kingup = false;
+    let g = with_deposits_cfg(cfg, &[]);
+    assert!(!g.king_upgrade_on());
+    assert_eq!(g.territory_card_price_for(P0, Card::KingBoost), [0, 1, 0]);
+    assert!(
+        !g.territory_offers().contains(&Card::KingBoost)
+            || g.state.market.contains(&Card::KingBoost),
+        "nur wenn sie gezogen wurde"
+    );
+}
+
+#[test]
+fn the_king_upgrade_works_on_hexagon_boards_with_six_fields_per_step() {
+    use crate::cards::Card;
+    let mut cfg = Config::new(2, 4);
+    cfg.territory = true;
+    cfg.set_v3(true);
+    cfg.board_corners = 6;
+    let mut g = Game::new(cfg).expect("Sechseckbrett");
+    assert!(g.king_upgrade_on());
+    assert_eq!(
+        [1, 2, 3].map(|l| g.king_boost_extra(l)),
+        [6, 6, 12],
+        "Felder, die der Koenig auf freiem Brett dazubekommt"
+    );
+    // In der Mitte des Bretts: ohne Boost die 6 Nachbarn, jede Stufe bringt genau die Felder dazu.
+    let king = king_id(&g, P0);
+    let mid = g.map.board.cell_at(0, 0).expect("Mitte");
+    g.setup_teleport(king, mid);
+    let base = g.piece_destinations(king).len();
+    assert_eq!(base, 6);
+    for (level, extra) in [(1u8, 6usize), (2, 6), (3, 12)] {
+        g.state.player_perks[0].king_boost = level;
+        let now = g.piece_destinations(king).len();
+        let before = base
+            + [6usize, 6, 12][..usize::from(level) - 1]
+                .iter()
+                .sum::<usize>();
+        assert_eq!(now - before, extra, "Stufe {level}");
+    }
+    assert!(g.territory_offers().contains(&Card::KingBoost));
+}
+
+#[test]
+fn on_a_square_board_the_boost_levels_add_four_four_and_eight_fields() {
+    let mut g = v3_game(&[]);
+    let king = king_id(&g, P0);
+    let mid = c(&g, 5, 5);
+    g.setup_teleport(king, mid);
+    let base = g.piece_destinations(king).len();
+    assert_eq!(base, 4);
+    let mut total = base;
+    for (level, extra) in [(1u8, 4usize), (2, 4), (3, 8)] {
+        g.state.player_perks[0].king_boost = level;
+        total += extra;
+        assert_eq!(g.piece_destinations(king).len(), total, "Stufe {level}");
+    }
+}
+
+#[test]
+fn there_is_no_king_upgrade_on_the_triangle_board() {
+    let mut cfg = Config::new(3, 2);
+    cfg.territory = true;
+    cfg.set_v3(true);
+    let g = Game::new(cfg).expect("Dreiecksbrett");
+    assert!(!g.king_upgrade_on());
+    assert!(!g
+        .territory_offers()
+        .contains(&crate::cards::Card::KingBoost));
+}
+
+#[test]
+fn bots_survive_upkeep_and_the_king_upgrade_without_breaking_the_rules() {
+    for seed in 0..6u64 {
+        let bots: Vec<Box<dyn Bot>> = vec![
+            Box::new(AreaBot::new(seed)),
+            Box::new(GreedyBot::new(seed + 1)),
+        ];
+        let g = play(2, seed, 150, bots);
+        assert!(g.state.round > 1);
+        g.check_invariants().unwrap();
+    }
 }

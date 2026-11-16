@@ -139,6 +139,19 @@ impl Piece {
     pub fn is_king(&self) -> bool {
         matches!(self.kind, PieceKind::King)
     }
+
+    /// Stufe der Figur; der Koenig hat keine (0).
+    pub fn level(&self) -> u8 {
+        match self.kind {
+            PieceKind::Unit { level, .. } => level,
+            PieceKind::King => 0,
+        }
+    }
+
+    /// Unterhalt je Runde (`Config::terr_upkeep`): die Stufe, der Koenig zahlt nichts.
+    pub fn upkeep(&self) -> u32 {
+        u32::from(self.level())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

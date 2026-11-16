@@ -168,6 +168,17 @@ pub struct Config {
     /// oft es logisch geht (Stufe `n`: hoechstens `n - 1` mal, sonst gaebe es nichts mehr zu
     /// kuerzen, zu knicken oder zu ueberspringen).
     pub terr_stack: bool,
+    /// Version 3: jede Figur kostet Unterhalt, ihre Stufe in Flaeche je Runde (der Koenig nichts).
+    /// Er wird am Ende des eigenen Zuges mit dem Einkommen verrechnet, solange die Fabrik steht.
+    /// Rutscht die Flaeche dabei unter 0, loest sich so lange eine Figur auf, bis es wieder
+    /// reicht (`Game::territory_upkeep`).
+    pub terr_upkeep: bool,
+    /// Version 3: der Koenig wird direkt mit Kat 2 (Gold) besser, ohne Karte: der Koenigs-Boost
+    /// liegt dann immer aus und kostet je Stufe so viele Kat 2, wie der Koenig dadurch
+    /// zusaetzliche Zugfelder bekommt (`Game::king_boost_extra`).
+    pub terr_kingup: bool,
+    /// Kat 2 je zusaetzlichem Zugfeld beim Koenigs-Upgrade (Standard 1).
+    pub terr_kingup_price: u32,
     /// Brettform unabhaengig von der Spielerzahl: 0 = wie bisher nach Spielerzahl, sonst die
     /// Eckenzahl 3 (Dreieck), 4 (Quadrat) oder 5 bis 8 (Vieleck aus Sechsecken). Dann gilt
     /// `players <= board_corners`, und die Ecken der Spieler waehlt `fair_corners`.
@@ -262,6 +273,9 @@ impl Config {
             terr_control: false,
             kat3_spread: false,
             terr_stack: false,
+            terr_upkeep: false,
+            terr_kingup: false,
+            terr_kingup_price: 1,
             board_corners: 0,
         }
     }
@@ -289,6 +303,9 @@ impl Config {
         self.terr_control = false;
         self.kat3_spread = on;
         self.terr_stack = on;
+        // Figuren kosten Unterhalt (Stufe je Runde); der Koenig wird mit Kat 2 direkt besser.
+        self.terr_upkeep = on;
+        self.terr_kingup = on;
         // Karten kosten in Version 3 die Haelfte des Grundpreises (16 = voll).
         self.terr_card_mult = if on { 8 } else { 16 };
         if on {
@@ -403,6 +420,9 @@ impl Config {
             "terr_control" => self.terr_control = value != 0,
             "kat3_spread" => self.kat3_spread = value != 0,
             "terr_stack" => self.terr_stack = value != 0,
+            "terr_upkeep" => self.terr_upkeep = value != 0,
+            "terr_kingup" => self.terr_kingup = value != 0,
+            "terr_kingup_price" => self.terr_kingup_price = as_u32(value)?,
             "board_corners" => self.board_corners = as_u32(value)?.min(255) as u8,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,

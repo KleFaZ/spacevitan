@@ -59,6 +59,7 @@ impl Game {
                 config.market_size as usize,
                 map.board.kind(),
                 config.terr_cards == 1,
+                config.terr_kingup,
             )
         } else {
             cards::draw_market_with(
@@ -746,7 +747,12 @@ impl Game {
             Action::TradeKat3 { .. } => return IllegalReason::NothingToTrade,
             Action::Pass => return IllegalReason::PassNotAllowed,
             Action::BuyCard { card, from, target } => {
-                if !self.state.market.contains(&card) {
+                let offered = if self.config.territory {
+                    self.territory_offers().contains(&card)
+                } else {
+                    self.state.market.contains(&card)
+                };
+                if !offered {
                     return IllegalReason::CardNotInMarket;
                 }
                 if self.state.bought_this_turn {

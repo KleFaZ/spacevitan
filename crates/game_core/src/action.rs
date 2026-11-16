@@ -178,6 +178,20 @@ pub enum Event {
         count: u32,
         area: u32,
     },
+    /// Version 3 (`terr_upkeep`): der Unterhalt der Figuren (Summe ihrer Stufen) wurde von der
+    /// Flaeche abgezogen. `paid` ist der Betrag, der wirklich gezahlt wurde (nach dem Aufloesen).
+    Upkeep {
+        player: PlayerId,
+        paid: u32,
+    },
+    /// Version 3 (`terr_upkeep`): die Flaeche haette nicht gereicht, die Figur hat sich aufgeloest.
+    /// Ihr Unterhalt entfaellt.
+    Dissolved {
+        piece: PieceId,
+        owner: PlayerId,
+        cell: CellId,
+        level: u8,
+    },
     /// Gebiet: die Fabrik hat Flaeche und Rohstoffe der zusammenhaengenden Felder eingesammelt.
     /// Version 3 mit `terr_bonus`: `kat3` verbundene Kat-3-Felder brachten zusaetzlich `bonus`
     /// Flaeche (`2^kat3`; `area` ist dann nur die Flaeche der verbundenen Felder).

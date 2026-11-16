@@ -250,6 +250,15 @@ impl Game {
     /// Kartenpreis fuer einen bestimmten Spieler: der Koenigs-Boost kostet je Stufe mehr
     /// (Grundpreis mal die Stufe, die er bekaeme).
     pub fn territory_card_price_for(&self, player: PlayerId, card: Card) -> [u32; 3] {
+        if card == Card::KingBoost && self.king_upgrade_on() {
+            // Direktes Upgrade: Kat 2 (Gold) je zusaetzlichem Zugfeld.
+            let next = self.state.player_perks[player.idx()].king_boost + 1;
+            return [
+                0,
+                self.king_boost_extra(next) * self.config.terr_kingup_price,
+                0,
+            ];
+        }
         let mut price = self.territory_card_price(card);
         if card == Card::KingBoost {
             let next = u32::from(self.state.player_perks[player.idx()].king_boost) + 1;
@@ -334,15 +343,50 @@ impl Game {
             .collect()
     }
 
+    /// Version 3 (`terr_kingup`): wird der Koenig direkt mit Kat 2 besser, ohne Karte aus dem
+    /// Markt? Dann liegt der Koenigs-Boost immer aus (auf Quadrat- und Sechseckbrettern; auf dem
+    /// Dreiecksbrett gibt es keine zusaetzlichen Zugfelder).
+    pub fn king_upgrade_on(&self) -> bool {
+        self.config.territory
+            && self.config.terr_kingup
+            && self.config.terr_cards == 1
+            && self.king_boost_extra(1) > 0
+    }
+
+    /// Wie viele Zugfelder der Koenig mit der Boost-Stufe `level` (1 bis 3) dazubekommt, auf freiem
+    /// Brett gezaehlt: Quadrat 4 (diagonal) / 4 (zwei geradeaus) / 8 (zwei vor, eins zur Seite),
+    /// Sechseck 6 / 6 / 12. Auf dem Dreiecksbrett 0 (dort gibt es keinen Boost).
+    pub fn king_boost_extra(&self, level: u8) -> u32 {
+        let table: [u32; 3] = match self.map.board.kind() {
+            crate::board::GridKind::Square => [4, 4, 8],
+            crate::board::GridKind::Hex => [6, 6, 12],
+            crate::board::GridKind::Triangle => [0, 0, 0],
+        };
+        match level {
+            1..=3 => table[usize::from(level) - 1],
+            _ => 0,
+        }
+    }
+
+    /// Die Karten, die jetzt zu kaufen sind: der Markt, dazu mit `terr_kingup` immer der Koenigs-Boost.
+    pub fn territory_offers(&self) -> Vec<Card> {
+        let mut out = self.state.market.clone();
+        if self.king_upgrade_on() && !out.contains(&Card::KingBoost) {
+            out.push(Card::KingBoost);
+        }
+        out
+    }
+
     pub(crate) fn territory_buy_actions(&self, me: PlayerId) -> Vec<Action> {
         let mut out = Vec::new();
-        if self.state.bought_this_turn || self.state.market.is_empty() {
+        let offers = self.territory_offers();
+        if self.state.bought_this_turn || offers.is_empty() {
             return out;
         }
         let Some(f) = self.standing_factory(me) else {
             return out;
         };
-        for &card in &self.state.market {
+        for &card in &offers {
             if !self.territory_card_takeable(me, card)
                 || self.territory_card_payment(me, card).is_none()
             {
@@ -833,24 +877,46 @@ impl Game {
     /// ihrem gefaerbten Weg. Stufe 1: ein Schritt diagonal. Stufe 2: zwei Felder geradeaus.
     /// Stufe 3: zwei vor und eins zur Seite (der Weg ist ein L). Die Stufen gelten zusammen.
     pub fn king_boost_moves(&self, piece: &Piece) -> Vec<(CellId, Vec<CellId>)> {
+        use crate::board::GridKind;
         let owner = piece.owner;
         let boost = self.state.player_perks[owner.idx()].king_boost;
         let board = &self.map.board;
-        if !piece.is_king() || boost == 0 || board.kind() != crate::board::GridKind::Square {
+        if !piece.is_king() || boost == 0 {
+            return Vec::new();
+        }
+        let kind = board.kind();
+        // Auf dem Dreiecksbrett gibt es keine zusaetzlichen Zuege; auf dem Sechseckbrett nur mit
+        // `terr_kingup` (die Karte selbst gibt es dort ohne den Schalter nicht).
+        if kind == GridKind::Triangle || (kind == GridKind::Hex && !self.king_upgrade_on()) {
             return Vec::new();
         }
         let mut out: Vec<(CellId, Vec<CellId>)> = Vec::new();
         let from = piece.cell;
-        let (x, y) = board.coord(from);
+        let dirs = board.dir_count();
         let free = |c: CellId| self.state.piece_at(c).is_none();
         let ok = |c: CellId| !self.own_piece_at(c, owner);
-        for (dx, dy) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
-            if let Some(to) = board.cell_at(x + dx, y + dy).filter(|&c| ok(c)) {
-                out.push((to, self.jump_path(owner, from, to)));
+        // Stufe 1: "diagonal". Quadrat: die vier Diagonalfelder; Sechseck: ein Schritt in einer
+        // Richtung und einer in der benachbarten (die sechs Felder zwischen den Geraden).
+        if kind == GridKind::Square {
+            let (x, y) = board.coord(from);
+            for (dx, dy) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
+                if let Some(to) = board.cell_at(x + dx, y + dy).filter(|&c| ok(c)) {
+                    out.push((to, self.jump_path(owner, from, to)));
+                }
+            }
+        } else {
+            for dir in 0..dirs {
+                let to = board
+                    .step(from, dir)
+                    .and_then(|a| board.step(a, (dir + 1) % dirs))
+                    .filter(|&c| ok(c));
+                if let Some(to) = to {
+                    out.push((to, self.jump_path(owner, from, to)));
+                }
             }
         }
         if boost >= 2 {
-            for dir in 0..board.dir_count() {
+            for dir in 0..dirs {
                 let line = board.line(from, dir, 2);
                 if line.len() == 2 && free(line[0]) && ok(line[1]) {
                     out.push((line[1], line));
@@ -858,12 +924,12 @@ impl Game {
             }
         }
         if boost >= 3 {
-            for dir in 0..board.dir_count() {
+            for dir in 0..dirs {
                 let line = board.line(from, dir, 2);
                 if line.len() < 2 || !free(line[0]) || !free(line[1]) {
                     continue;
                 }
-                for side in [(dir + 1) % 4, (dir + 3) % 4] {
+                for side in [(dir + 1) % dirs, (dir + dirs - 1) % dirs] {
                     if let Some(to) = board.step(line[1], side).filter(|&c| ok(c)) {
                         out.push((to, vec![line[0], line[1], to]));
                     }
@@ -1298,6 +1364,7 @@ impl Game {
         }
         let bonus = Game::kat3_bonus(kat3);
         self.state.area[actor.idx()] += area + bonus;
+        let upkeep = self.territory_upkeep(actor);
         self.state.ledger.created += gained.total();
         let mut copy = gained.clone();
         self.state
@@ -1312,6 +1379,53 @@ impl Game {
             kat3,
             bonus,
             gained,
+        });
+        if let Some(upkeep) = upkeep.filter(|&u| u > 0) {
+            self.pay_upkeep(actor, upkeep, events);
+        }
+    }
+
+    /// Version 3 (`terr_upkeep`): Unterhalt aller Figuren des Spielers (Summe der Stufen, der
+    /// Koenig zahlt nichts). `None`, wenn die Regel aus ist.
+    pub fn territory_upkeep(&self, player: PlayerId) -> Option<u32> {
+        self.config
+            .terr_upkeep
+            .then(|| self.pieces_of(player).map(Piece::upkeep).sum())
+    }
+
+    /// Zieht den Unterhalt von der Flaeche ab. Reicht sie nicht, loest sich Figur um Figur auf, bis
+    /// sie reicht: zuerst die kleinste Figur, die den fehlenden Betrag allein deckt, gibt es keine,
+    /// die groesste (bei gleicher Stufe die zuletzt gebaute). Jede aufgeloeste Figur spart ihren
+    /// Unterhalt, es wird nichts zurueckerstattet.
+    fn pay_upkeep(&mut self, actor: PlayerId, mut upkeep: u32, events: &mut Vec<Event>) {
+        let have = self.state.area[actor.idx()];
+        while upkeep > have {
+            let missing = upkeep - have;
+            let mut units: Vec<(u8, PieceId, CellId)> = self
+                .pieces_of(actor)
+                .filter(|p| p.upkeep() > 0)
+                .map(|p| (p.level(), p.id, p.cell))
+                .collect();
+            units.sort_by_key(|&(level, id, _)| (level, std::cmp::Reverse(id)));
+            let covering = units
+                .iter()
+                .find(|&&(level, _, _)| u32::from(level) >= missing);
+            let Some(&(level, id, cell)) = covering.or(units.last()) else {
+                break;
+            };
+            self.state.remove_piece(id);
+            upkeep -= u32::from(level);
+            events.push(Event::Dissolved {
+                piece: id,
+                owner: actor,
+                cell,
+                level,
+            });
+        }
+        self.state.area[actor.idx()] = have - upkeep.min(have);
+        events.push(Event::Upkeep {
+            player: actor,
+            paid: upkeep,
         });
     }
 

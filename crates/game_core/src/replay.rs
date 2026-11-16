@@ -314,6 +314,19 @@ pub fn event_json(event: &Event) -> String {
             r#"{{"type":"traded","player":{},"count":{},"area":{}}}"#,
             player.0, count, area
         ),
+        Event::Upkeep { player, paid } => format!(
+            r#"{{"type":"upkeep","player":{},"paid":{}}}"#,
+            player.0, paid
+        ),
+        Event::Dissolved {
+            piece,
+            owner,
+            cell,
+            level,
+        } => format!(
+            r#"{{"type":"dissolved","piece":{},"owner":{},"cell":{},"level":{}}}"#,
+            piece.0, owner.0, cell.0, level
+        ),
         Event::Income {
             player,
             area,
@@ -490,7 +503,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -536,10 +549,22 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_cardlock,
         c.terr_control,
         c.kat3_spread,
-        c.terr_stack
+        c.terr_stack,
+        c.terr_upkeep,
+        c.terr_kingup,
+        c.terr_kingup_price
+    );
+    // Direktes Koenigs-Upgrade (`terr_kingup`): Kat 2 je zusaetzlichem Zugfeld, je Stufe.
+    let king_up = format!(
+        r#"{{"on":{},"extra":[{},{},{}],"price":{}}}"#,
+        game.king_upgrade_on(),
+        game.king_boost_extra(1),
+        game.king_boost_extra(2),
+        game.king_boost_extra(3),
+        c.terr_kingup_price
     );
     format!(
-        r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{}"#,
+        r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{},"king_up":{}"#,
         esc(FORMAT),
         VERSION,
         c.seed,
@@ -556,7 +581,8 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
             c,
             game.roles_pawn_cost(),
             game.config.territory.then(|| game.territory_card_price(*c))
-        ))
+        )),
+        king_up
     )
 }
 

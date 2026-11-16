@@ -363,6 +363,10 @@ struct Stats {
     rebuilds: u64,
     trades: u64,
     traded_area: u64,
+    /// Unterhalt der Figuren (Flaeche) und aufgeloeste Figuren (Version 3, `terr_upkeep`).
+    upkeep_paid: u64,
+    dissolved: u64,
+    dissolved_levels: u64,
     /// Version 3: Flaechenbonus durch Kat 3, Flaeche der verbundenen Felder (zum Vergleich),
     /// Summe der verbundenen Kat-3-Felder und Zahl der Zugenden mit Einkommen.
     bonus_area: u64,
@@ -522,6 +526,11 @@ fn run() -> Result<(), String> {
                         }
                         Event::FactoryDestroyed { .. } => stats.destroyed += 1,
                         Event::FactoryRebuilding { .. } => stats.rebuilds += 1,
+                        Event::Upkeep { paid, .. } => stats.upkeep_paid += u64::from(*paid),
+                        Event::Dissolved { level, .. } => {
+                            stats.dissolved += 1;
+                            stats.dissolved_levels += u64::from(*level);
+                        }
                         Event::Traded { area, .. } => {
                             stats.trades += 1;
                             stats.traded_area += u64::from(*area);
@@ -693,6 +702,14 @@ fn run() -> Result<(), String> {
                 stats.rebuilds as f64 / n,
                 stats.trades as f64 / n,
                 stats.traded_area as f64 / n
+            );
+        }
+        if stats.upkeep_paid > 0 || stats.dissolved > 0 {
+            println!(
+                "  Unterhalt: {:.1} Flaeche pro Partie, {:.2} Figuren aufgeloest (Stufensumme {:.2}) pro Partie",
+                stats.upkeep_paid as f64 / n,
+                stats.dissolved as f64 / n,
+                stats.dissolved_levels as f64 / n
             );
         }
         if stats.bonus_area > 0 {

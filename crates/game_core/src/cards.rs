@@ -399,12 +399,19 @@ pub const TERRITORY_POOL: [Card; 5] = [
 
 /// Markt im Gebietsmodus: `size` verschiedene Karten aus `TERRITORY_POOL` (mit `v2` aus
 /// `Card::V2`), sortiert.
-pub fn draw_market_territory(seed: u64, size: usize, grid: GridKind, v2: bool) -> Vec<Card> {
+pub fn draw_market_territory(
+    seed: u64,
+    size: usize,
+    grid: GridKind,
+    v2: bool,
+    kingup: bool,
+) -> Vec<Card> {
     let pool: &[Card] = if v2 { &Card::V2 } else { &TERRITORY_POOL };
+    // Mit dem direkten Koenigs-Upgrade (`terr_kingup`) liegt der Boost immer aus und wird nicht gezogen.
     let mut deck: Vec<Card> = pool
         .iter()
         .copied()
-        .filter(|c| c.available_on(grid))
+        .filter(|c| c.available_on(grid) && !(kingup && *c == Card::KingBoost))
         .collect();
     let mut rng = Rng::new(seed ^ 0x6b61_7274_656e_0002);
     rng.shuffle(&mut deck);
