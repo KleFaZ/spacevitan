@@ -103,8 +103,8 @@ schickt die Seite sie als Text `territory=1,name=wert,...` an `sv_set_rules` (`c
 Namen sind dieselben wie bei `--rule`. Die Regeln der laufenden Partie stehen in der Zusammenfassung.
 
 **Fabrik-Menue (nur beim Spielen):** Ein **Klick auf die eigene Fabrik** laesst ein Menue mit allen Aktionen aufploppen
-(ein zweiter Klick, ein Klick aufs Brett oder Esc schliesst es; steht eine ziehbare Figur auf der Fabrik, wird sie
-gewaehlt und das Menue geht trotzdem auf). Es zeigt: die vier **Figuren** mit Stufe, Unterhalt, Preis als Symbole mit
+(ein zweiter Klick, ein Klick aufs Brett oder Esc schliesst es; **steht eine eigene Figur auf der Fabrik, oeffnet der Klick
+nicht das Menue, sondern waehlt die Figur** und zeigt ihre Zugfelder; das Menue ist dann ueber die Leiste erreichbar). Es zeigt: die vier **Figuren** mit Stufe, Unterhalt, Preis als Symbole mit
 `vorhanden/noetig` und "Bauen" (gruen, wenn bezahlbar und die Fabrik frei ist) oder dem Grund ("in 6 Runden", "Fabrik
 besetzt", "nicht am Zug"); das **Koenigs-Upgrade**; die **Karten** des Marktes (bezahlbar: gruen, sonst "fehlt: 2× Eisen",
 "keine passende Figur", "schon gekauft"); Kat 3 tauschen, Fabrik ruecken und Fabrik umziehen. Ausser der Reihe zeigt der

@@ -2448,6 +2448,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Klick auf die eigene Fabrik: das Menue mit allen Aktionen ploppt auf (ein zweiter Klick schliesst es). true = Klick verbraucht. */
   function facClick(cell) {
     if (!facState || facState.R !== R || facState.fac.cell !== cell) return false;
+    // Steht eine eigene Figur auf der Fabrik, gilt der Klick der Figur (Zugmodus), nicht dem Menue.
+    if (R.frames[fi].pieces.some((q) => q.cell === cell && q.owner === facState.p)) return false;
     if (performance.now() - facClosedAt < 400) return true; // dieser Klick hat das Menue gerade geschlossen
     routeNote = "";
     facOpen = true;
@@ -3577,13 +3579,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (i >= 0) { humanAct(i); return; }
     }
     const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
-    if (cell !== null && isTerr() && (!piece || !destinations(piece.id).length) && facClick(cell)) return;
+    if (!piece && cell !== null && isTerr() && facClick(cell)) return;
     // Andere Figuren (auch gegnerische) und Figuren ohne Zug: nur ihre Ziehfelder zeigen.
     if (!(piece && destinations(piece.id).length) && inspectAt(cell)) { selected = null; return; }
     inspect = null;
     selected = piece && destinations(piece.id).length ? piece.id : null;
-    // Steht eine ziehbare Figur auf der Fabrik, wird sie gewaehlt, und das Menue geht trotzdem auf.
-    if (selected !== null && cell !== null && isTerr() && facClick(cell)) return;
     renderTurnBox();
     requestAnimationFrame(draw);
   }
