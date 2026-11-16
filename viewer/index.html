@@ -494,6 +494,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const fById = new Map();
     for (const x of f.factories) fById.set(x.id, x);
     const out = { ...f, byId, fById };
+    if (f.worked) out.workedSet = new Set(f.worked);
     if (f.land && board) Object.assign(out, linkedInfo(f, board));
     return out;
   }
@@ -895,8 +896,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const occupyOn = () => !!(R.config && R.config.terr_occupy);
   /** Version 3: Karten wirken sofort auf eine gewaehlte eigene Einheit (auch eine schon gebaute). */
   const cardAnyOn = () => !!(R.config && R.config.terr_cardany);
+  /** Version 3: Felder im Einflussbereich einer eigenen Figur zaehlen als bearbeitet. */
+  const controlOn = () => !!(R.config && R.config.terr_control);
+  /** Version 3: 0 = Karte kostet nichts, 1 = die verbesserte Figur ruht in diesem Zug, 2 = Kauf ist der ganze Zug. */
+  const cardLockMode = () => (R.config && R.config.terr_cardlock) || 0;
+  /** Die Figur, die in diesem Zug eine Karte bekam und ruht (nur im Zug danach sichtbar). */
+  const lockedPiece = (f) => (f.card_lock === null || f.card_lock === undefined ? null : f.byId.get(f.card_lock) || null);
   /** Steht auf dem Feld eine Figur seines Besitzers (also: laeuft dort der Erntezaehler)? */
   function isWorked(f, cell) {
+    if (f.workedSet) return f.workedSet.has(cell); // der Spielkern sagt es selbst (auch Kontrollfelder)
     const owner = f.land ? f.land[cell] : -1;
     return owner !== null && owner !== undefined && owner >= 0 && f.pieces.some((x) => x.cell === cell && x.owner === owner);
   }
@@ -1668,10 +1676,34 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     canvas.dataset.pieces = String(f.pieces.length);
     canvas.dataset.frame = String(fi);
 
+    drawLockBadge(f);
     drawFx(now);
     if (tween || fx.length) requestAnimationFrame(draw);
   }
 
+  /** Pausezeichen an der Figur, die in diesem Zug eine Karte bekam und deshalb ruht. */
+  function drawLockBadge(f) {
+    const piece = lockedPiece(f);
+    if (!piece) return;
+    const [x, y] = R.board.cells[piece.cell];
+    const [cx, cy] = iso(x, y);
+    const u = geo.W, r = Math.max(7, u * 0.2);
+    const bx = cx + u * 0.32, by = cy - u * (geo.flat ? 0.3 : 0.62);
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#2b2f3a";
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = Math.max(1.5, r * 0.18);
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    const bw = r * 0.3, bh = r * 0.95;
+    ctx.fillRect(bx - bw * 1.4, by - bh / 2, bw, bh);
+    ctx.fillRect(bx + bw * 0.4, by - bh / 2, bw, bh);
+    ctx.restore();
+  }
   /** Beim Schritt auf `f`: fuer jede Karte, die eine gebaute Figur verbessert, ein Blitz. */
   function startFx(f) {
     const now = performance.now();
@@ -1947,7 +1979,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Preis einer Figur im Gebietsmodus (wie unit_price im Spielkern). */
   function terrPrice(level) {
     const c = R.config;
-    if (c.terr_grow >= 2) return { area: c.terr_pawn * Math.pow(c.terr_grow, Math.max(1, level) - 1), k1: 0, k2: 0, k3: 0 };
+    if (c.terr_grow >= 2) return { area: c.terr_pawn * Math.pow(c.terr_grow, Math.max(1, level) - 1) * (level >= 2 ? c.terr_up_mult || 1 : 1), k1: 0, k2: 0, k3: 0 };
     if (level <= 1) return { area: c.terr_pawn, k1: 0, k2: 0, k3: 0 };
     return { area: c.terr_area + (c.terr_area_step || 0) * (level - 2), k1: c.terr_k1, k2: level >= 3 ? c.terr_k2 : 0, k3: level >= 4 ? c.terr_k3 : 0 };
   }
@@ -2459,7 +2491,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const acting = canAct();
     const own = p === null || p === undefined ? -1 : ownColorOf(p);
     $("marketNote").textContent = isTerr() && cardAnyOn()
-      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König); klicke die Karte, dann die Figur. „Fabrik rücken“ liegt neben der Fabrik, bis du sie benutzt; der Königs-Boost wirkt sofort auf den König."
+      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König); klicke die Karte, dann die Figur. „Fabrik rücken“ liegt neben der Fabrik, bis du sie benutzt; der Königs-Boost wirkt sofort auf den König." +
+        (cardLockMode() === 1 ? " Eine verbesserte Figur (auch der König beim Boost) ruht dafür in diesem Zug: mit ihr kannst du nicht ziehen, mit allen anderen schon."
+          : cardLockMode() === 2 ? " Eine Verbesserung (Figurenkarte, Königs-Boost) ist dein ganzer Zug." : "")
       : isTerr()
       ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Sie liegt neben der Fabrik und wirkt auf die nächste gebaute Figur; es passt nur eine."
       : acting
@@ -2504,6 +2538,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           li.appendChild(box);
           const names = options.map(([a]) => f.byId.get(a.target)).filter(Boolean).map((t) => `${pieceLabel(t)} auf ${cellName(t.cell)}`);
           li.insertAdjacentHTML("beforeend", `<span class="where ok">${active ? "Klicke jetzt die golden markierte Figur auf dem Brett. " : ""}Passt auf: ${escapeHtml(names.join(", "))}</span>`);
+          if (lockNote(c)) li.insertAdjacentHTML("beforeend", `<span class="where">${escapeHtml(lockNote(c))}</span>`);
         } else if (options.length) {
           li.classList.add("can");
           const box = document.createElement("div");
@@ -2516,6 +2551,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
             box.appendChild(b);
           }
           li.appendChild(box);
+          if (lockNote(c)) li.insertAdjacentHTML("beforeend", `<span class="where">${escapeHtml(lockNote(c))}</span>`);
         } else if (f.bought_this_turn) {
           li.insertAdjacentHTML("beforeend", `<span class="missing">In diesem Zug wurde schon eine Karte gekauft.</span>`);
         } else {
@@ -2536,6 +2572,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ul.appendChild(li);
     }
   }
+  /** Was ein Kauf dieser Karte den Zug kostet (Version 3: Sperre der Figur oder ganzer Zug). */
+  function lockNote(c) {
+    if (!isTerr() || c.key === "factory_shift") return "";
+    const mode = cardLockMode();
+    if (mode === 1) return c.key === "king_boost" ? "Der König darf danach in diesem Zug nicht ziehen." : "Die Figur darf danach in diesem Zug nicht ziehen.";
+    if (mode === 2) return "Der Kauf ist dein ganzer Zug.";
+    return "";
+  }
   /** Kurzfassung der Regeln einer Partie fuer die Zusammenfassung (leer bei alten Dateien). */
   function rulesText(c) {
     if (!c || !Array.isArray(c.regrow_rounds)) return "";
@@ -2550,17 +2594,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (c.terr_cycle) {
         const per = (c.terr_ripen || []).slice(0, c.terr_cats || 3).map((n) => n || "jede").join(" / ");
         const v3 = ["Version 3", ...extra,
-          `Figuren nur aus Fläche: ${[1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow || 2, l - 1)).join(" / ")}`,
+          `Figuren nur aus Fläche: ${[1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow || 2, l - 1) * (l >= 2 ? c.terr_up_mult || 1 : 1)).join(" / ")}`,
           c.terr_bonus ? `Ernte alle ${(c.terr_ripen || []).slice(0, 2).map((n) => n || "jede").join(" / ")} Runden (Kat 1 / 2)` : `Ernte alle ${per} Runden (Kat 1 / 2 / 3)`,
           c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Kat 1 + ${c.terr_move_k2} Kat 2, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${c.terr_rebuild} Runden` : "kein Fabrik-Umzug",
           c.terr_bonus ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
-          c.terr_occupy ? "Erntezähler läuft nur mit eigener Figur auf dem Feld" : "Erntezähler läuft ohne Figur",
+          c.terr_occupy ? (c.terr_control ? "Erntezähler läuft mit eigener Figur auf dem Feld oder in ihrem Einflussbereich" : "Erntezähler läuft nur mit eigener Figur auf dem Feld") : "Erntezähler läuft ohne Figur",
+          c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
           c.terr_cardany ? "Karten wirken auf jede eigene Figur (auch gebaute)" : "Karten wirken auf die nächste gebaute Figur",
           cut, score];
         return v3.join(" · ");
       }
       if (c.terr_grow >= 2) {
-        const prices = [1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow, l - 1)).join(" / ");
+        const prices = [1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow, l - 1) * (l >= 2 ? c.terr_up_mult || 1 : 1)).join(" / ");
         const rp = (c.terr_ripen || []).slice(0, c.terr_cats || 4).map((n, i) => (n ? `Kat ${i + 1} nach ${n}` : "")).filter(Boolean);
         const v2 = [`Version 2 (${c.terr_exact ? "genau n Felder ziehen" : "Zugweite bis n"})`, ...extra,
           `Figuren nur aus Fläche: ${prices}`,
@@ -3065,6 +3110,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const who = piece.owner === R.frames[fi].current ? "" : ` von Spieler ${playerName(piece.owner)}`;
     const n = inspect.cells.length;
     const what = `${pieceLabel(piece)}${who} auf ${cellName(piece.cell)}`;
+    if (piece.id === R.frames[fi].card_lock) return `${what}: hat in diesem Zug eine Karte bekommen und ruht bis zum nächsten Zug.`;
     if (!n) return `${what}: hat gerade kein Ziehfeld.`;
     return `${what}: ${n} ${n === 1 ? "Ziehfeld" : "Ziehfelder"} (rot = schlagen). Noch einmal anklicken oder Esc blendet sie aus.`;
   }
@@ -3342,6 +3388,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   // Die Vorgaben (ph) spiegeln Config::new im Spielkern; sie erscheinen nur grau als Platzhalter.
   // Gesendet wird nur, was jemand eintippt: leere Felder lassen dem Spielkern seinen Standard.
   const menuPlayers = () => Number($("setPlayers").value) || 2;
+  /** Regelstufe aus dem Menue (leer = 3): bestimmt einige Platzhalter. */
+  const menuVer = () => { const v = $("rule_terr_ver"); return v && v.value.trim() !== "" ? Number(v.value) : 3; };
   const marketDefault = (p) => (p <= 4 ? 2 * p : p);
   const sideRange = (p) => (p === 3 ? [6, 40] : p >= 5 ? [8, 30] : [6, 64]);
   const RULE_GROUPS = [
@@ -3355,13 +3403,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Karten", fields: [
       { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
     ] },
-    { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Rohstoffe sind weiß, bis das Feld jemandem gehört; dann haben sie dessen Farbe.", fields: [
+    { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400; in Version 3 ab Stufe 2 noch einmal doppelt: 200 / 400 / 800). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Rohstoffe sind weiß, bis das Feld jemandem gehört; dann haben sie dessen Farbe.", fields: [
       { key: "terr_ver", label: "Regelstufe (3, 2 oder 1)", ph: () => "3", hint: () => "3 = Version 3 (Erntezähler, Fabrik-Umzug, Kat 3 als Flächenbonus); 2 = Version 2; 1 = Version 1 (Referenz: Zugweite bis n, Preise mit Rohstoffen, sofortiger Ertrag)." },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
-      { key: "terr_grow", label: "Preisfaktor je Stufe", ph: () => "2", hint: () => "Stufe n kostet Bauer mal Faktor hoch (n−1): 50 / 100 / 200 / 400. 0 = Preise der Version 1 (nur mit Version 1 sinnvoll)." },
+      { key: "terr_grow", label: "Preisfaktor je Stufe", ph: () => "2", hint: () => "Stufe n kostet Bauer mal Faktor hoch (n−1): 50 / 100 / 200 / 400 (Version 3: ab Stufe 2 dazu der Faktor „Figurenpreis ab Stufe 2 mal“). 0 = Preise der Version 1 (nur mit Version 1 sinnvoll)." },
       { key: "terr_exact", label: "Genau n Felder ziehen", ph: () => "1", hint: () => "1 = Stufe n zieht genau n Felder geradeaus; 0 = bis n Felder frei um Ecken." },
       { key: "terr_ripen1", label: "Erntezeit Kat 1 (Runden)", ph: () => "3", hint: () => "Version 3: alle so viele Runden wird das Vorkommen einmal geerntet. Version 2: so lange muss dir das Feld gehören, bevor es Ertrag bringt." },
-      { key: "terr_ripen2", label: "Erntezeit Kat 2 (Runden)", ph: () => "10" },
+      { key: "terr_ripen2", label: "Erntezeit Kat 2 (Runden)", ph: () => (menuVer() === 3 ? "5" : "10") },
       { key: "terr_ripen3", label: "Erntezeit Kat 3 (nur ohne Bonus)", ph: () => "10", hint: () => "Gilt nur, wenn Kat 3 geerntet wird („Kat 3: 2^k Fläche je Runde“ = 0)." },
       { key: "terr_cats", label: "Rohstoffarten", ph: () => "3", hint: () => "3 = Kat 1 bis 3 (Version 3); 2 = nur Kat 1 und Kat 2 (Version 2)." },
       { key: "terr_cards", label: "Kartenpreise der Version 2", ph: () => "1", hint: () => "1 = Preise in Kat 1 / Kat 2 für die neuen Karten; 0 = die alten Preise." },
@@ -3370,9 +3418,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_reconnect", label: "Wehrlose Figur wieder anbinden", ph: () => "1", hint: () => "1 = steht sie neben ihrem verbundenen Land, ist sie aktiv und färbt ihr Feld; 0 = aus" },
       { key: "terr_enclose", label: "Umschlossene neutrale Fläche", ph: () => "1", hint: () => "1 = ganz umschlossene neutrale Fläche geht an die umschließende Farbe; 0 = aus" },
       { key: "terr_enclose_edge", label: "Brettrand zählt als Wand", ph: () => "0", hint: () => "0 = eine neutrale Fläche am Brettrand wird nie umschlossen; 1 = der Rand ist eine Wand (ein „L“ aus der Ecke holt ein Quadrat)" },
-      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => { const v = $("rule_terr_ver"); return (v && v.value.trim() !== "" ? Number(v.value) : 3) === 3 ? "8" : "16"; }, hint: () => "Preise der Karten mal diese Zahl durch 16. Version 2 (16): Kürzer 6, Ecke 10, Sprung 8, Fabrik rücken 6 Kat 1, Königs-Boost 3 Kat 2 je Stufe. Version 3 (8): Kürzer 3, Ecke 5, Sprung 4, Fabrik rücken 3, Königs-Boost 1 Kat 2 je Stufe." },
+      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => (menuVer() === 3 ? "8" : "16"), hint: () => "Preise der Karten mal diese Zahl durch 16. Version 2 (16): Kürzer 6, Ecke 10, Sprung 8, Fabrik rücken 6 Kat 1, Königs-Boost 3 Kat 2 je Stufe. Version 3 (8): Kürzer 3, Ecke 5, Sprung 4, Fabrik rücken 3, Königs-Boost 1 Kat 2 je Stufe." },
     ] },
-    { title: "Version 3: Fabrik, Ernte, Rohstoffe", wide: true, grid: true, note: "Fabrik-Umzug: der König baut die Fabrik auf seinem Feld (verbundenes Land) neu, die alte fällt weg und ihr Lager zieht mit um; das kostet Rohstoffe und dauert die halbe Entfernung vom alten Platz (aufgerundet, mindestens 1 Runde; der Tooltip über deinem Land nennt die Dauer vorab). Wurde die Fabrik zerstört, baut er sie auf eigenem Land fest in 3 Runden neu (kostenlos). Während des Baus gibt es kein Einkommen, die Erntezähler stehen still, das Land ist nicht verbunden (alle Figuren wehrlos, sie färben nichts), der König darf sich nicht bewegen. Erntezähler: jedes Vorkommen wird alle N Runden einmal geerntet, dann beginnt es von vorn; er läuft aber nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (sonst pausiert er). Kat 3 wird nicht geerntet: k Kat-3-Felder auf dem mit der Fabrik verbundenen Land bringen am Ende jedes eigenen Zugs zusätzlich 2^k Fläche (kein Feld: nichts).", fields: [
+    { title: "Version 3: Fabrik, Ernte, Rohstoffe", wide: true, grid: true, note: "Fabrik-Umzug: der König baut die Fabrik auf seinem Feld (verbundenes Land) neu, die alte fällt weg und ihr Lager zieht mit um; das kostet Rohstoffe und dauert die halbe Entfernung vom alten Platz (aufgerundet, mindestens 1 Runde; der Tooltip über deinem Land nennt die Dauer vorab). Wurde die Fabrik zerstört, baut er sie auf eigenem Land fest in 3 Runden neu (kostenlos). Während des Baus gibt es kein Einkommen, die Erntezähler stehen still, das Land ist nicht verbunden (alle Figuren wehrlos, sie färben nichts), der König darf sich nicht bewegen. Erntezähler: jedes Vorkommen wird alle N Runden einmal geerntet, dann beginnt es von vorn; er läuft aber nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (sonst pausiert er). Kat 3 wird nicht geerntet: k Kat-3-Felder auf dem mit der Fabrik verbundenen Land bringen am Ende jedes eigenen Zugs zusätzlich 2^k Fläche (kein Feld: nichts). Die Kat-3-Felder liegen einzeln und gleichmäßig verteilt auf dem Brett. Figuren ab Stufe 2 kosten doppelt (200 / 400 / 800 Fläche); Kat 2 wird alle 5 Runden geerntet. Eine Karte sperrt die verbesserte Figur für diesen Zug.", fields: [
       { key: "terr_cycle", label: "Erntezähler je Vorkommen", ph: () => "1", hint: () => "1 = jedes Vorkommen wird alle N Runden (Erntezeit) einmal geerntet; 0 = Version 2 (nach der Reifezeit jede Runde)." },
       { key: "terr_move", label: "König baut die Fabrik neu", ph: () => "1", hint: () => "1 = Umzug und Neubau nach einer Zerstörung erlaubt; 0 = aus." },
       { key: "terr_move_k1", label: "Umzug: Kat 1", ph: () => "4", hint: () => "Kosten aus dem Lager der Fabrik." },
@@ -3381,16 +3429,20 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_bonus", label: "Kat 3: 2^k Fläche je Runde", ph: () => "1", hint: () => "1 = k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich, Kat 3 wird nicht geerntet; 0 = Kat 3 wird wie Kat 1 geerntet." },
       { key: "terr_occupy", label: "Zähler nur mit eigener Figur", ph: () => "1", hint: () => "1 = der Erntezähler eines Feldes läuft nur, wenn am Ende deines Zugs eine eigene Figur (auch der König) darauf steht, sonst pausiert er (ohne Rückstellung); 0 = er läuft immer. Nur mit Erntezähler." },
       { key: "terr_cardany", label: "Karten auf jede eigene Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung wirken sofort auf eine eigene Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2, nicht auf den König); 0 = sie liegen neben der Fabrik und wirken auf die nächste gebaute Figur." },
+      { key: "terr_cardlock", label: "Karte sperrt die Figur", ph: () => "1", hint: () => "1 = die verbesserte Figur (beim Königs-Boost der König) darf in diesem Zug nicht ziehen; 2 = Verbessern ist der ganze Zug; 0 = Karten kosten keinen Zug." },
+      { key: "terr_control", label: "Kontrollfelder", ph: () => "0", hint: () => "1 = ein Feld gilt auch als bearbeitet (Erntezähler läuft, geerntet wird), wenn es im Einflussbereich einer eigenen Figur auf verbundenem Land liegt: Felder geradeaus bis zur Reichweite, bis zur ersten Figur; beim König die Nachbarfelder. Braucht „Zähler nur mit eigener Figur“." },
+      { key: "terr_up_mult", label: "Figurenpreis ab Stufe 2 mal", ph: () => (menuVer() === 3 ? "2" : "1"), hint: () => "Version 3: Stufe 1 kostet 50, die höheren 2 × (100 / 200 / 400) = 200 / 400 / 800 Fläche." },
       { key: "terr_trade", label: "Kat 3 tauschen (alte Fassung)", ph: () => "0", hint: () => "1 = geerntetes Kat 3 lässt sich gegen 2^k Fläche tauschen; nur zusammen mit „Kat 3: 2^k Fläche je Runde“ = 0." },
       { key: "cells2", label: "Kat 2: Felder je Ecke", ph: () => "1", hint: () => "Rohstoffmenge: Felder je Ader (Version 2 hatte 2 Adern mit je 2 Feldern, dazu Felder in der Mitte)." },
-      { key: "cells3", label: "Kat 3: Felder je Ecke", ph: () => "2", hint: () => "Eine Ader mit so vielen zusammenhängenden Feldern je Ecke." },
+      { key: "cells3", label: "Kat 3: Felder je Ader", ph: () => (menuVer() === 3 ? "1" : "2"), hint: () => "So viele zusammenhängende Felder hat eine Ader (Version 3: einzelne Felder)." },
       { key: "veins2", label: "Kat 2: Adern je Ecke", ph: () => "1" },
-      { key: "veins3", label: "Kat 3: Adern je Ecke", ph: () => "1" },
+      { key: "veins3", label: "Kat 3: Adern je Ecke", ph: () => (menuVer() === 3 ? "2" : "1"), hint: () => "Version 3: zwei einzelne Kat-3-Felder je Ecke." },
+      { key: "kat3_spread", label: "Kat 3 gleichmäßig verteilen", ph: () => "1", hint: () => "1 = jedes Kat-3-Feld liegt möglichst weit von allen anderen (mindestens 3 Felder Abstand, der Brettrand zählt als Nachbar im halben Abstand); 0 = zufällig in der Ecke." },
       { key: "center_cells", label: "Kat 1 in der Mitte: Felder", ph: () => "2", hint: () => "Felder je Zentrumsfarbe." },
       { key: "center_mix", label: "Kat 2/3 in der Mitte", ph: () => "0", hint: () => "Zusätzliche Felder jeder Regionsfarbe rund um die Kartenmitte." },
     ] },
   ];
-  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 10 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur und sind billiger, weniger Rohstoffe plus Kat 3, der König kann die Fabrik umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
+  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 10 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur (die verbesserte Figur ruht in diesem Zug) und sind billiger, Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Kat-3-Felder bringen jede Runde zusätzlich 2^k Fläche.";
   const MENU_KEY = "spacevitan-menu-v3";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
@@ -3604,6 +3656,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     shiftMode = false;
     cardMode = null;
     inspect = null;
+    routeNote = "";
     try {
       const out = callWasm("sv_apply", i);
       selected = null;
@@ -3743,6 +3796,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
     }
+    const resting = canAct() && !(inspectValid() && inspect.id === now.card_lock) ? lockedPiece(now) : null;
+    if (resting) sub = `${pieceLabel(resting)} auf ${cellName(resting.cell)} hat eine Karte bekommen und ruht in diesem Zug (Pausenzeichen). ${sub}`;
     if (inspectValid()) sub = inspectText() + (sub ? " " + sub : "");
     if (fi < last) sub = "Du siehst einen früheren Zug. " + sub;
     $("hint").innerHTML = escapeHtml(hint) + (sub ? `<small>${escapeHtml(sub)}</small>` : "");
@@ -4037,7 +4092,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get frame() { return fi; }, get frames() { return R ? R.frames.length : 0; },
     get live() { return live; }, get mode() { return mode; }, get selected() { return selected; },
     get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
-    get cardMode() { return cardMode; }, get inspect() { return inspect; }, get fx() { return fx; },
+    get cardMode() { return cardMode; }, get lockedId() { const f = R && R.frames[fi]; return f ? f.card_lock : null; }, get inspect() { return inspect; }, get fx() { return fx; },
     get ready() { return wasm !== null; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },

@@ -471,17 +471,21 @@ spielbar).
 
 | Schalter | Version 3 | Wirkung |
 |---|---|---|
-| `terr_cycle` | 1 | **Erntezaehler**: jedes Vorkommen hat einen Zaehler (`State::age`, Erntetakte seit dem letzten Besitzerwechsel). Ist er abgelaufen, wird es einmal geerntet, dann beginnt er von vorn. Periode je Kategorie `terr_ripen` = 3 / 10 (Kat 1 / 2). Der Zaehler laeuft nur, wenn eine **stehende** Fabrik das Feld ueber verbundenes Land erreicht, sonst steht er still und es wird nichts geerntet. Ein Umfaerben des Feldes setzt ihn zurueck. Periode 0 = jede Runde |
+| `terr_cycle` | 1 | **Erntezaehler**: jedes Vorkommen hat einen Zaehler (`State::age`, Erntetakte seit dem letzten Besitzerwechsel). Ist er abgelaufen, wird es einmal geerntet, dann beginnt er von vorn. Periode je Kategorie `terr_ripen` = 3 / 5 (Kat 1 / 2; Kat 3 wird nicht geerntet). Der Zaehler laeuft nur, wenn eine **stehende** Fabrik das Feld ueber verbundenes Land erreicht, sonst steht er still und es wird nichts geerntet. Ein Umfaerben des Feldes setzt ihn zurueck. Periode 0 = jede Runde |
 | `terr_bonus` | 1 | **Kat 3 als Flaechenbonus**: Kat 3 wird nicht geerntet und liegt nie im Lager. Am Ende jedes eigenen Zuges bringen die `k` Kat-3-Felder auf dem mit der stehenden Fabrik **verbundenen** Land zusaetzlich `2^k` Flaeche (`Game::kat3_bonus`; `k = 0` bringt nichts, gedeckelt bei `2^20`). Kein Zaehler, jede Runde. `Event::Income` traegt `kat3` und `bonus` |
 | `terr_trade` | 0 | Alte Fassung (Version 3 vor der Aenderung): Kat 3 wird geerntet (`terr_ripen3`) und mit `Action::TradeKat3` einmalig gegen `2^k` Flaeche getauscht. Geht nur zusammen mit `terr_bonus=0` |
 | `terr_occupy` | 1 | **Zaehler nur mit eigener Figur**: der Erntezaehler eines Feldes (und damit seine Ernte) laeuft nur, wenn am Ende des eigenen Zuges eine **eigene Figur (auch der Koenig)** auf dem Feld steht. Sonst **pausiert** er, ohne zurueckgesetzt zu werden. Umfaerben setzt ihn weiter zurueck; die Flaeche des Feldes zaehlt weiter, der Kat-3-Bonus bleibt passiv (`Game::own_piece_at`, `territory.rs`). Braucht `terr_cycle` |
 | `terr_cardany` | 1 | **Karten auf jede eigene Figur**: Kuerzer, Ecke und Sprung wirken sofort auf eine gewaehlte eigene Figur, auch eine schon gebaute (`Action::BuyCard { target: Some(Figur) }`, `Event::CardBought` traegt `target`). Nicht auf den Koenig, nicht auf Stufe 1 (Reichweite < 2), nicht wenn sie die Faehigkeit schon hat. Der Kartenplatz neben der Fabrik bleibt nur fuer "Fabrik ruecken"; Koenigs-Boost wirkt wie bisher sofort. Braucht den Kartensatz von Version 2 |
 | `terr_card_mult` | 8 (Version 2: 16) | Kartenpreise mal `terr_card_mult` / 16 (mindestens 1): Kuerzer 3, Ecke 5, Sprung 4, Fabrik ruecken 3 Kat 1, Koenigs-Boost 1 Kat 2 je Stufe |
+| `terr_cardlock` | 1 | **Karte sperrt die Figur**: 1 = die Figur, die eine Karte bekommt (beim Koenigs-Boost der Koenig), darf in diesem Zug nicht mehr ziehen (Zugfelder leer; `State::card_lock`, am Zugende geloescht); 0 = nichts; 2 = der Kauf beendet den ganzen Zug (Kuerzer, Ecke, Sprung, Koenigs-Boost; "Fabrik ruecken" nicht). Der Kauf bleibt ein Teil des Zuges, nur eine Karte je Zug; die gesperrte Figur kann aber noch durch eine andere Figur geschlagen werden |
+| `terr_up_mult` | 2 | Figuren ab Stufe 2 kosten das `terr_up_mult`-Fache (Stufe 1 bleibt bei `terr_area`): bei 2 sind es 50 / 200 / 400 / 800 Flaeche (Version 2: 50 / 100 / 200 / 400) |
+| `terr_control` | 0 | **Kontrollfelder** (Schalter, Standard aus): als bearbeitet zaehlen (Zaehler, Ernte, Kat-3-Bonus) auch alle Felder in Zugreichweite einer eigenen Figur: gerade Strahlen bis zur Reichweite, der erste Stein (egal wessen) stoppt den Strahl, ein Sprung geht ueber genau einen; der Koenig kontrolliert seine Nachbarn. Figuren, die nicht auf mit der Fabrik verbundenem Land stehen, kontrollieren nichts. Braucht `terr_occupy` (`Game::worked_cells`) |
+| `kat3_spread` | 1 | Kat-3-Felder gleichmaessig: je Ecke zwei **einzelne** Felder statt einer Ader aus zwei (`cells3 = 2`, `veins3 = 1`), die Startpunkte nach groesstem Abstand zu den bisherigen Kat-3-Feldern und zum Brettrand gewaehlt, im eigenen Gebiet mindestens 2 Felder vom Start entfernt |
 | `terr_move` | 1 | **Fabrik-Umzug / Neubau durch den Koenig** (`Action::RebuildFactory`, JSON `rebuild_factory`), siehe unten |
 | `terr_move_k1`, `terr_move_k2` | 4, 2 | Preis des freiwilligen Umzugs aus dem Lager der Fabrik (Annahme, nicht von der Regel vorgegeben) |
 | `terr_rebuild` | 3 | Bauzeit in Runden, wenn die Fabrik zerstoert wurde (fest, egal wo, kostenlos) |
 | `terr_cats` | 3 | Kat 1 bis 3 gibt es |
-| `veins1..3`, `cells1..3`, `center_cells`, `center_mix` | 1/1/1, 1/1/2, 2, 0 | weniger Rohstoffe: 20 Vorkommen statt 29 auf dem 10x10-Brett (8 Kat 1, 4 Kat 2, 8 Kat 3) |
+| `veins1..3`, `cells1..3`, `center_cells`, `center_mix` | 1/1/2, 1/1/1, 2, 0 | weniger Rohstoffe: 20 Vorkommen statt 29 auf dem 10x10-Brett (8 Kat 1, 4 Kat 2, 8 Kat 3; Kat 3 je Ecke als zwei einzelne Felder, vorher eine Ader aus zwei) |
 
 **Fabrik-Umzug** (freiwillig, die Fabrik steht und der Koenig steht auf verbundenem eigenem Land ohne Fabrik):
 
@@ -559,6 +563,33 @@ ein Stresstest, bei dieser Stichprobe rauscht jede Zahl um 15 Prozentpunkte):
   Teil an den Gegner. Wer ihn haeufiger will, senkt `terr_move_k1` / `terr_move_k2` oder `terr_ripen2`.
 - Die Karten sind jetzt billig genug, dass der Flaechen-Bot sie 12-mal je Partie kauft (vorher 6): Kuerzer 175,
   Sprung 111, Koenigs-Boost 110, Ecke 99 Kaeufe in 40 Partien.
+
+**Dritte Aenderung der Version 3: Sperre, Preise, Ernte alle 5 Runden, Kat 3 verteilt, Kontrollfelder.** Die Karte
+sperrt die verbesserte Figur fuer den Zug (`terr_cardlock=1`; der Viewer zeigt ein Pausenzeichen am Stein und sagt es
+im Zugtext). Gewaehlt wurde die Figur-Sperre statt des ganzen Zuges, weil sie milder ist und keine Luecke laesst (die
+Karte kann nur vor dem beendenden Zug gekauft werden); `terr_cardlock=2` macht den Kauf zum ganzen Zug. Figuren ab
+Stufe 2 kosten das Doppelte (50 / 200 / 400 / 800), Kat 2 reift in 5 statt 10 Runden. Die Kontrollfelder sind ein
+**Schalter** (`terr_control=1`, Standard aus), weil das noch eine Ueberlegung ist und nicht beschlossen.
+
+Messung (2 Spieler, Seeds ab 100, 40 Partien `flaeche`-Spiegel; `stark` gegen `flaeche` 20 Partien je Sitz, `--nodes 2000`):
+
+| Einstellung | Ernte Kat 1 / Kat 2 | Karten | Runden | Anmerkung |
+|---|---|---|---|---|
+| vorher (zweite Aenderung) | 44 / 9 | 12 | 77 | erste Figur Stufe 2/3/4 in Runde 18 / 27 / 36 |
+| jetzt (`terr_cardlock=1`) | 45 / 21,6 | 12,6 | 79 | Stufe 2/3/4 in Runde 24 / 38 / 54 |
+| `terr_cardlock=0` | 46,5 / 22 | 12,9 | | kaum Unterschied: die Sperre ist ein weicher Preis |
+| `terr_cardlock=2` | 49 / 23 | 11,0 | | Kuerzer und Sprung etwa halb so oft gekauft |
+| `terr_control=1` | 94 / 31 | 16,7 | | holt die Ernte fast auf den Stand vor der Besetzungsregel zurueck |
+| `stark` gegen `flaeche` | 16 : 24 | | | vorher 35 : 5; mit `terr_up_mult=1` 31 : 9 |
+
+- Mit **Kontrollfeldern** zaehlt fast jedes Feld in Reichweite, die Besetzungsregel (Zaehler nur mit Figur) verliert
+  damit weitgehend ihre Wirkung. Das spricht eher gegen die Regel als Standard; sie bleibt ein Schalter zum Ausprobieren.
+  Die Reichweite ist als Strahl gerechnet (Zugfelder einer Figur mit genau n Feldern sind nur das Feld n entfernt),
+  was auch nicht ganz dem Zug entspricht.
+- Die Preisverdopplung verschiebt das Gleichgewicht zur Wirtschaft: der Suchbot `stark` verliert jetzt gegen `flaeche`
+  (16 : 24), weil seine Figuren teurer sind. Kleine Stichprobe, rund 15 Prozentpunkte Rauschen.
+- **Kat 3 verteilt**: bei 300 Seeds stieg der Abstand zum naechsten anderen Kat-3-Feld von 1,27 auf 3,66, der
+  Abstand eines Feldes zum naechsten Kat-3-Feld sank im Mittel von 2,55 auf 1,76, im schlechtesten Fall von 8 auf 5.
 
 **Sonde: lohnt ein Umzug zur Mitte?** (`cargo test --release -p game_core rush_probe -- --ignored --nocapture`, 40
 Partien je Zeile, beide Sitze). Ein Hilfsbot (`Rusher` in `v3_tests.rs`, kein Teil des Spiels) schickt den Koenig zur
