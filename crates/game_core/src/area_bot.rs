@@ -29,6 +29,9 @@ const UNIT: [i64; 5] = [0, 60, 150, 280, 450];
 const WIN: i64 = 1_000_000_000;
 const KING_LOST: i64 = 1_000_000;
 const FACTORY_THREAT: i64 = 800;
+/// Was dem Bot eine Verbesserung durch eine Karte wert ist; die Sperre der Figur (Version 3)
+/// darf hoechstens so viel kosten.
+const CARD_VALUE: i64 = 30;
 
 pub struct AreaBot {
     rng: Rng,
@@ -45,6 +48,8 @@ impl AreaBot {
 /// Wert der Lage von `p`: verbundenes Land, Vorkommen darauf (gewichtet nach Reife), Figuren.
 fn standing(g: &Game, p: PlayerId) -> i64 {
     let mut v = 0;
+    // Mit `terr_occupy` zaehlt der Vorkommen-Wert voll nur auf bearbeiteten Feldern.
+    let worked = g.config.terr_occupy.then(|| g.worked_cells(p));
     if let Some(connected) = g.connected_land(p) {
         for cell in g.map.board.cells().filter(|c| connected[c.idx()]) {
             v += LAND;
@@ -55,9 +60,10 @@ fn standing(g: &Game, p: PlayerId) -> i64 {
                     continue;
                 }
                 if g.config.terr_occupy {
-                    // Der Zaehler laeuft nur mit eigener Figur auf dem Feld: dann voller Wert, sonst
-                    // ein Drittel (das Vorkommen ist da, aber es kommt nichts heraus).
-                    v += if g.own_piece_at(cell, p) {
+                    // Der Zaehler laeuft nur auf bearbeiteten Feldern (eigene Figur darauf, mit
+                    // Kontrollfeldern auch im Einflussbereich): dann voller Wert, sonst ein Drittel
+                    // (das Vorkommen ist da, aber es kommt nichts heraus).
+                    v += if worked.as_ref().is_some_and(|w| w[cell.idx()]) {
                         DEPOSIT[cat]
                     } else {
                         DEPOSIT[cat] / 3
@@ -119,26 +125,77 @@ fn risk(g: &Game, me: PlayerId) -> i64 {
 }
 
 impl AreaBot {
-    /// Version 3 (Karten auf gebaute Figuren): die beste Karte fuer die hoechste Figur, auf die sie
-    /// passt. Rangfolge der Karten: Ecke, Sprung, Kuerzer.
-    fn card_for_piece(game: &Game, buys: &[Action]) -> Option<Action> {
+    /// Version 3 (Karten auf gebaute Figuren): alle Kartenkaeufe in der Reihenfolge, in der der
+    /// Bot sie haben will: Ecke, Sprung, Kuerzer, je Karte die hoechste Figur zuerst.
+    fn cards_for_pieces(game: &Game, buys: &[Action]) -> Vec<Action> {
         let level_of = |id: crate::ids::PieceId| match game.state.pieces.get(&id).map(|p| &p.kind) {
             Some(PieceKind::Unit { level, .. }) => *level,
             _ => 0,
         };
-        [Card::Bend, Card::Hop, Card::Shorten]
-            .into_iter()
-            .find_map(|want| {
-                buys.iter()
-                    .copied()
-                    .filter(|a| matches!(a, Action::BuyCard { card, target: Some(_), .. } if *card == want))
-                    .max_by_key(|a| match a {
-                        Action::BuyCard {
-                            target: Some(id), ..
-                        } => (level_of(*id), std::cmp::Reverse(*id)),
-                        _ => (0, std::cmp::Reverse(crate::ids::PieceId(0))),
-                    })
-            })
+        let mut out = Vec::new();
+        for want in [Card::Bend, Card::Hop, Card::Shorten] {
+            let mut of_card: Vec<Action> = buys
+                .iter()
+                .copied()
+                .filter(
+                    |a| matches!(a, Action::BuyCard { card, target: Some(_), .. } if *card == want),
+                )
+                .collect();
+            of_card.sort_by_key(|a| match a {
+                Action::BuyCard {
+                    target: Some(id), ..
+                } => (std::cmp::Reverse(level_of(*id)), *id),
+                _ => (std::cmp::Reverse(0), crate::ids::PieceId(0)),
+            });
+            out.extend(of_card);
+        }
+        out
+    }
+
+    /// Bewertung eines Zugs: Lage danach minus Risiko (ohne die Sonderregeln von `best_by_value`).
+    fn move_value(g: &Game, me: PlayerId, a: Action) -> i64 {
+        let mut child = g.clone();
+        child.apply_unchecked(a);
+        let mut value = evaluate(&child, me);
+        if child.outcome().is_none() {
+            value -= risk(&child, me);
+        }
+        value
+    }
+
+    /// Version 3: was die Sperre kostet, die ein Kartenkauf mitbringt (die verbesserte Figur ruht
+    /// diesen Zug, oder der Kauf beendet den Zug): bester Zug jetzt gegen bester Zug danach.
+    fn lock_cost(game: &Game, me: PlayerId, buy: Action, options: &[Action]) -> i64 {
+        if !game.config.territory || game.config.terr_cardlock == 0 {
+            return 0;
+        }
+        let Some(now) = options.iter().map(|&a| Self::move_value(game, me, a)).max() else {
+            return 0;
+        };
+        let mut child = game.clone();
+        child.apply_unchecked(buy);
+        let after = if child.current_player() != me || child.outcome().is_some() {
+            // Der Kauf war der ganze Zug.
+            let mut v = evaluate(&child, me);
+            if child.outcome().is_none() {
+                v -= risk(&child, me);
+            }
+            v
+        } else {
+            child
+                .legal_actions()
+                .into_iter()
+                .filter(|a| {
+                    !matches!(
+                        a,
+                        Action::BuyCard { .. } | Action::RebuildFactory | Action::TradeKat3 { .. }
+                    )
+                })
+                .map(|a| Self::move_value(&child, me, a))
+                .max()
+                .unwrap_or(i64::MIN / 2)
+        };
+        (now - after).max(0)
     }
 
     /// Welche Karte nuetzt jetzt, wenn gleich gebaut wird? Rangfolge: Ecke, Sprung, Kuerzer.
@@ -177,12 +234,7 @@ impl AreaBot {
         let mut best: Vec<Action> = Vec::new();
         let mut best_value = i64::MIN;
         for &a in actions {
-            let mut child = g.clone();
-            child.apply_unchecked(a);
-            let mut value = evaluate(&child, me);
-            if child.outcome().is_none() {
-                value -= risk(&child, me);
-            }
+            let mut value = Self::move_value(g, me, a);
             // Die Fabrik zu rutschen ist selten sinnvoll; nur wenn die Bewertung es verlangt.
             if matches!(a, Action::ShiftFactory { .. }) {
                 value -= 5;
@@ -252,6 +304,8 @@ impl Bot for AreaBot {
             .max_by_key(|&(level, _)| level)
             .filter(|&(level, _)| level > best_owned && (level >= 2 || game.state.round >= 12));
 
+        // Alles, was dieser Zug sonst tun koennte (fuer die Kosten der Sperre durch eine Karte).
+        let options: Vec<Action> = rest.clone();
         // Karten vor dem Bauen: dem Koenig den Boost, der naechsten Figur eine Faehigkeit.
         if let Some(boost) = buys.iter().copied().find(|a| {
             matches!(
@@ -262,10 +316,15 @@ impl Bot for AreaBot {
                 }
             )
         }) {
-            return boost;
+            if Self::lock_cost(game, me, boost, &options) <= CARD_VALUE {
+                return boost;
+            }
         }
         if game.config.terr_cardany {
-            if let Some(card) = Self::card_for_piece(game, &buys) {
+            if let Some(card) = Self::cards_for_pieces(game, &buys)
+                .into_iter()
+                .find(|&a| Self::lock_cost(game, me, a, &options) <= CARD_VALUE)
+            {
                 return card;
             }
         } else if build.is_some() && game.state.stored_card[me.idx()].is_none() {

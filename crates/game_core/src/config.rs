@@ -150,6 +150,20 @@ pub struct Config {
     /// (Kuerzer, Ecke, Sprung). Sie liegen nicht mehr neben der Fabrik; nur "Fabrik ruecken" liegt
     /// dort noch, bis sie benutzt wird. Braucht den Kartensatz von Version 2 (`terr_cards`).
     pub terr_cardany: bool,
+    /// Version 3: Figurenpreise ab Stufe 2 mal diesen Faktor (Stufe 1 bleibt bei `terr_pawn`).
+    /// Nur mit `terr_grow >= 2`; 1 = keine Wirkung.
+    pub terr_up_mult: u32,
+    /// Version 3: Was eine Verbesserung durch eine Karte kostet: 0 = nichts, 1 = die verbesserte
+    /// Figur (auch der Koenig beim Boost) darf in diesem Zug nicht ziehen, 2 = der Kauf beendet
+    /// den ganzen Zug. Gilt fuer Karten mit Figur als Ziel und den Koenigs-Boost.
+    pub terr_cardlock: u32,
+    /// Version 3: Zum Bearbeiten eines Feldes (Erntezaehler, Ernte) genuegt es, wenn es im
+    /// Einflussbereich einer eigenen Figur liegt (geradeaus bis zur Reichweite, bis zur ersten
+    /// Figur). Braucht `terr_occupy`.
+    pub terr_control: bool,
+    /// Kartengenerator: Kat-3-Vorkommen liegen moeglichst gleichmaessig verteilt (groesster
+    /// Abstand zu den schon gesetzten) statt in zufaelligen Adern.
+    pub kat3_spread: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -235,6 +249,10 @@ impl Config {
             terr_bonus: false,
             terr_occupy: false,
             terr_cardany: false,
+            terr_up_mult: 1,
+            terr_cardlock: 0,
+            terr_control: false,
+            kat3_spread: false,
         }
     }
 
@@ -253,15 +271,22 @@ impl Config {
         self.terr_bonus = on;
         self.terr_occupy = on;
         self.terr_cardany = on;
+        // Figuren ab Stufe 2 doppelt so teuer (50 / 200 / 400 / 800 Flaeche); eine Karte sperrt die
+        // verbesserte Figur fuer den Zug; Kontrollfelder bleiben ein Schalter (Standard aus).
+        self.terr_up_mult = if on { 2 } else { 1 };
+        self.terr_cardlock = u32::from(on);
+        self.terr_control = false;
+        self.kat3_spread = on;
         // Karten kosten in Version 3 die Haelfte des Grundpreises (16 = voll).
         self.terr_card_mult = if on { 8 } else { 16 };
         if on {
             self.terr_cats = 3;
-            self.terr_ripen = [3, 10, 10, 0];
+            self.terr_ripen = [3, 5, 10, 0];
             // Deutlich weniger Rohstoffe als Version 2: je Ecke ein Kat-1-Feld, ein Kat-2-Feld
-            // und eine Kat-3-Ader mit zwei Feldern, dazu zwei Zentrums-Felder Kat 1.
-            self.veins_per_type = [1, 1, 1, 1];
-            self.cells_per_type = [1, 1, 2, 2];
+            // und zwei einzelne Kat-3-Felder (gleichmaessig ueber das Brett verteilt), dazu zwei
+            // Zentrums-Felder Kat 1.
+            self.veins_per_type = [1, 1, 2, 1];
+            self.cells_per_type = [1, 1, 1, 2];
             self.center_cells = 2;
             self.center_mix = 0;
         } else {
@@ -361,6 +386,10 @@ impl Config {
             "terr_bonus" => self.terr_bonus = value != 0,
             "terr_occupy" => self.terr_occupy = value != 0,
             "terr_cardany" => self.terr_cardany = value != 0,
+            "terr_up_mult" => self.terr_up_mult = as_u32(value)?,
+            "terr_cardlock" => self.terr_cardlock = as_u32(value)?,
+            "terr_control" => self.terr_control = value != 0,
+            "kat3_spread" => self.kat3_spread = value != 0,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
             "veins3" => self.veins_per_type[2] = as_u32(value)?,
@@ -508,6 +537,19 @@ impl Config {
         if self.terr_bonus && self.terr_trade {
             return Err(ConfigError::Invalid(
                 "terr_bonus und terr_trade gehen nicht zusammen (Kat 3 wird nur eines von beiden)",
+            ));
+        }
+        if self.terr_up_mult == 0 {
+            return Err(ConfigError::Invalid("terr_up_mult muss mindestens 1 sein"));
+        }
+        if self.terr_cardlock > 2 {
+            return Err(ConfigError::Invalid(
+                "terr_cardlock: 0 (nichts), 1 (Figur gesperrt) oder 2 (ganzer Zug)",
+            ));
+        }
+        if self.terr_control && !self.terr_occupy {
+            return Err(ConfigError::Invalid(
+                "terr_control braucht terr_occupy (die Regel, dass Felder bearbeitet werden muessen)",
             ));
         }
         if self.terr_occupy && !self.terr_cycle {

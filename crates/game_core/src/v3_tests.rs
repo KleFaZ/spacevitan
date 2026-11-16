@@ -119,7 +119,22 @@ fn the_v3_switch_builds_on_v2_and_can_be_undone() {
         "Kat 3 ist Rundenbonus, kein Tausch"
     );
     assert_eq!(cfg.terr_grow, 2);
-    assert_eq!(cfg.terr_ripen, [3, 10, 10, 0]);
+    assert_eq!(
+        cfg.terr_ripen,
+        [3, 5, 10, 0],
+        "Kat 2 wird alle 5 Runden geerntet"
+    );
+    assert_eq!(
+        (
+            cfg.terr_up_mult,
+            cfg.terr_cardlock,
+            cfg.terr_control,
+            cfg.kat3_spread
+        ),
+        (2, 1, false, true),
+        "Preise ab Stufe 2 doppelt, Karte sperrt die Figur, Kontrollfelder aus, Kat 3 gestreut"
+    );
+    assert_eq!((cfg.veins_per_type[2], cfg.cells_per_type[2]), (2, 1));
     assert_eq!((cfg.terr_move, cfg.terr_rebuild), (1, 3));
     assert_eq!(cfg.category_count(), 3);
     cfg.set_all("terr_v3=0").unwrap();
@@ -1294,10 +1309,233 @@ fn the_unit_card_changes_the_moves_of_that_unit() {
         target: Some(unit),
     })
     .unwrap();
+    // Die Figur bekam die Karte und ruht in diesem Zug; im naechsten zieht sie um die Ecke.
+    assert!(g.piece_destinations(unit).is_empty(), "gesperrt");
+    let king = king_id(&g, P0);
+    let step = g
+        .legal_actions()
+        .into_iter()
+        .find(|a| matches!(a, Action::Move { piece, .. } if *piece == king))
+        .expect("der Koenig kann ziehen");
+    g.apply(step).unwrap();
     assert!(
         g.piece_destinations(unit).contains(&corner),
         "jetzt um die Ecke"
     );
+}
+
+fn buy(g: &mut Game, card: crate::cards::Card, target: Option<PieceId>) {
+    let fid = g.home_factory(P0).unwrap().id;
+    g.apply(Action::BuyCard {
+        card,
+        from: crate::action::PaySource::Factory(fid),
+        target,
+    })
+    .unwrap();
+}
+
+fn moves_of(g: &Game, piece: PieceId) -> usize {
+    g.legal_actions()
+        .iter()
+        .filter(|a| matches!(a, Action::Move { piece: p, .. } if *p == piece))
+        .count()
+}
+
+#[test]
+fn a_card_locks_the_upgraded_figure_for_the_turn_but_not_the_others() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Bend]);
+    let a = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let b = g.setup_unit(P0, c(&g, 7, 7), 2, 2);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 20);
+    assert!(moves_of(&g, a) > 0 && moves_of(&g, b) > 0);
+    buy(&mut g, Card::Bend, Some(a));
+    assert_eq!(g.state.card_lock, Some(a));
+    assert_eq!(moves_of(&g, a), 0, "die verbesserte Figur ruht");
+    assert!(moves_of(&g, b) > 0, "die anderen ziehen");
+    assert!(moves_of(&g, king_id(&g, P0)) > 0);
+    // Ein anderer Zug beendet den Zug und hebt die Sperre auf.
+    let to = g.piece_destinations(b)[0];
+    g.apply(Action::Move { piece: b, to }).unwrap();
+    assert_eq!(g.state.card_lock, None);
+    assert_eq!(g.current_player(), P1);
+    assert!(!g.piece_destinations(a).is_empty());
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_king_boost_locks_the_king() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::KingBoost]);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let k2 = typ(&g, 0, 2);
+    stock(&mut g, P0, k2, 3);
+    let king = king_id(&g, P0);
+    assert!(moves_of(&g, king) > 0);
+    buy(&mut g, Card::KingBoost, None);
+    assert_eq!(g.state.card_lock, Some(king));
+    assert_eq!(moves_of(&g, king), 0, "der Koenig ruht in diesem Zug");
+    assert!(moves_of(&g, unit) > 0);
+}
+
+#[test]
+fn the_card_lock_can_be_switched_off_or_cost_the_whole_turn() {
+    use crate::cards::Card;
+    // 0: keine Sperre.
+    let mut g = card_game(&[Card::Bend]);
+    g.config.terr_cardlock = 0;
+    let a = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 20);
+    buy(&mut g, Card::Bend, Some(a));
+    assert_eq!(g.state.card_lock, None);
+    assert!(moves_of(&g, a) > 0, "ohne Sperre darf sie sofort ziehen");
+    // 2: der Kauf ist der ganze Zug.
+    let mut g = card_game(&[Card::Bend]);
+    g.config.terr_cardlock = 2;
+    let a = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    stock(&mut g, P0, k1, 20);
+    buy(&mut g, Card::Bend, Some(a));
+    assert_eq!(g.current_player(), P1, "der Kauf beendet den Zug");
+    assert_eq!(g.state.card_lock, None);
+    assert!(g.state.pieces[&a].perks.bend);
+    // Fabrik ruecken ist keine Verbesserung und kostet hier keinen Zug.
+    let mut g = card_game(&[Card::FactoryShift]);
+    g.config.terr_cardlock = 2;
+    stock(&mut g, P0, k1, 20);
+    buy(&mut g, Card::FactoryShift, None);
+    assert_eq!(g.current_player(), P0);
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn units_from_level_two_cost_twice_as_much_in_version_3() {
+    let g = v3_game(&[]);
+    let prices: Vec<u32> = (1..=4).map(|l| g.unit_price(l).area).collect();
+    assert_eq!(prices, [50, 200, 400, 800]);
+    let mut old = v3_config(2);
+    old.terr_up_mult = 1;
+    let g = with_deposits_cfg(old, &[]);
+    let prices: Vec<u32> = (1..=4).map(|l| g.unit_price(l).area).collect();
+    assert_eq!(prices, [50, 100, 200, 400], "ohne den Faktor wie Version 2");
+}
+
+// ----- Kontrollfelder (`terr_control`) ----------------------------------------------------------
+
+fn control_game(deps: &[((i32, i32), ResourceId)]) -> Game {
+    let mut cfg = v3_config(2);
+    cfg.terr_control = true;
+    with_deposits_cfg(cfg, deps)
+}
+
+#[test]
+fn control_needs_the_occupy_rule() {
+    let mut cfg = v3_config(2);
+    cfg.terr_control = true;
+    assert!(cfg.validate().is_ok());
+    cfg.terr_occupy = false;
+    assert!(cfg.validate().is_err());
+    assert!(!v3_config(2).terr_control, "Standard: aus");
+}
+
+#[test]
+fn a_field_in_reach_of_a_figure_counts_as_worked_with_the_control_rule() {
+    let g0 = v3_game(&[]);
+    let k1 = typ(&g0, 0, 1);
+    let deps = [((3, 0), k1)];
+    // Mit Kontrolle: Einheit der Stufe 2 auf (5,0) erreicht (4,0) und (3,0).
+    let mut g = control_game(&deps);
+    strip(&mut g, P0, 5);
+    g.setup_unit(P0, c(&g, 5, 0), 2, 2);
+    for _ in 0..3 {
+        income(&mut g, P0);
+    }
+    assert_eq!(storage_of(&g, P0, k1), 1, "im Einflussbereich geerntet");
+    // Ohne die Regel (nur Besetzung): nichts.
+    let mut g = v3_game(&deps);
+    strip(&mut g, P0, 5);
+    g.setup_unit(P0, c(&g, 5, 0), 2, 2);
+    for _ in 0..3 {
+        income(&mut g, P0);
+    }
+    assert_eq!(storage_of(&g, P0, k1), 0);
+    // Zu weit weg (Reichweite 1 von (5,0) erreicht (3,0) nicht).
+    let mut g = control_game(&deps);
+    strip(&mut g, P0, 5);
+    g.setup_unit(P0, c(&g, 5, 0), 1, 1);
+    for _ in 0..3 {
+        income(&mut g, P0);
+    }
+    assert_eq!(storage_of(&g, P0, k1), 0);
+}
+
+#[test]
+fn control_stops_at_the_first_figure_and_a_helpless_figure_controls_nothing() {
+    let g0 = v3_game(&[]);
+    let k1 = typ(&g0, 0, 1);
+    let deps = [((3, 0), k1)];
+    // Eine Figur auf (4,0) verdeckt (3,0).
+    let mut g = control_game(&deps);
+    strip(&mut g, P0, 5);
+    g.setup_unit(P0, c(&g, 5, 0), 2, 2);
+    g.setup_unit(P1, c(&g, 4, 0), 1, 1);
+    let worked = g.worked_cells(P0);
+    assert!(
+        worked[c(&g, 4, 0).idx()],
+        "das Feld mit dem Gegner ist im Bereich"
+    );
+    assert!(!worked[c(&g, 3, 0).idx()], "dahinter ist nichts mehr");
+    // Mit Sprungfeder sieht sie eine Figur weiter.
+    let id = g.state.piece_at(c(&g, 5, 0)).unwrap().id;
+    g.state.pieces.get_mut(&id).unwrap().perks.hop = true;
+    assert!(g.worked_cells(P0)[c(&g, 3, 0).idx()]);
+    // Eine Figur ausserhalb des verbundenen Landes beherrscht nichts.
+    let mut g = control_game(&deps);
+    strip(&mut g, P0, 5);
+    g.setup_unit(P0, c(&g, 8, 0), 5, 5);
+    assert!(!g.worked_cells(P0)[c(&g, 3, 0).idx()]);
+}
+
+// ----- Kat 3 gleichmaessig verteilt -------------------------------------------------------------
+
+#[test]
+fn kat_three_fields_are_single_cells_spread_far_apart() {
+    for players in 2..=4u8 {
+        for seed in 0..60u64 {
+            let mut cfg = Config::new(players, seed);
+            cfg.territory = true;
+            cfg.set_v3(true);
+            let map = Map::generate(&cfg).expect("Karte");
+            let cells3: Vec<CellId> = map
+                .board
+                .cells()
+                .filter(|&cell| map.deposits_at(cell).iter().any(|&r| map.category(r) == 3))
+                .collect();
+            assert_eq!(
+                cells3.len(),
+                2 * cfg.corner_count(),
+                "zwei Einzelfelder je Ecke, {players}p seed {seed}"
+            );
+            let nearest = cells3
+                .iter()
+                .map(|&a| {
+                    let d = map.board.distances_from(a);
+                    cells3
+                        .iter()
+                        .filter(|&&b| b != a)
+                        .map(|b| d[b.idx()])
+                        .min()
+                        .unwrap()
+                })
+                .min()
+                .unwrap();
+            assert!(
+                nearest >= 3,
+                "Kat-3-Felder liegen mindestens 3 Felder auseinander ({players}p seed {seed}: {nearest})"
+            );
+        }
+    }
 }
 
 #[test]

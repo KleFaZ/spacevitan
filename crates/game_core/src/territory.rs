@@ -169,10 +169,13 @@ impl Game {
         if c.terr_grow >= 2 {
             // Version 2: nur Flaeche, jede Stufe `terr_grow` mal so teuer wie die davor.
             let steps = u32::from(level.max(1)) - 1;
+            // Ab Stufe 2 zusaetzlich mal `terr_up_mult` (Version 3: 50 / 200 / 400 / 800).
+            let up = if steps > 0 { c.terr_up_mult.max(1) } else { 1 };
             return UnitPrice {
                 area: c
                     .terr_pawn
-                    .saturating_mul(c.terr_grow.saturating_pow(steps)),
+                    .saturating_mul(c.terr_grow.saturating_pow(steps))
+                    .saturating_mul(up),
                 k1: 0,
                 k2: 0,
                 k3: 0,
@@ -1247,7 +1250,9 @@ impl Game {
         let yield_n = self.config.terr_yield;
         let cycle = self.config.terr_cycle;
         let bonus_on = self.config.terr_bonus;
-        let occupy = self.config.terr_occupy;
+        // Mit `terr_occupy` zaehlt und erntet ein Feld nur, solange es bearbeitet wird (eigene Figur
+        // darauf, mit `terr_control` auch im Einflussbereich einer eigenen Figur).
+        let worked_cells = self.config.terr_occupy.then(|| self.worked_cells(actor));
         let mut gained = Inventory::new();
         let mut area = 0u32;
         let mut kat3 = 0u32;
@@ -1256,8 +1261,7 @@ impl Game {
                 continue;
             }
             area += 1;
-            // Mit `terr_occupy` zaehlt und erntet ein Feld nur, solange eine eigene Figur darauf steht.
-            let worked = !occupy || self.own_piece_at(cell, actor);
+            let worked = worked_cells.as_ref().is_none_or(|w| w[cell.idx()]);
             if cycle && worked {
                 self.state.age[cell.idx()] += 1;
             }
@@ -1294,6 +1298,54 @@ impl Game {
             bonus,
             gained,
         });
+    }
+
+    /// Felder, die `player` am Ende seines Zuges bearbeitet (Voraussetzung fuer Erntezaehler und
+    /// Ernte mit `terr_occupy`): das Feld jeder eigenen Figur; mit `terr_control` dazu alle Felder
+    /// im Einflussbereich einer eigenen Figur auf verbundenem Land. Der Einflussbereich einer
+    /// Einheit sind die Felder geradeaus bis zur Reichweite, bis zur ersten Figur (diese
+    /// eingeschlossen; mit Sprungfeder eine Figur weiter), der des Koenigs seine Nachbarfelder.
+    pub fn worked_cells(&self, player: PlayerId) -> Vec<bool> {
+        let board = &self.map.board;
+        let mut out = vec![false; board.len()];
+        let connected = if self.config.terr_control {
+            self.connected_land(player)
+        } else {
+            None
+        };
+        for piece in self.pieces_of(player) {
+            out[piece.cell.idx()] = true;
+            if !self.config.terr_control {
+                continue;
+            }
+            // Wehrlose Figuren (nicht auf verbundenem Land) beherrschen nichts.
+            if connected.as_ref().is_some_and(|c| !c[piece.cell.idx()]) {
+                continue;
+            }
+            match &piece.kind {
+                PieceKind::King => {
+                    for n in board.neighbors(piece.cell) {
+                        out[n.idx()] = true;
+                    }
+                }
+                PieceKind::Unit { range, .. } => {
+                    for dir in 0..board.dir_count() {
+                        let mut hop = piece.perks.hop;
+                        for cell in board.line(piece.cell, dir, *range as usize) {
+                            out[cell.idx()] = true;
+                            if self.state.piece_at(cell).is_some() {
+                                if hop {
+                                    hop = false;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Eine Figur der Stufe `level` auf dem Fabrikfeld bauen; eine gelagerte Karte wirkt auf sie.
@@ -1384,6 +1436,19 @@ impl Game {
             self.apply_card(actor, card, from, target, None, events);
         } else {
             self.state.stored_card[actor.idx()] = Some(card);
+        }
+        // Version 3 (`terr_cardlock = 1`): die verbesserte Figur darf in diesem Zug nicht ziehen.
+        if self.config.terr_cardlock == 1 {
+            let upgraded = if card == Card::KingBoost {
+                self.king(actor).map(|k| k.id)
+            } else if on_piece {
+                target
+            } else {
+                None
+            };
+            if upgraded.is_some() {
+                self.state.card_lock = upgraded;
+            }
         }
         events.push(Event::CardBought {
             player: actor,

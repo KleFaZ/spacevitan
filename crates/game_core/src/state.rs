@@ -202,6 +202,9 @@ pub struct State {
     pub player_perks: Vec<PlayerPerks>,
     /// Hat der Spieler am Zug in diesem Zug schon eine Karte gekauft?
     pub bought_this_turn: bool,
+    /// Version 3 (`terr_cardlock = 1`): die Figur, die in diesem Zug eine Karte bekommen hat und
+    /// deshalb nicht ziehen darf. Faellt mit dem Zugende weg.
+    pub card_lock: Option<PieceId>,
     /// Weitere Aktionen in diesem Zug (Doppelzug).
     pub extra_actions: u8,
     /// Sturmangriff: in diesem Zug haben alle Figuren des Spielers am Zug Reichweite +1.
@@ -245,6 +248,7 @@ impl State {
             market: Vec::new(),
             player_perks: vec![PlayerPerks::default(); players],
             bought_this_turn: false,
+            card_lock: None,
             extra_actions: 0,
             charge: false,
             extra_deposits: BTreeMap::new(),

@@ -177,6 +177,10 @@ impl Game {
         let owner = piece.owner;
         let mut out: Vec<CellId> = Vec::new();
 
+        // Version 3: die Figur, die in diesem Zug eine Karte bekam, ruht bis zum Zugende.
+        if self.state.card_lock == Some(id) {
+            return out;
+        }
         let exact = self.config.territory && self.config.terr_exact;
         // Version 3: Der Koenig baut die Fabrik und darf sich dabei nicht bewegen.
         if self.config.territory && piece.is_king() && self.rebuilding(owner) {
@@ -811,14 +815,20 @@ impl Game {
             }
             Action::Pass => events.push(Event::Passed { player: actor }),
             Action::BuyCard { card, from, target } => {
-                // Ein Kauf ist keine Aktion: der Spieler bleibt am Zug.
-                if self.config.territory {
+                // Ein Kauf ist keine Aktion: der Spieler bleibt am Zug. Ausnahme Version 3 mit
+                // `terr_cardlock = 2`: eine Verbesserung (Figurenkarte, Koenigs-Boost) ist der ganze Zug.
+                let ends_turn = if self.config.territory {
                     self.do_buy_territory(actor, card, from, target, &mut events);
+                    self.config.terr_cardlock == 2
+                        && (card == Card::KingBoost || self.cards_go_on_pieces(card))
                 } else {
                     self.do_buy(actor, card, from, target, &mut events);
+                    false
+                };
+                if !ends_turn {
+                    self.state.turns_played += 1;
+                    return events;
                 }
-                self.state.turns_played += 1;
-                return events;
             }
         }
 
@@ -1274,6 +1284,7 @@ impl Game {
     /// Naechster lebender Spieler; nach dem letzten beginnt eine neue Runde.
     fn advance_turn(&mut self, events: &mut Vec<Event>) {
         self.state.bought_this_turn = false;
+        self.state.card_lock = None;
         self.state.extra_actions = 0;
         self.state.charge = false;
         let n = self.config.players as usize;

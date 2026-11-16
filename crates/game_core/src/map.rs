@@ -398,6 +398,28 @@ pub fn center_distances(board: &Board) -> Vec<u32> {
     out
 }
 
+/// Abstand jedes Feldes zum Brettrand (Randfelder = 0): Felder mit weniger Nachbarn als
+/// Richtungen gelten als Rand.
+fn edge_distances(board: &Board) -> Vec<u32> {
+    let mut dist = vec![u32::MAX; board.len()];
+    let mut queue = std::collections::VecDeque::new();
+    for cell in board.cells() {
+        if board.neighbors(cell).count() < board.dir_count() {
+            dist[cell.idx()] = 0;
+            queue.push_back(cell);
+        }
+    }
+    while let Some(cur) = queue.pop_front() {
+        for n in board.neighbors(cur) {
+            if dist[n.idx()] == u32::MAX {
+                dist[n.idx()] = dist[cur.idx()] + 1;
+                queue.push_back(n);
+            }
+        }
+    }
+    dist
+}
+
 /// Ein Platzierungsversuch. `None`, wenn irgendwo kein Platz mehr war.
 fn place_all(
     config: &Config,
@@ -559,6 +581,38 @@ fn place_all(
             if cat1 {
                 let best = seeds.iter().map(|c| center[c.idx()]).min()?;
                 seeds.retain(|c| center[c.idx()] == best);
+            }
+            // Kat 3 gleichmaessig verteilt (`kat3_spread`): das Feld im eigenen Gebiet, das von allen
+            // schon gesetzten Kat-3-Feldern am weitesten weg liegt (bei Gleichstand Zufall).
+            if config.kat3_spread && ty.category == 3 {
+                let placed: Vec<CellId> = board
+                    .cells()
+                    .filter(|c| {
+                        deposits[c.idx()]
+                            .iter()
+                            .any(|&r| types[r.idx()].category == 3)
+                    })
+                    .collect();
+                let away = if placed.is_empty() {
+                    vec![u32::MAX; board.len()]
+                } else {
+                    let mut nearest = vec![u32::MAX; board.len()];
+                    for &p in &placed {
+                        for (i, d) in board.distances_from(p).into_iter().enumerate() {
+                            nearest[i] = nearest[i].min(d);
+                        }
+                    }
+                    nearest
+                };
+                // Der Brettrand zaehlt wie ein Nachbar im halben Abstand, sonst kleben alle am Rand.
+                let edge = edge_distances(board);
+                let score = |c: CellId| away[c.idx()].min(2 * edge[c.idx()] + 3);
+                let spots: Vec<CellId> = board
+                    .cells()
+                    .filter(|&c| fits(c, &deposits) && dist[c.idx()] >= 2)
+                    .collect();
+                let best = spots.iter().map(|&c| score(c)).max()?;
+                seeds = spots.into_iter().filter(|&c| score(c) == best).collect();
             }
             let seed = *rng.pick(&seeds)?;
 
@@ -1371,6 +1425,94 @@ mod tests {
             *hist.entry(generate(4, seed).1.attempts_used).or_default() += 1;
         }
         println!("Versuche bis zur fairen Karte (500 Seeds): {hist:?}");
+    }
+
+    /// Kat-3-Verteilung messen: `cargo test --release -p game_core kat3_spread_probe -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn kat3_spread_probe() {
+        for (label, spread, veins, cells) in [
+            ("alt: Adern mit 2 Feldern", false, 1u32, 2u32),
+            ("nur Einzelfelder (2 je Ecke), zufaellig", false, 2, 1),
+            ("Einzelfelder, gleichmaessig", true, 2, 1),
+        ] {
+            let mut nn = 0.0;
+            let mut nn_min = u32::MAX;
+            let mut cover = 0.0;
+            let mut cover_max = 0u32;
+            let mut attempts = 0.0;
+            let mut count = 0.0;
+            let mut on_edge = 0.0;
+            let mut center_dist = 0.0;
+            let n = 300u64;
+            for seed in 0..n {
+                let mut c = Config::new(2, seed);
+                c.set_v3(true);
+                c.territory = true;
+                c.kat3_spread = spread;
+                c.veins_per_type[2] = veins;
+                c.cells_per_type[2] = cells;
+                let m = Map::generate(&c).expect("Karte");
+                attempts += f64::from(m.attempts_used);
+                let cells3: Vec<CellId> = m
+                    .board
+                    .cells()
+                    .filter(|&cell| m.deposits_at(cell).iter().any(|&r| m.category(r) == 3))
+                    .collect();
+                count += cells3.len() as f64;
+                let edge = edge_distances(&m.board);
+                on_edge += cells3.iter().filter(|c| edge[c.idx()] == 0).count() as f64;
+                let cd = center_distances(&m.board);
+                center_dist += cells3.iter().map(|c| f64::from(cd[c.idx()])).sum::<f64>()
+                    / cells3.len() as f64;
+                let mut nearest_to_each = Vec::new();
+                for &a in &cells3 {
+                    let d = m.board.distances_from(a);
+                    let best = cells3
+                        .iter()
+                        .filter(|&&b| b != a)
+                        .map(|b| d[b.idx()])
+                        .min()
+                        .unwrap_or(0);
+                    nearest_to_each.push(best);
+                }
+                nn += nearest_to_each.iter().map(|&x| f64::from(x)).sum::<f64>()
+                    / nearest_to_each.len() as f64;
+                nn_min = nn_min.min(*nearest_to_each.iter().min().unwrap());
+                let mut worst = 0u32;
+                let mut sum = 0u64;
+                let mut near = vec![u32::MAX; m.board.len()];
+                for &a in &cells3 {
+                    for (i, d) in m.board.distances_from(a).into_iter().enumerate() {
+                        near[i] = near[i].min(d);
+                    }
+                }
+                for &v in &near {
+                    worst = worst.max(v);
+                    sum += u64::from(v);
+                }
+                cover += sum as f64 / near.len() as f64;
+                cover_max = cover_max.max(worst);
+            }
+            println!(
+                "{label}: {:.1} Kat-3-Felder, davon {:.1} am Rand, im Schnitt {:.1} von der Mitte; naechster Nachbar im Schnitt {:.2} (kleinster je {}), mittlerer Abstand eines Feldes zum naechsten Kat 3 {:.2} (schlimmster {}); Versuche {:.1}",
+                count / n as f64,
+                on_edge / n as f64,
+                center_dist / n as f64,
+                nn / n as f64,
+                nn_min,
+                cover / n as f64,
+                cover_max,
+                attempts / n as f64
+            );
+        }
+        for seed in [1u64, 2, 3] {
+            let mut c = Config::new(2, seed);
+            c.set_v3(true);
+            c.territory = true;
+            let m = Map::generate(&c).expect("Karte");
+            println!("Seed {seed}:\n{}", m.render_ascii());
+        }
     }
 
     #[test]

@@ -400,8 +400,26 @@ pub fn state_json(game: &Game) -> String {
     });
     let territory = if game.config.territory {
         let connected = (0..game.config.players).map(|p| game.connected_count(PlayerId(p)));
+        // Mit `terr_occupy`: die Felder, die ihr Besitzer gerade bearbeitet (Erntezaehler laeuft).
+        let worked = if game.config.terr_occupy {
+            let mut cells: Vec<usize> = Vec::new();
+            for p in 0..game.config.players {
+                let p = PlayerId(p);
+                let Some(connected) = game.connected_land(p) else {
+                    continue;
+                };
+                let w = game.worked_cells(p);
+                cells.extend(
+                    (0..w.len()).filter(|&i| w[i] && connected[i] && st.land[i] == Some(p)),
+                );
+            }
+            cells.sort_unstable();
+            format!(r#","worked":{}"#, list(cells.iter(), |c| c.to_string()))
+        } else {
+            String::new()
+        };
         format!(
-            r#","land":{},"since":{},"age":{},"area":{},"stored_card":{},"connected":{}"#,
+            r#","land":{},"since":{},"age":{},"area":{},"stored_card":{},"connected":{}{}"#,
             list(st.land.iter(), |o| o
                 .map_or("-1".to_string(), |p| p.0.to_string())),
             list(st.owned_since.iter(), |n| n.to_string()),
@@ -409,13 +427,14 @@ pub fn state_json(game: &Game) -> String {
             list(st.area.iter(), |n| n.to_string()),
             list(st.stored_card.iter(), |c| c
                 .map_or("null".to_string(), |c| esc(c.key()))),
-            list(connected, |n| n.to_string())
+            list(connected, |n| n.to_string()),
+            worked
         )
     } else {
         String::new()
     };
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"extra_actions":{},"charge":{},"extra_deposits":{}{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"card_lock":{},"extra_actions":{},"charge":{},"extra_deposits":{}{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
@@ -434,6 +453,7 @@ pub fn state_json(game: &Game) -> String {
         )),
         player_perks,
         st.bought_this_turn,
+        st.card_lock.map_or("null".to_string(), |p| p.0.to_string()),
         st.extra_actions,
         st.charge,
         list(st.extra_deposits.iter(), |(c, rs)| format!(
@@ -470,7 +490,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -511,7 +531,11 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_trade,
         c.terr_bonus,
         c.terr_occupy,
-        c.terr_cardany
+        c.terr_cardany,
+        c.terr_up_mult,
+        c.terr_cardlock,
+        c.terr_control,
+        c.kat3_spread
     );
     format!(
         r#""format":{},"version":{},"seed":{},"players":{},"bots":{},"config":{},"board":{},"resource_types":{},"deposits":{},"territories":{},"player_corners":{},"market":{}"#,

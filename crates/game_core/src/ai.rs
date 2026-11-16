@@ -1184,17 +1184,29 @@ impl SearchBot {
         // Version 3: eine Figur auf einem Rohstofffeld laesst dessen Erntezaehler laufen.
         if g.config.terr_occupy {
             if let Some(c) = &conn {
-                for piece in st.pieces.values().filter(|x| x.owner == p) {
-                    if !c[piece.cell.idx()] {
-                        continue;
+                let work = |cell: CellId| -> i32 {
+                    g.all_deposits(cell)
+                        .iter()
+                        .map(|&res| match g.map.category(res) {
+                            1 => w.work,
+                            2 => 2 * w.work,
+                            _ => 0,
+                        })
+                        .sum()
+                };
+                if g.config.terr_control {
+                    // Auch Felder im Einflussbereich einer eigenen Figur werden bearbeitet.
+                    let worked = g.worked_cells(p);
+                    for cell in g.map.board.cells() {
+                        if c[cell.idx()] && worked[cell.idx()] {
+                            v += work(cell);
+                        }
                     }
-                    for res in g.all_deposits(piece.cell) {
-                        v += w.work
-                            * match g.map.category(res) {
-                                1 => 1,
-                                2 => 2,
-                                _ => 0,
-                            };
+                } else {
+                    for piece in st.pieces.values().filter(|x| x.owner == p) {
+                        if c[piece.cell.idx()] {
+                            v += work(piece.cell);
+                        }
                     }
                 }
             }
