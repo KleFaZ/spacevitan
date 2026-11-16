@@ -107,6 +107,7 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .faccard .fc-build { width: 100%; padding: 7px 10px; cursor: pointer; font-weight: 650; }
 .faccard .fc-build:disabled { cursor: default; opacity: 0.55; }
 .faccard .fc-shift { width: 100%; padding: 6px 10px; cursor: pointer; }
+.faccard .fc-sec { display: flex; flex-direction: column; gap: 6px; }
 .faccard .fc-cards { display: flex; flex-direction: column; gap: 5px; }
 .faccard .fc-card { text-align: left; padding: 5px 8px; cursor: pointer; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .faccard .fc-card small { display: block; color: var(--muted); }
@@ -2035,7 +2036,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const tradeI = acting ? live.legal.findIndex((a) => a.type === "trade") : -1;
     const moveI = acting ? live.legal.findIndex((a) => a.type === "rebuild_factory") : -1;
     if (tradeI >= 0) sub += " · Kat 3 tauschbar";
+    const rs = relocStatus(f, info.p);
     if (moveI >= 0) sub += " · Umzug möglich";
+    else if (acting && rs) sub += ` · Umzug: ${rs.short}`;
     if (canShift) sub += " · Fabrik rücken möglich";
     else if (shiftStuck) sub += " · Fabrik rücken: kein Zielfeld";
     if (shiftMode) { title = "Fabrik rücken"; sub = "Klick auf ein markiertes Feld (Esc bricht ab)"; cls = "ready"; }
@@ -2069,12 +2072,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         `<p>${escapeHtml(nextLine)}</p>` +
         `<div><p class="fc-h">Karten${stockCards ? ` · liegt bereit: ${escapeHtml(CARD(stockCards).name)}` : ""}</p>` +
         (buys.length ? `<div class="fc-cards">${buys.join("")}</div>` : "") +
-        (cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : "") +
+        (cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : "") + `</div>` +
         (tradeI >= 0 ? `<button type="button" class="btn fc-shift" data-act="trade">${escapeHtml(actionLabel(live.legal[tradeI], f).split(";")[0])}</button>` : "") +
-        (moveI >= 0 ? `<button type="button" class="btn fc-shift" data-act="rebuild">${escapeHtml(actionLabel(live.legal[moveI], f).split(";")[0])}</button>` : "") +
         (canShift ? `<button type="button" class="btn fc-shift" data-act="shift">${shiftMode ? "Abbrechen" : "Fabrik rücken (statt eines Zuges)"}</button>` : "") +
-        relocBlock(f, info) +
-        (shiftStuck ? `<p class="muted">Fabrik rücken: kein Zielfeld. Ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett).</p>` : "") + `</div></div>`;
+        relocSection(f, info, acting, moveI) +
+        (shiftStuck ? `<p class="muted">Fabrik rücken: kein Zielfeld. Ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett).</p>` : "") + `</div>`;
     }
     card.className = `faccard ${cls}`;
     card.innerHTML = `<div class="fc-head" data-act="toggle" role="button" tabindex="0" aria-expanded="${open}"><span class="fc-dot"></span>` +
@@ -2082,16 +2084,62 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     card.hidden = false;
     placeFactoryCard(card, info);
   }
-  /** Version 3: Umzug der Fabrik, mit Dauer und Preis schon vorab (auch fuer das Feld, auf dem der Koenig gerade steht). */
-  function relocBlock(f, info) {
+  /**
+   * Version 3: wie weit der Umzug der Fabrik ist (null: nicht anwendbar). `ok`: der Koenig steht richtig und das
+   * Lager reicht; sonst sagt `short` (Kopfzeile) und `why` (Karte), was noch fehlt.
+   */
+  function relocStatus(f, p) {
+    const c = R.config;
+    if (!c || !c.terr_move || !f.land) return null;
+    const fac = f.factories.find((x) => x.owner === p);
+    const king = f.pieces.find((x) => x.king && x.owner === p);
+    if (!fac || fac.building > 0 || !king) return null;
+    const stock = `${catUnits(fac.storage, 1)}× Kat 1 und ${catUnits(fac.storage, 2)}× Kat 2`;
+    if (king.cell === fac.cell) {
+      return { ok: false, short: "König von der Fabrik ziehen", ri: null,
+        why: `Der König steht noch auf der Fabrik (${cellName(fac.cell)}). Zieh ihn auf das Feld, auf dem die neue Fabrik stehen soll: ein Feld deines Landes, das mit der Fabrik verbunden ist.` };
+    }
+    const ri = relocInfo(f, p, king.cell);
+    if (!ri) {
+      return { ok: false, short: "König aufs eigene verbundene Land", ri: null,
+        why: `Der König steht auf ${cellName(king.cell)}, und das ist kein Feld deines mit der Fabrik verbundenen Landes. Zieh ihn auf ein eigenes, verbundenes Feld; dort würde die neue Fabrik stehen.` };
+    }
+    if (ri.miss.length) {
+      return { ok: false, short: `es fehlt ${ri.miss.join(" + ")}`, ri,
+        why: `Der König steht richtig (${cellName(king.cell)}, ${roundsWord(ri.rounds)} Bauzeit), aber im Lager der Fabrik fehlt ${ri.miss.join(" + ")} (jetzt: ${stock}). Die Fabrik sammelt weiter, bis es reicht.` };
+    }
+    return { ok: true, short: "möglich", ri,
+      why: `Bereit: Die neue Fabrik käme auf ${cellName(king.cell)}, ${roundsWord(ri.rounds)} Bauzeit, Kosten ${ri.cost}.` };
+  }
+  /** Version 3: der Abschnitt "Fabrik umziehen" in der Fabrik-Karte: Knopf immer da, grau mit Grund, solange es noch nicht geht. */
+  function relocSection(f, info, acting, moveI) {
     const c = R.config;
     if (!c || !c.terr_move) return "";
-    const king = f.pieces.find((x) => x.king && x.owner === info.p);
-    const ri = king ? relocInfo(f, info.p, king.cell) : null;
-    let line = `Umzug (der König baut die Fabrik auf seinem Feld neu): ${relocCostText()}, Dauer = halbe Entfernung zur Fabrik, aufgerundet (mindestens 1 Runde). Bis sie steht: kein Ertrag, alle Figuren wehrlos, König gesperrt. Fahre über ein Feld deines Landes: der Tooltip nennt die Dauer dorthin.`;
-    if (ri) line += ` König auf ${cellName(king.cell)}: ${roundsWord(ri.rounds)}${ri.miss.length ? `, es fehlt ${ri.miss.join(", ")}` : ""}.`;
-    else if (king && king.cell === info.fac.cell) line += " Der König steht auf der Fabrik: zum Umziehen erst auf ein anderes Feld deines verbundenen Landes ziehen.";
-    return `<p class="muted">${escapeHtml(line)}</p>`;
+    const rs = relocStatus(f, info.p);
+    if (!rs) return "";
+    const can = moveI >= 0;
+    const label = can ? actionLabel(live.legal[moveI], f).split(";")[0]
+      : !acting ? "Umzug: du bist nicht am Zug" : "Fabrik hierher umziehen (noch nicht möglich)";
+    const steps = `So geht der Umzug: 1) Zieh den König auf ein Feld deines mit der Fabrik verbundenen Landes (nicht auf die Fabrik); dort steht danach die neue Fabrik. ` +
+      `2) ${relocCostText() === "nichts" ? "Der Umzug kostet nichts." : `Im Lager der Fabrik müssen ${relocCostText()} liegen.`} 3) Klick auf diesen Knopf; das ist dein Zug. ` +
+      `Dauer = halbe Entfernung zur alten Fabrik, aufgerundet (mindestens 1 Runde); der Tooltip auf deinen Feldern nennt sie vorab. ` +
+      `Bis die Fabrik steht: kein Ertrag, alle Figuren wehrlos, König gesperrt.`;
+    return `<div class="fc-sec"><p class="fc-h">Fabrik umziehen · der König baut sie auf seinem Feld</p>` +
+      `<button type="button" class="btn fc-shift" data-act="rebuild" ${can ? "" : "disabled"}>${escapeHtml(label)}</button>` +
+      `<p>${escapeHtml(rs.why)}</p><p class="muted">${escapeHtml(steps)}</p></div>`;
+  }
+  /** Version 3: Hinweis im Zugkasten, solange der Umzug (oder der Neubau nach einer Zerstoerung) noch nicht geht. */
+  function relocTurnHint(f) {
+    const c = R.config;
+    if (!c || !c.terr_move || !f.land) return "";
+    const me = f.current;
+    if (live.legal.some((a) => a.type === "rebuild_factory")) return "";
+    const king = f.pieces.find((x) => x.king && x.owner === me);
+    if (!king) return "";
+    const fac = f.factories.find((x) => x.owner === me);
+    if (!fac) return `Fabrik neu bauen: zieh den König auf ein Feld deines Landes; dann steht hier ein Knopf (kostenlos, ${c.terr_rebuild} Runden).`;
+    const rs = relocStatus(f, me);
+    return rs ? `Fabrik umziehen geht noch nicht: ${rs.short}. Alle Schritte stehen in der Fabrik-Karte am Brett (Klick auf die Leiste); der Knopf erscheint dann auch hier.` : "";
   }
   /** Version 3: die Karte einer Fabrik im Bau: nur der Stand, nichts zu klicken. */
   function renderBuildingCard(card, info) {
@@ -3468,6 +3516,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         b.addEventListener("click", () => humanAct(i));
         actions.appendChild(b);
       });
+      const rh = isTerr() ? relocTurnHint(now) : "";
+      if (rh) {
+        const note = document.createElement("p");
+        note.className = "note";
+        note.textContent = rh;
+        actions.appendChild(note);
+      }
       const buys = live.legal.filter((a) => a.type === "buy").length;
       if ((R.market || []).length) {
         const note = document.createElement("p");
