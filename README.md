@@ -114,6 +114,19 @@ Klick dasselbe, nur grau mit "nicht am Zug". Die Leiste neben der Fabrik (Stand 
 Menue per Klick auf. Die Rechnung steht im Viewer (`terrIncome`, `terrLevelStatus`, `renderFactoryCard`), der Spielkern
 aendert sich dafuer nicht.
 
+**Handy im 2D-Modus:** Das Brett fuellt die ganze Breite des Bildschirms, darueber stehen die Ressourcen (Flaeche, Eisen, Gold,
+Brot, bei Brot mit dem Zuwachs je Runde), darunter die Kartenoptionen des Marktes (nur zur Anzeige, gekauft wird ueber das
+Fabrik-Menue). Ein Sechseck wird in 2D so gedreht, dass zwei gegenueberliegende **Seiten** parallel zum Bildschirmrand liegen
+(nicht die Ecken). Das Fabrik-Menue oeffnet sich nur per Klick auf die Fabrik und klappt auf kleinen Bildschirmen unter dem
+Brett auf.
+
+**Karten-Editor (Startmenue, Version 3):** Unter *Karten* steht eine Tabelle aller Karten des Pools mit Haken (im Pool oder
+nicht) und drei Preisfeldern (Eisen / Gold / Brot; leer = Standardpreis, grauer Wert = Standard). Darunter baut man eigene
+Karten: Name, Bausteine mit **+/−** (jeder bis ×3, z. B. *Ecke ×2 + Sturmangriff*) und Preis (leer = Summe der Bausteine
+als Richtwert); bis zu acht. Der Editor schickt `price.*`, `pool.*` und `custom.*` an den Spielkern (siehe die achte Aenderung der
+Version 3) und merkt sich den Stand im Browser; *Karten zuruecksetzen* und *Alles zuruecksetzen* stellen den Standard wieder
+her. Die Liste der Karten und Bausteine holt die Seite mit `sv_cards()` vom Spielkern, sie steht nicht noch einmal im Viewer.
+
 **Farben und Symbole:** Spielfelder haben die Farbe ihres Besitzers. Die Rohstoffe haben **feste Namen, Symbole und
 Farben**: Kat 1 = **Eisen** (Erzbrocken, grau-blau), Kat 2 = **Gold** (Goldbarren, gelb), Kat 3 = **Brot** (Laib, braun),
 unabhaengig vom Besitzer (das Land zeigt den Besitzer, das Symbol den Rohstoff). Jede Kachel mit Vorkommen traegt einen
@@ -743,6 +756,58 @@ Fabrik; wird die Linie durchtrennt, ist der Koenig wehrlos und steht still. Die 
   Browser rechnet das Wasm-Modul etwa zwei- bis dreimal so lang.
 - Nachmessen: `PROBE_PAIRS=sehr:stark,sehr:flaeche PROBE_FROM=200 PROBE_N=12 cargo test --release -p game_core king_tether_probe -- --ignored --nocapture`
   (Bots `stark`, `sehr`, sonst `flaeche`; `PROBE_NODES`, `PROBE_NODES_VERY` stellen das Budget).
+
+**Achte Aenderung der Version 3: neuer Kartensatz, Zufallsmarkt, Karten-Editor.**
+
+Beobachtung beim Spielen: die Karten machen das Spiel taktisch, aber es gab nur drei Figurenkarten (Kuerzer, Ecke, Sprung),
+und der Markt lag fast fest. Jetzt zieht jede Partie ihre Karten zufaellig aus einem groesseren Pool, die Preise lassen sich
+aendern, und man kann eigene Karten bauen.
+
+- **Ecke nur am Wegende** (`terr_bend_tail=1`, in Version 3 an): eine Figur der Stufe n zieht n Felder geradeaus; mit der
+  Karte *Ecke* darf nur das **letzte** Feld abbiegen (also "n−1 geradeaus, dann links oder rechts"), mit zwei Ecken auch das
+  vorletzte und so weiter (Stufe 3 mit zwei Ecken: "1 geradeaus, dann 2 Felder in einer neuen Richtung" oder mit zwei
+  getrennten Knicken am Ende). Die Karte kostet jetzt **2 Eisen + 1 Gold**. Mit `terr_bend_tail=0` gilt wieder die alte Regel
+  (eine Ecke irgendwo auf dem Weg). Der Rueckschritt ist nie erlaubt; blockiert eine Figur den Weg, faellt dieser Zug weg.
+- **Neuer Kartensatz** (`terr_cardset3=1`, in Version 3 an; braucht `terr_cards=1`): feste Preise in Eisen / Gold / Brot
+  statt Bruchteilen des Grundpreises. Der Pool (ohne den Koenigs-Boost, der immer ausliegt):
+
+  | Karte | Wirkung | Preis (Eisen / Gold / Brot) |
+  |---|---|---|
+  | Kuerzer | Figur darf einen Schritt weniger ziehen | 3 / 0 / 0 |
+  | Ecke | Figur darf am Wegende abbiegen | 2 / 1 / 0 |
+  | Sprung | Figur darf ueber eine Figur springen | 4 / 0 / 0 |
+  | Durchzug | Figur darf ueber **eigene** Figuren hinwegziehen (Gegner versperren weiter) | 2 / 0 / 0 |
+  | Siedler | Figur faerbt sofort alle freien Nachbarfelder (auch Gegnerland, nie Felder mit Figur oder gegnerische Fabrik; nur auf verbundenem Land) | 3 / 2 / 0 |
+  | Fabrik ruecken | Fabrik rueckt ein Feld diagonal (nur Quadrat) | 3 / 0 / 0 |
+  | Sturmangriff | sofort: in diesem Zug alle Figuren Reichweite +1 | 2 / 2 / 0 |
+  | Bergbau | sofort und dauerhaft: +1 Gold je Ernte | 2 / 3 / 0 |
+  | Schmiede | sofort und dauerhaft: +1 Eisen je Ernte | 3 / 2 / 0 |
+  | Doppelzug | sofort: eine zweite Aktion in diesem Zug | 4 / 3 / 0 |
+
+  *Sofort*-Karten brauchen keine Figur und keinen Platz. Die uebrigen wirken auf eine gewaehlte eigene Figur (ab Stufe 2,
+  nie der Koenig) und lassen sich stapeln wie bisher (`terr_stack`). Karten, die auf einem Brett nichts bewirken (Fabrik
+  ruecken auf Sechseck und Dreieck), werden dort nicht gezogen. Siedler und Durchzug sind neu in der Engine
+  (`Perks.pass`, `Game::settle_cells`), Schmiede ist ein Spieler-Perk (`PlayerPerks.smelter`).
+- **Zufallsmarkt**: `Game::new` zieht `market_size` Karten aus dem Pool (`cards::territory_pool`, Seed bestimmt die Auswahl),
+  so dass sich Spiele je Partie anders anfuehlen. Test: 60 Seeds ergeben mehr als 20 verschiedene Maerkte, und jede Karte des
+  Pools taucht auf.
+- **Preise, Pool und eigene Karten als Regeln** (`--rule`, im Browser der *Karten-Editor* im Startmenue):
+  - `price.<karte>=eisen/gold/brot` setzt den Preis (leer = Standard), z. B. `price.bend=1/0/0`;
+  - `pool.<karte>=0` nimmt eine Karte aus dem Pool, `=1` legt sie zurueck;
+  - `custom.0` bis `custom.7` = `Name|baustein*n+baustein|eisen/gold/brot` baut eine eigene Karte, z. B.
+    `custom.0=Sturmecke|bend*2+charge|2/1/0`. Bausteine: `shorten`, `bend`, `hop`, `pass`, `settle`, `charge`, `mining`,
+    `smelter` (je bis ×3; Namen bis 24 Zeichen ohne `=`, `|`, `,`). Die Wirkungen der Bausteine gelten zusammen auf die
+    gewaehlte Figur bzw. sofort; ohne Preis rechnet der Editor die Summe der Bausteine als Richtwert aus. Eigene Karten
+    liegen im Pool wie alle anderen; falsche Regeln melden einen Fehler mit der Stelle.
+  Kartenkatalog fuer eigene Oberflaechen: `replay::catalog_json()` bzw. `sv_cards()` im Wasm (Karten mit Name, Text, Ziel,
+  Standardpreis, ob nur Quadrat/Sofort, dazu die Bausteine).
+- **Anzeige**: Abzeichen fuer *Durchzug* (Pfeil durch einen Strich), Ernte-Vorschau mit Schmiede/Bergbau, Hinweise fuer
+  Sturmangriff und Doppelzug in der Zugleiste, die Fabrik-Karte nennt die Kosten je Karte.
+- **Offen / ehrlich**: die Preise sind Schaetzungen, keine Messung; ob eine Karte zu stark oder zu schwach ist, zeigt erst
+  eine Messung wie bei den alten Karten (`--gift`, siehe unten), die fuer den neuen Satz noch aussteht. Die Bots kaufen die
+  neuen Karten nicht gezielt: `flaeche` nutzt nur Ecke, Sprung, Kuerzer und den Koenigs-Boost; `stark` und `sehr-stark`
+  bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
+  ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
 
 ## Karten
 
