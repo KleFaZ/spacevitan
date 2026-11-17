@@ -73,6 +73,8 @@ pub enum Card {
     Settle,
     /// Version 3: die Fabrik erntet Kat 1 (Eisen) dauerhaft doppelt (Schmiede).
     Smelter,
+    /// Version 3.2, Figur (nur ein Bauer): darf zusaetzlich ein Feld diagonal ziehen und schlagen.
+    PawnDiagonal,
     /// Version 3: eine selbst gebaute Karte, Platz 0 bis `MAX_CUSTOM - 1`; ihre Teile, ihr Name
     /// und ihr Preis stehen in `CardTweaks` (Regel `custom.<platz>`).
     Custom(u8),
@@ -172,6 +174,7 @@ impl Card {
             Card::Pass => "pass",
             Card::Settle => "settle",
             Card::Smelter => "smelter",
+            Card::PawnDiagonal => "pawn_diagonal",
             Card::Custom(i) => CUSTOM_KEYS[usize::from(i).min(CUSTOM_KEYS.len() - 1)],
         }
     }
@@ -187,14 +190,19 @@ impl Card {
 
     /// Die zusaetzlichen Karten von Version 3 (Kartensatz `terr_cardset3`); dazu kommen Karten aus
     /// Version 2 und die klassischen Doppelzug, Sturmangriff und Bergbau.
-    pub const V3_NEW: [Card; 3] = [Card::Pass, Card::Settle, Card::Smelter];
+    pub const V3_NEW: [Card; 4] = [Card::Pass, Card::Settle, Card::Smelter, Card::PawnDiagonal];
+
+    /// Karten des erweiterten Satzes, die standardmaessig nicht im Markt liegen (Version 3.2):
+    /// Doppelzug und Sturmangriff. Im Karten-Editor (`pool.<karte>=1`) lassen sie sich einschalten.
+    pub const V3_DEFAULT_OFF: [Card; 2] = [Card::Charge, Card::DoubleMove];
 
     /// Der Vorrat, aus dem Version 3 den Markt zieht (dazu die selbst gebauten Karten).
-    pub const V3_POOL: [Card; 11] = [
+    pub const V3_POOL: [Card; 12] = [
         Card::Shorten,
         Card::Bend,
         Card::Hop,
         Card::Pass,
+        Card::PawnDiagonal,
         Card::Settle,
         Card::FactoryShift,
         Card::Charge,
@@ -260,6 +268,7 @@ impl Card {
             Card::Pass => "Durchzug",
             Card::Settle => "Siedler",
             Card::Smelter => "Schmiede",
+            Card::PawnDiagonal => "Diagonalzug",
             Card::Custom(_) => "Eigene Karte",
         }
     }
@@ -304,6 +313,9 @@ impl Card {
                 "Die nächste Figur färbt sofort alle freien Nachbarfelder in deiner Farbe (auch Land des Gegners)."
             }
             Card::Smelter => "Deine Fabrik erntet Eisen (Kat 1) dauerhaft doppelt.",
+            Card::PawnDiagonal => {
+                "Nur auf einem Bauern: er darf zusätzlich ein Feld diagonal ziehen und schlagen."
+            }
             Card::Custom(_) => "Eine selbst gebaute Karte.",
         }
     }
@@ -341,6 +353,7 @@ impl Card {
             | Card::Pass
             | Card::Settle
             | Card::Smelter
+            | Card::PawnDiagonal
             | Card::Custom(_) => cost(1, 0, 0, 0, 0),
         }
     }
@@ -430,6 +443,9 @@ impl Card {
                 "Eine eigene Figur darf mit dem letzten Feld ihres Weges um die Ecke gehen (jede weitere Karte: ein Feld mehr, also das letzte und das vorletzte und so weiter)."
             }
             Card::Hop => "Eine eigene Figur darf auf ihrem Weg über eine Figur springen.",
+            Card::PawnDiagonal => {
+                "Ein Bauer (Stufe 1) darf zusätzlich ein Feld diagonal ziehen und schlagen."
+            }
             Card::Pass => {
                 "Eine eigene Figur darf über eigene Figuren hinwegziehen (Gegner versperren den Weg weiter)."
             }
@@ -448,6 +464,7 @@ impl Card {
             Card::Bend => [2, 1, 0],
             Card::Hop => [4, 0, 0],
             Card::Pass => [2, 0, 0],
+            Card::PawnDiagonal => [3, 1, 0],
             Card::Settle => [3, 2, 0],
             Card::FactoryShift => [3, 0, 0],
             Card::Charge => [2, 2, 0],
@@ -484,6 +501,7 @@ impl Card {
             | Card::Bend
             | Card::Hop
             | Card::Pass
+            | Card::PawnDiagonal
             | Card::Settle
             | Card::Runestone => CardTarget::Unit,
             _ => CardTarget::Player,
@@ -498,7 +516,9 @@ impl Card {
     /// Ist die Karte auf diesem Gitter sinnvoll? Diagonalen gibt es nur im Quadratgitter.
     pub fn available_on(self, grid: GridKind) -> bool {
         match self {
-            Card::DiagonalStrike | Card::FactoryShift | Card::KingBoost => grid == GridKind::Square,
+            Card::DiagonalStrike | Card::FactoryShift | Card::KingBoost | Card::PawnDiagonal => {
+                grid == GridKind::Square
+            }
             _ => true,
         }
     }
@@ -647,6 +667,16 @@ fn parse_price(text: &str) -> Result<[u32; 3], String> {
 }
 
 impl CardTweaks {
+    /// Die Standardeinstellung einer Partie: Doppelzug und Sturmangriff liegen nicht im Markt
+    /// (`Card::V3_DEFAULT_OFF`), alles andere unveraendert. `CardTweaks::default()` ist dagegen
+    /// leer: alle Karten im Pool.
+    pub fn standard() -> CardTweaks {
+        CardTweaks {
+            off: Card::V3_DEFAULT_OFF.into_iter().collect(),
+            ..CardTweaks::default()
+        }
+    }
+
     /// Gehoert dieser Regelname hierher (`price.`, `pool.` oder `custom.`)?
     pub fn handles(key: &str) -> bool {
         key.starts_with("price.") || key.starts_with("pool.") || key.starts_with("custom.")

@@ -285,6 +285,18 @@ impl Game {
         }
         // Laeuferschlag: eine Figur schlaegt zusaetzlich diagonal (nur im Quadratgitter). Der
         // Koenig mit Laeuferschlag geht auch auf freie Diagonalfelder ("ueber die Ecke").
+        // Diagonalzug (Version 3.2, nur Bauern): ein Feld diagonal ziehen oder schlagen. Einmal
+        // gekauft, bleibt der Zug auch nach einer Beförderung der Figur.
+        if piece.perks.pawn_diag && !piece.is_king() && board.kind() == GridKind::Square {
+            let (x, y) = board.coord(piece.cell);
+            for (dx, dy) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
+                if let Some(cell) = board.cell_at(x + dx, y + dy) {
+                    if !self.own_piece_at(cell, owner) {
+                        out.push(cell);
+                    }
+                }
+            }
+        }
         if piece.perks.diagonal
             && (!piece.is_king() || self.config.kat_roles)
             && board.kind() == GridKind::Square
@@ -1093,6 +1105,7 @@ impl Game {
                 let p = &mut self.target_mut(target).perks;
                 p.pass = p.pass.saturating_add(1);
             }
+            Card::PawnDiagonal => self.target_mut(target).perks.pawn_diag = true,
             Card::Settle => self.settle_around(actor, target, events),
             Card::Smelter => self.state.player_perks[actor.idx()].smelter = true,
             Card::Custom(_) => {

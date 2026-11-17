@@ -100,6 +100,9 @@ pub struct Perks {
     pub hop: u8,
     /// Version 3: Karte Durchzug (0 oder 1): darf auf dem Weg ueber eigene Figuren hinwegziehen.
     pub pass: u8,
+    /// Version 3.2: Karte Diagonalzug (nur auf einem Bauern): darf zusaetzlich ein Feld diagonal
+    /// ziehen und schlagen (nur Quadratgitter).
+    pub pawn_diag: bool,
 }
 
 impl Perks {
@@ -240,6 +243,10 @@ pub struct State {
     pub armed_charge: Vec<bool>,
     /// Version 3.1 (`terr_delay`): so viele Doppelzuege wirken im naechsten Zug des Spielers.
     pub armed_extra: Vec<u8>,
+    /// Version 3: wo die letzte zerstoerte Fabrik des Spielers stand (`None` = keine zerstoert oder
+    /// schon neu gebaut). Der Neubau dauert mit `terr_rebuild_dist` so lange wie ein Umzug von
+    /// dort zum Koenig.
+    pub lost_factory: Vec<Option<CellId>>,
     /// Vorkommen, die waehrend der Partie entstanden sind (Sternsplitter).
     pub extra_deposits: BTreeMap<CellId, Vec<ResourceId>>,
     /// Gebietsmodus: wem ein Feld gehoert (`None` = neutral). Sonst immer leer gefuellt.
@@ -284,6 +291,7 @@ impl State {
             charge: false,
             armed_charge: vec![false; players],
             armed_extra: vec![0; players],
+            lost_factory: vec![None; players],
             extra_deposits: BTreeMap::new(),
             land: vec![None; cells],
             area: vec![0; players],

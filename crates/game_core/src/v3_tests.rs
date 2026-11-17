@@ -501,10 +501,94 @@ fn an_enemy_destroys_the_factory_and_the_king_rebuilds_it_for_free() {
     g.check_invariants().unwrap();
     // Ohne Fabrik ist der Koenig frei und kann am Platz bauen (eigenes Land unter ihm).
     assert!(g.legal_actions().contains(&Action::RebuildFactory));
+    assert_eq!(
+        g.state.lost_factory[P0.idx()],
+        Some(c(&g, 0, 0)),
+        "der alte Platz ist gemerkt"
+    );
     g.apply(Action::RebuildFactory).unwrap();
     let f = g.home_factory(P0).unwrap();
-    assert_eq!((f.cell, f.building), (c(&g, 0, 1), 3));
+    // Die alte Fabrik stand auf (0,0), der Koenig steht auf (0,1): ein Feld, also eine Runde.
+    assert_eq!((f.cell, f.building), (c(&g, 0, 1), 1));
+    assert_eq!(
+        g.state.lost_factory[P0.idx()],
+        None,
+        "nach dem Neubau vergessen"
+    );
     g.check_invariants().unwrap();
+}
+
+/// Zerstoerte Fabrik von A, die auf (0,0) stand; A besitzt (0,0)..(6,0), der Koenig steht auf `at`.
+fn destroyed_with_king_at(at: (i32, i32), dist_rule: bool) -> Game {
+    let mut cfg = open_config();
+    cfg.terr_rebuild_dist = dist_rule;
+    let mut g = with_deposits_cfg(cfg, &[]);
+    strip(&mut g, P0, 6);
+    let fid = g.home_factory(P0).unwrap().id;
+    let old = g.home_factory(P0).unwrap().cell;
+    g.state.remove_factory(fid);
+    g.state.area[P0.idx()] = 0;
+    g.state.lost_factory[P0.idx()] = Some(old);
+    let king = king_id(&g, P0);
+    let to = c(&g, at.0, at.1);
+    g.setup_teleport(king, to);
+    g
+}
+
+#[test]
+fn after_a_destruction_the_rebuild_time_follows_the_distance_to_the_old_place() {
+    // Abstand 1 und 2: eine Runde; 3 und 4: zwei; 6: drei (wie beim Umzug, halbe Strecke aufgerundet).
+    for (at, rounds) in [
+        ((1, 0), 1),
+        ((2, 0), 1),
+        ((3, 0), 2),
+        ((4, 0), 2),
+        ((6, 0), 3),
+    ] {
+        let mut g = destroyed_with_king_at(at, true);
+        assert_eq!(
+            g.rebuild_plan(P0),
+            Some((rounds, [0, 0])),
+            "Koenig auf {at:?}"
+        );
+        let events = g.apply(Action::RebuildFactory).unwrap();
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::FactoryRebuilding { rounds: r, from: None, .. } if *r == rounds
+        )));
+        assert_eq!(g.home_factory(P0).unwrap().building, rounds);
+        assert_eq!(g.state.ledger.spent_on_moves, 0, "kostenlos");
+        g.check_invariants().unwrap();
+    }
+}
+
+#[test]
+fn without_the_distance_rule_the_rebuild_after_a_destruction_stays_fixed() {
+    for at in [(1, 0), (6, 0)] {
+        let g = destroyed_with_king_at(at, false);
+        assert_eq!(
+            g.rebuild_plan(P0),
+            Some((3, [0, 0])),
+            "fest, egal wo: {at:?}"
+        );
+    }
+}
+
+#[test]
+fn a_second_destruction_remembers_the_newest_place() {
+    let mut g = destroyed_with_king_at((4, 0), true);
+    g.apply(Action::RebuildFactory).unwrap();
+    assert_eq!(g.state.lost_factory[P0.idx()], None);
+    // Die neue Fabrik steht auf (4,0). Zerstoert man sie wieder, merkt sich das Spiel diesen Platz.
+    let fid = g.home_factory(P0).unwrap().id;
+    let cell = g.home_factory(P0).unwrap().cell;
+    assert_eq!(cell, c(&g, 4, 0));
+    g.state.remove_factory(fid);
+    g.state.lost_factory[P0.idx()] = Some(cell);
+    let king = king_id(&g, P0);
+    let near = c(&g, 5, 0);
+    g.setup_teleport(king, near);
+    assert_eq!(g.rebuild_plan(P0), Some((1, [0, 0])));
 }
 
 #[test]
@@ -2402,7 +2486,12 @@ fn prices_pools_and_custom_cards_come_from_the_rules() {
     assert!(cfg.card_tweaks.target(custom) == crate::cards::CardTarget::Unit);
     // Zurueck auf den Standardpreis, Karte wieder im Vorrat, eigene Karte loeschen.
     cfg.set_all("price.bend=,pool.hop=1,custom.0=").unwrap();
-    assert!(cfg.card_tweaks.price.is_empty() && cfg.card_tweaks.off.is_empty());
+    assert!(cfg.card_tweaks.price.is_empty());
+    assert_eq!(
+        cfg.card_tweaks.off,
+        crate::cards::CardTweaks::standard().off,
+        "nur die Standard-Aus-Karten fehlen im Pool"
+    );
     assert!(!cfg.card_tweaks.defined(custom));
 }
 
@@ -2494,15 +2583,108 @@ fn the_version_3_market_is_drawn_at_random_from_a_big_pool() {
         Card::Bend,
         Card::Hop,
         Card::Pass,
+        Card::PawnDiagonal,
         Card::Settle,
-        Card::Charge,
         Card::Mining,
         Card::Smelter,
-        Card::DoubleMove,
         Card::FactoryShift,
     ] {
         assert!(seen.contains(&card), "{card:?} wird gezogen");
     }
+    // Doppelzug und Sturmangriff liegen standardmaessig nicht aus (Version 3.2) ...
+    for card in Card::V3_DEFAULT_OFF {
+        assert!(
+            !seen.contains(&card),
+            "{card:?} wird standardmaessig nicht gezogen"
+        );
+    }
+    // ... lassen sich aber mit pool.<karte>=1 wieder einschalten.
+    let mut back = std::collections::BTreeSet::new();
+    for seed in 0..60 {
+        let mut cfg = Config::new(2, seed);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        cfg.market_size = 5;
+        cfg.set_all("pool.charge=1,pool.double_move=1").unwrap();
+        back.extend(Game::new(cfg).unwrap().state.market);
+    }
+    assert!(back.contains(&Card::Charge) && back.contains(&Card::DoubleMove));
+}
+
+// ----- Version 3.2: Diagonalzug nur fuer Bauern -------------------------------------------------
+
+#[test]
+fn the_diagonal_card_only_fits_a_pawn_and_only_once() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::PawnDiagonal]);
+    let pawn = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    let knight = g.setup_unit(P0, c(&g, 2, 2), 2, 2);
+    let (pawn_p, knight_p) = (
+        g.state.pieces[&pawn].clone(),
+        g.state.pieces[&knight].clone(),
+    );
+    assert!(g.card_fits_piece(Card::PawnDiagonal, &pawn_p));
+    assert!(
+        !g.card_fits_piece(Card::PawnDiagonal, &knight_p),
+        "nur Stufe 1"
+    );
+    let k1 = typ(&g, 0, 1);
+    let k2 = typ(&g, 0, 2);
+    stock(&mut g, P0, k1, 3);
+    stock(&mut g, P0, k2, 1);
+    let offers = buys(&g);
+    assert_eq!(offers.len(), 1, "genau ein Ziel: der Bauer");
+    buy(&mut g, Card::PawnDiagonal, Some(pawn));
+    assert!(g.state.pieces[&pawn].perks.pawn_diag);
+    let again = g.state.pieces[&pawn].clone();
+    assert!(
+        !g.card_fits_piece(Card::PawnDiagonal, &again),
+        "nur einmal je Figur"
+    );
+}
+
+#[test]
+fn a_pawn_with_the_diagonal_card_moves_and_hits_diagonally() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::PawnDiagonal]);
+    // Der Bauer steht auf eigenem, verbundenem Land (sonst ist er wehrlos und schlaegt nichts).
+    paint(&mut g, P0, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    let pawn = g.setup_unit(P0, c(&g, 1, 1), 1, 1);
+    g.setup_unit(P1, c(&g, 2, 2), 1, 1);
+    g.setup_unit(P0, c(&g, 2, 0), 1, 1);
+    let straight = g.piece_destinations(pawn);
+    for (x, y) in [(0, 2), (2, 2), (2, 0), (0, 0)] {
+        assert!(
+            !straight.contains(&c(&g, x, y)),
+            "ohne Karte nicht ({x},{y})"
+        );
+    }
+    g.state.pieces.get_mut(&pawn).unwrap().perks.pawn_diag = true;
+    let dest = g.piece_destinations(pawn);
+    assert!(dest.contains(&c(&g, 0, 2)), "frei: ziehen");
+    assert!(dest.contains(&c(&g, 2, 2)), "Gegner: schlagen");
+    assert!(!dest.contains(&c(&g, 2, 0)), "eigene Figur: nein");
+    for (x, y) in [(1, 2), (2, 1), (1, 0), (0, 1)] {
+        assert!(dest.contains(&c(&g, x, y)), "gerade bleibt ({x},{y})");
+    }
+    // Der Zug klappt auch wirklich (Bruecke zum Ziel faerbt Land).
+    g.apply(Action::Move {
+        piece: pawn,
+        to: c(&g, 0, 2),
+    })
+    .unwrap();
+    assert_eq!(g.state.pieces[&pawn].cell, c(&g, 0, 2));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_diagonal_card_works_only_on_square_boards() {
+    use crate::board::GridKind;
+    use crate::cards::Card;
+    assert!(Card::PawnDiagonal.available_on(GridKind::Square));
+    assert!(!Card::PawnDiagonal.available_on(GridKind::Hex));
+    assert!(!Card::PawnDiagonal.available_on(GridKind::Triangle));
+    assert_eq!(Card::from_key("pawn_diagonal"), Some(Card::PawnDiagonal));
 }
 
 #[test]

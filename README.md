@@ -554,7 +554,8 @@ spielbar).
 | `terr_move` | 1 | **Fabrik-Umzug / Neubau durch den Koenig** (`Action::RebuildFactory`, JSON `rebuild_factory`), siehe unten |
 | `terr_move_k1`, `terr_move_k2` | 0, 0 | Preis des freiwilligen Umzugs aus dem Lager der Fabrik. **Seit der fuenften Aenderung kostenlos** (vorher 4 Kat 1 + 2 Kat 2); wer den Preis zurueckwill, setzt die Werte |
 | `board_corners` | 0 | Brettform unabhaengig von der Spielerzahl: 3 = Dreieck, 4 = Quadrat, 5 bis 8 = Fuenfeck bis Achteck (Sechseck-Felder). 0 = nach Spielerzahl wie bisher. Die Startecken der Spieler waehlt der Spielkern **fair** (`config::fair_corners`, siehe unten) |
-| `terr_rebuild` | 3 | Bauzeit in Runden, wenn die Fabrik zerstoert wurde (fest, egal wo, kostenlos) |
+| `terr_rebuild` | 3 | Bauzeit in Runden, wenn die Fabrik zerstoert wurde, solange `terr_rebuild_dist` aus ist (oder der alte Platz unbekannt ist); kostenlos |
+| `terr_rebuild_dist` | 1 | **Version 3.2**: auch nach einer Zerstoerung zaehlt die Entfernung (halbe Strecke vom alten Platz der Fabrik bis zum Koenig, aufgerundet, mindestens 1 Runde, wie beim Umzug); `0` = fest `terr_rebuild` Runden |
 | `terr_cats` | 3 | Kat 1 bis 3 gibt es |
 | `veins1..3`, `cells1..3`, `center_cells`, `center_mix` | 1/1/2, 1/1/1, 2, 0 | weniger Rohstoffe: 20 Vorkommen statt 29 auf dem 10x10-Brett (8 Kat 1, 4 Kat 2, 8 Kat 3; Kat 3 je Ecke als zwei einzelne Felder, vorher eine Ader aus zwei) |
 
@@ -571,7 +572,11 @@ spielbar).
   und in diesem Zug gibt es noch kein Einkommen.
 
 **Zerstoerte Fabrik**: wer die Fabrik betritt, zerstoert sie wie bisher (Lager und Flaeche gehen verloren). Der Koenig
-baut sie auf **eigenem Land** an seinem Standort neu, kostenlos, fest `terr_rebuild` = 3 Runden.
+baut sie auf **eigenem Land** an seinem Standort neu, kostenlos. Die Dauer ist seit Version 3.2 (`terr_rebuild_dist=1`) wie beim
+Umzug die **halbe Entfernung zum alten Platz** der Fabrik, aufgerundet, mindestens 1 Runde (`Game::rebuild_rounds_lost`; der
+Platz steht in `State::lost_factory` und im Bild als `lost_factory`). Mit `terr_rebuild_dist=0` gilt wieder fest `terr_rebuild`
+= 3 Runden, egal wo. Achtung, Folge der Regel: steht der Koenig nahe am alten Platz, ist der Neubau fast gratis (1 Runde);
+wer die Zerstoerung teurer will, setzt `terr_rebuild_dist=0` oder spaeter einen Mindestwert.
 
 **Waehrend des Baus** (beide Faelle): kein Einkommen, die Erntezaehler stehen, nichts kaufen oder bauen, das Land ist
 **nicht verbunden** (`connected_land` ist leer): alle Figuren sind **wehrlos** (sie faerben nichts, schlagen nicht,
@@ -814,6 +819,7 @@ aendern, und man kann eigene Karten bauen.
   | Bergbau | sofort und dauerhaft: +1 Gold je Ernte | 2 / 3 / 0 |
   | Schmiede | sofort und dauerhaft: +1 Eisen je Ernte | 3 / 2 / 0 |
   | Doppelzug | sofort: eine zweite Aktion in diesem Zug | 4 / 3 / 0 |
+  | Diagonalzug (3.2) | **nur auf einen Bauern (Stufe 1)**: er darf zusaetzlich ein Feld diagonal ziehen und schlagen (nur Quadrat) | 3 / 1 / 0 |
 
   *Sofort*-Karten brauchen keine Figur und keinen Platz. Die uebrigen wirken auf eine gewaehlte eigene Figur (ab Stufe 2,
   nie der Koenig) und lassen sich stapeln wie bisher (`terr_stack`). Karten, die auf einem Brett nichts bewirken (Fabrik
@@ -839,6 +845,32 @@ aendern, und man kann eigene Karten bauen.
   neuen Karten nicht gezielt: `flaeche` nutzt nur Ecke, Sprung, Kuerzer und den Koenigs-Boost; `stark` und `sehr-stark`
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
+
+### Version 3.2 (Wuensche vom 17.11.2026)
+
+- **Doppelzug und Sturmangriff liegen standardmaessig nicht im Markt** (`Card::V3_DEFAULT_OFF`, `CardTweaks::standard()`, benutzt
+  von `Config::new`). Im Karten-Editor tragen sie das Etikett *Standard aus*; `pool.charge=1,pool.double_move=1` legt sie zurueck
+  in den Pool. Sie bleiben im Katalog (`sv_cards`: `default_off`) und als Bausteine eigener Karten.
+- **Neue Karte Diagonalzug** (`Card::PawnDiagonal`, Schluessel `pawn_diagonal`, 3 Eisen + 1 Gold): wirkt nur auf einen **Bauern**
+  (`card_fits_piece`: Stufe 1, nur einmal je Figur). Die Figur darf zusaetzlich ein Feld diagonal ziehen oder schlagen
+  (`Perks.pawn_diag`, in `piece_destinations`; der Weg bekommt wie jeder Sprung eine Bruecke). Der Perk bleibt auch, wenn der Bauer
+  spaeter aufsteigt. Nur Quadratbrett. Sie liegt im Pool und ist als Baustein eigener Karten **nicht** freigegeben (Absicht: bleibt
+  einfach).
+- **Neubau nach Zerstoerung nach Entfernung**, siehe `terr_rebuild_dist` oben.
+- **Premove mit dem Finger** (Viewer): ist eine Figur gewaehlt, plant ein Tipp auf ein Feld, das sie nicht in einem Zug erreicht,
+  einen Weg (`tapRoute`, die vorhandene Route wie Shift/Strg am PC); jedes weitere Feld verlaengert ihn, **dasselbe Feld nochmal
+  tippen startet ihn** (ein Schritt je eigener Zug, von selbst), ein Tipp auf die Figur verwirft ihn oder **unterbricht** die
+  laufende Route (auch ausser der Reihe). Ein Feld, das die Figur in einem Zug erreicht, bleibt das Zweimal-Tippen-Ziehen.
+- **Koenig antippen**: die Blase zeigt **Fabrik hier bauen** (Neubau nach Zerstoerung oder Umzug auf das Feld des Koenigs, mit Dauer
+  und Kosten) und, wenn moeglich, **Koenig verbessern**.
+
+Noch nicht gebaut, bewusst offen:
+
+- **Timer** (erst sinnvoll mit echtem Mehrspieler): Optionen sind feste Zeit je Zug (etwa 10 s), Gesamtzeit mit Zuschlag je Zug wie
+  bei Lichess oder gleichzeitige Zuege nach 10 s. Premoves entschaerfen kurze Timer, weil man vorplanen kann.
+- **Gelaendekarten** (Feld = 1, Wald = 1/2, Moor = 1/4 Flaechenwert, mit eigenem Hintergrund): Idee, nicht umgesetzt. Rechnerisch am
+  einfachsten in Vierteln (Feld 4, Wald 2, Moor 1), damit alles ganzzahlig bleibt; beruehrt Einkommen, Preise, Bots, Kartenerzeugung
+  und Anzeige und braucht eine Messung wie die Karten, daher erst als Schalter (Standard aus).
 
 ### Version 3.1 (vier Schalter, alle Standard aus)
 

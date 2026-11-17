@@ -635,9 +635,13 @@ impl Game {
     /// Ecke verlassen oder mit einem Sprung ueber eine Figur gehen kann (der letzte Schritt
     /// ist das Ziel).
     pub fn card_fits_piece(&self, card: Card, piece: &Piece) -> bool {
-        let PieceKind::Unit { range, .. } = &piece.kind else {
+        let PieceKind::Unit { level, range, .. } = &piece.kind else {
             return false;
         };
+        // Diagonalzug: nur auf einem Bauern (Stufe 1) und nur einmal je Figur.
+        if card == Card::PawnDiagonal {
+            return *level == 1 && !piece.perks.pawn_diag;
+        }
         if let Card::Custom(_) = card {
             // Eine selbst gebaute Karte passt, wenn mindestens ein Baustein auf die Figur passt.
             return self
@@ -772,8 +776,9 @@ impl Game {
     /// Was der Koenig mit `RebuildFactory` taete: (Bauzeit in Runden, Kosten Kat 1 und Kat 2).
     /// `None`, wenn er hier nicht bauen darf. Steht eine Fabrik, muss das Feld des Koenigs mit ihr
     /// verbunden sein, die Bauzeit ist `relocation_rounds` und das Lager muss den Preis hergeben;
-    /// nach einer Zerstoerung geht es nur auf eigenem Land, fest `terr_rebuild` Runden und ohne
-    /// Kosten.
+    /// nach einer Zerstoerung geht es nur auf eigenem Land und ohne Kosten, die Bauzeit ist mit
+    /// `terr_rebuild_dist` wie beim Umzug die halbe Entfernung zum alten Platz (`rebuild_rounds_lost`),
+    /// sonst fest `terr_rebuild` Runden.
     pub fn rebuild_plan(&self, me: PlayerId) -> Option<(u32, [u32; 2])> {
         let c = &self.config;
         if !c.territory || c.terr_move == 0 {
@@ -795,9 +800,18 @@ impl Game {
                 }
                 Some((self.relocation_rounds(f.cell, king.cell), price))
             }
-            None => {
-                (self.state.land[king.cell.idx()] == Some(me)).then_some((c.terr_rebuild, [0, 0]))
-            }
+            None => (self.state.land[king.cell.idx()] == Some(me))
+                .then(|| (self.rebuild_rounds_lost(me, king.cell), [0, 0])),
+        }
+    }
+
+    /// Bauzeit des Neubaus nach einer Zerstoerung, wenn der Koenig von `me` auf `to` steht: mit
+    /// `terr_rebuild_dist` die Bauzeit eines Umzugs vom alten Platz der Fabrik (`relocation_rounds`),
+    /// sonst (oder ohne bekannten alten Platz) fest `terr_rebuild`.
+    pub fn rebuild_rounds_lost(&self, me: PlayerId, to: CellId) -> u32 {
+        match self.state.lost_factory[me.idx()] {
+            Some(old) if self.config.terr_rebuild_dist => self.relocation_rounds(old, to),
+            _ => self.config.terr_rebuild.max(1),
         }
     }
 
@@ -829,7 +843,10 @@ impl Game {
                 self.state.move_factory(fid, to);
                 (fid, Some(from))
             }
-            None => (self.state.insert_factory(actor, to), None),
+            None => {
+                self.state.lost_factory[actor.idx()] = None;
+                (self.state.insert_factory(actor, to), None)
+            }
         };
         // Der Zug endet gleich mit dem Zugende, das schon einen Schritt zaehlt.
         self.state
@@ -1579,6 +1596,7 @@ impl Game {
         self.state.ledger.vanished += factory.storage.total();
         self.state.stored_card[factory.owner.idx()] = None;
         self.state.area[factory.owner.idx()] = 0;
+        self.state.lost_factory[factory.owner.idx()] = Some(factory.cell);
         events.push(Event::FactoryDestroyed {
             factory: factory.id,
             owner: factory.owner,

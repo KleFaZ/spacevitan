@@ -51,7 +51,8 @@ Optionen:
                  Version 3: terr_v3=1 (baut auf Version 2 auf; Erntezaehler, Umzug der Fabrik,
                  weniger Rohstoffe, Kat 3 als Flaechenbonus), einzeln: terr_cycle (Ernte alle
                  terr_ripen Runden), terr_move (Umzug, Dauer = halbe Entfernung aufgerundet),
-                 terr_move_k1, terr_move_k2 (Kosten), terr_rebuild (Bauzeit nach Zerstoerung),
+                 terr_move_k1, terr_move_k2 (Kosten), terr_rebuild (feste Bauzeit nach Zerstoerung),
+                 terr_rebuild_dist (1 = auch nach Zerstoerung nach Entfernung, Standard),
                  terr_bonus (k verbundene Kat-3-Felder = 2^k Flaeche je Runde zusaetzlich),
                  terr_trade (alte Fassung: Kat 3 ernten und einmalig gegen 2^k Flaeche tauschen),
                  veins2, veins3, cells2, cells3, center_cells, center_mix (Rohstoffmenge)
@@ -61,7 +62,9 @@ Optionen:
                  pool.<karte>=0|1 (Karte aus dem Pool nehmen oder wieder hinein),
                  custom.0..7=Name|baustein*n+baustein|eisen/gold/brot (eigene Karte), z. B.
                  custom.0=Sturmecke|bend*2+charge|2/1/0; Karten: shorten, bend, hop, pass,
-                 settle, factory_shift, charge, mining, smelter, double_move, king_boost
+                 settle, factory_shift, charge, mining, smelter, double_move, king_boost,
+                 pawn_diagonal (nur Bauer); charge und double_move liegen standardmaessig
+                 nicht im Markt (pool.charge=1 legt sie zurueck)
                  Version 3.1 (alle Standard aus): terr_delay (Sturmangriff und Doppelzug wirken
                  erst im naechsten eigenen Zug), terr_upkeep_sq (Unterhalt = Stufe im Quadrat),
                  terr_yield_lvl (Figur der Stufe n erntet n Stueck), terr_bread=N (Brot wird alle

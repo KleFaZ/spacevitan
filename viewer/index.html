@@ -406,6 +406,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .kingpop .need { display: flex; gap: 8px; margin-top: 4px; }
 .kingpop button.go { width: 100%; margin-top: 7px; padding: 9px 8px; min-height: 40px; font-weight: 800; background: #f2c94c; color: #3a2a00; border: 1px solid #c9962a; border-radius: 8px; cursor: pointer; }
 .kingpop button.go:disabled { opacity: 0.55; cursor: default; }
+.kingpop .kp-sec + .kp-sec { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line, rgb(128 128 128 / 0.35)); }
 .market.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 @media (min-width: 701px) { .market.cards .pcard { aspect-ratio: 5 / 6.4; } }
 .faccard.open.slim { width: min(300px, calc(100% - 12px)); }
@@ -1012,6 +1013,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (pk.bend) out.push(pkn(pk.bend) > 1 ? `Ecke ×${pkn(pk.bend)}` : "Ecke");
     if (pk.hop) out.push(pkn(pk.hop) > 1 ? `Sprung ×${pkn(pk.hop)}` : "Sprung");
     if (pk.pass) out.push(pkn(pk.pass) > 1 ? `Durchzug ×${pkn(pk.pass)}` : "Durchzug");
+    if (pk.pawn_diag) out.push("Diagonalzug");
     if (pk.diagonal) out.push("Läuferschlag");
     if (pk.lance) out.push("Lanze");
     if (pk.spring) out.push("Sprungfeder");
@@ -1470,6 +1472,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Dauer eines Umzugs der Fabrik von Feld `from` nach `to`: halbe Entfernung, aufgerundet, mindestens 1 Runde. */
   const relocRounds = (from, to) => Math.max(1, Math.ceil(boardDist(from, to) / 2));
   const roundsWord = (n) => `${n} Runde${n === 1 ? "" : "n"}`;
+  /** Version 3.2: nach einer Zerstoerung zaehlt auch die Entfernung zum alten Platz (Regel terr_rebuild_dist). */
+  const rebuildDistOn = () => !!(R && R.config && R.config.terr_rebuild_dist);
+  /** Bauzeit des Neubaus nach einer Zerstoerung, wenn der Koenig von `p` auf `cell` steht. */
+  function lostRounds(f, p, cell) {
+    const old = f && f.lost_factory ? f.lost_factory[p] : null;
+    if (rebuildDistOn() && old !== null && old !== undefined && cell !== null && cell !== undefined) return relocRounds(old, cell);
+    return (R.config && R.config.terr_rebuild) || 3;
+  }
+  /** Kurz die Regel fuer Texte: "halbe Entfernung zur alten Fabrik ..." oder "fest N Runden". */
+  const rebuildRuleText = () => (rebuildDistOn() ? "halbe Entfernung zur zerstörten Fabrik, aufgerundet, mindestens 1 Runde" : `fest ${(R.config && R.config.terr_rebuild) || 3} Runden, egal wo`);
   const relocCostText = () => {
     const c = R.config;
     return [c.terr_move_k1 ? `${c.terr_move_k1}× Eisen` : "", c.terr_move_k2 ? `${c.terr_move_k2}× Gold` : ""].filter(Boolean).join(" + ") || "nichts";
@@ -2797,7 +2809,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const color = PLAYER[p].color;
     const area = (f.area || [])[p] || 0;
     if (!fac) {
-      const again = R.config && R.config.terr_move > 0 ? ` Der König kann sie auf eigenem Land neu bauen (fest ${R.config.terr_rebuild} Runden, kostenlos).` : "";
+      const again = R.config && R.config.terr_move > 0 ? ` Der König kann sie auf eigenem Land neu bauen (kostenlos, Dauer: ${rebuildRuleText()}).` : "";
       rows.push(`<div class="loc"><b>Fabrik zerstört</b><span class="sub">Ohne Fabrik gibt es kein Einkommen und keine neuen Figuren. Nur der König entscheidet das Spiel noch.${again}</span></div>`);
       return rows;
     }
@@ -2950,19 +2962,45 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!isTerr() || !live || !canAct()) return -1;
     return live.legal.findIndex((a) => a.type === "buy" && a.card === "king_boost");
   }
+  /** Index der erlaubten Aktion "Fabrik hier bauen" (Neubau nach Zerstoerung oder Umzug auf das Feld des Koenigs), sonst -1. */
+  function kingRebuildIdx() {
+    if (!isTerr() || !live || !canAct()) return -1;
+    return live.legal.findIndex((a) => a.type === "rebuild_factory");
+  }
   function hideKingPop() { kingPopOpen = false; $("kingPop").hidden = true; }
-  /** Blase am Koenig: Stufe, Preis und der Knopf "Verbessern". */
+  /** Was "Fabrik hier bauen" kosten und dauern wuerde: Text fuer die Blase am Koenig. */
+  function kingRebuildInfo(f, p, king) {
+    const fac = f.factories.find((x) => x.owner === p);
+    if (!fac) {
+      const n = lostRounds(f, p, king.cell), old = (f.lost_factory || [])[p];
+      const how = rebuildDistOn() && old !== null && old !== undefined ? ` (Abstand zur zerstörten Fabrik auf ${cellName(old)})` : "";
+      return { title: "Fabrik hier bauen", small: `Auf ${cellName(king.cell)}: kostenlos, ${roundsWord(n)}${how}. So lange wehrlos, König gesperrt.` };
+    }
+    const n = relocRounds(fac.cell, king.cell), cost = relocCostText();
+    return { title: "Fabrik hierher umziehen", small: `Von ${cellName(fac.cell)}: ${cost === "nichts" ? "kostenlos" : cost}, ${roundsWord(n)}. So lange kein Ertrag, wehrlos, König gesperrt.` };
+  }
+  /** Blase am Koenig: "Fabrik hier bauen" (wenn der Koenig sie hier bauen darf) und "Koenig verbessern" (wenn er sich verbessern laesst). */
   function renderKingPop() {
     const el = $("kingPop");
-    const idx = kingPopOpen ? kingUpIdx() : -1;
     const f = R && R.frames[fi];
-    const p = f ? f.current : null;
-    const ku = idx >= 0 ? kingUpInfo(f, p) : null;
-    const king = ku && !ku.done ? f.pieces.find((x) => x.king && x.owner === p) : null;
-    const fac = king ? f.factories.find((x) => x.owner === p) : null;
-    if (!king || !fac) { hideKingPop(); return; }
-    el.innerHTML = `<b>König verbessern</b><small>Stufe ${ku.level} von 3: zieht ${ku.extra} Felder weiter</small>` +
-      `<div class="need">${reqHtml(2, catUnits(fac.storage, 2), ku.gold, PLAYER[p].color)}</div><button type="button" class="go">Verbessern</button>`;
+    if (!kingPopOpen || !f || !canAct()) { hideKingPop(); return; }
+    const p = f.current;
+    const king = f.pieces.find((x) => x.king && x.owner === p);
+    const fac = f.factories.find((x) => x.owner === p);
+    const ku = kingUpIdx() >= 0 ? kingUpInfo(f, p) : null;
+    const up = !!(king && fac && ku && !ku.done);
+    const re = !!(king && kingRebuildIdx() >= 0);
+    if (!up && !re) { hideKingPop(); return; }
+    let html = "";
+    if (re) {
+      const ri = kingRebuildInfo(f, p, king);
+      html += `<section class="kp-sec"><b>${escapeHtml(ri.title)}</b><small>${escapeHtml(ri.small)}</small><button type="button" class="go" data-k="rebuild">Hier bauen</button></section>`;
+    }
+    if (up) {
+      html += `<section class="kp-sec"><b>König verbessern</b><small>Stufe ${ku.level} von 3: zieht ${ku.extra} Felder weiter</small>` +
+        `<div class="need">${reqHtml(2, catUnits(fac.storage, 2), ku.gold, PLAYER[p].color)}</div><button type="button" class="go" data-k="up">Verbessern</button></section>`;
+    }
+    el.innerHTML = html;
     el.hidden = false;
     const vr = visRect(), cw = el.offsetWidth, ch = el.offsetHeight;
     const [kx, ky] = cellPx(king.cell), g = geo.U * 0.6;
@@ -2973,8 +3011,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     el.style.top = Math.round(clampY(above ? ky - g - ch : ky + g)) + "px";
   }
   $("kingPop").addEventListener("click", (ev) => {
-    if (!ev.target.closest("button.go")) return;
-    const i = kingUpIdx();
+    const btn = ev.target.closest("button.go");
+    if (!btn) return;
+    const i = btn.dataset.k === "rebuild" ? kingRebuildIdx() : kingUpIdx();
     hideKingPop();
     if (i >= 0) humanAct(i);
   });
@@ -3147,7 +3186,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const king = f.pieces.find((x) => x.king && x.owner === me);
     if (!king) return "";
     const fac = f.factories.find((x) => x.owner === me);
-    if (!fac) return `Fabrik neu bauen: zieh den König auf ein Feld deines Landes; dann steht hier ein Knopf (kostenlos, ${c.terr_rebuild} Runden).`;
+    if (!fac) return `Fabrik neu bauen: zieh den König auf ein Feld deines Landes; dann steht hier ein Knopf (kostenlos, Dauer: ${rebuildRuleText()}).`;
     const rs = relocStatus(f, me);
     return rs ? `Fabrik umziehen geht noch nicht: ${rs.short}. Alle Schritte stehen im Menü der Fabrik (Klick auf die Fabrik); der Knopf erscheint dann auch hier.` : "";
   }
@@ -3360,6 +3399,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     bend: { h: 212, fx: "Um die Ecke ziehen" },
     hop: { h: 128, fx: "Über Figuren springen" },
     pass: { h: 276, fx: "Durch eigene Figuren" },
+    pawn_diagonal: { h: 92, fx: "Bauer zieht diagonal" },
     settle: { h: 24, fx: "Nachbarfelder färben" },
     factory_shift: { h: 30, fx: "Fabrik diagonal rücken" },
     charge: { h: 2, fx: "Alle Figuren +1 Feld" },
@@ -3373,6 +3413,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     shorten: `<path d="M8 31H42M35 24l7 7-7 7"/><path d="M50 31h6" stroke-dasharray="1.5 4" opacity=".6"/>${ART_TXT(30, 16, 14, "−1")}`,
     bend: `<path d="M14 8V32H48M41 25l7 7-7 7"/><circle cx="14" cy="8" r="3.5" fill="#fff" stroke="none"/>`,
     hop: `<circle cx="32" cy="35" r="5" fill="#fff" fill-opacity=".9" stroke="none"/><path d="M8 37Q32 -8 56 37M49 31l7 6-9 2"/>`,
+    pawn_diagonal: `<circle cx="32" cy="24" r="5.5" fill="#fff" fill-opacity=".92" stroke="none"/><path d="M37 19L53 5M45 5h8v8"/><path d="M27 19L11 5M19 5h-8v8"/><path d="M37 29L52 40M27 29L12 40" opacity=".55"/>`,
     pass: `<path d="M6 24H56M48 17l8 7-8 7"/><circle cx="21" cy="24" r="5.5" fill="#fff" fill-opacity=".9" stroke="none"/><circle cx="37" cy="24" r="5.5" fill="#fff" fill-opacity=".9" stroke="none"/>`,
     settle: (() => { let o = ""; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const x = 13.5 + i * 13, y = 3.5 + j * 13; o += (i === 1 && j === 1) ? `<circle cx="${x + 5.5}" cy="${y + 5.5}" r="5.2" fill="#fff" stroke="none"/>` : `<rect x="${x}" y="${y}" width="11" height="11" rx="1.5" fill="#fff" fill-opacity=".55" stroke="none"/>`; } return o; })(),
     factory_shift: `<path d="M6 38V24l8 4v-4l8 4V16h6v22z" fill="#fff" fill-opacity=".92" stroke="none"/><path d="M32 32L55 9M45 9h10v10"/>`,
@@ -3602,7 +3643,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const v3 = ["Version 3", ...extra,
           `Figuren nur aus Fläche: ${[1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow || 2, l - 1) * (l >= 2 ? c.terr_up_mult || 1 : 1)).join(" / ")}`,
           c.terr_bonus && !(c.terr_bread > 0) ? `Ernte alle ${(c.terr_ripen || []).slice(0, 2).map((n) => n || "jede").join(" / ")} Runden (Eisen / Gold)` : `Ernte alle ${per} Runden (Eisen / Gold / Brot)`,
-          c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Eisen + ${c.terr_move_k2} Gold, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${c.terr_rebuild} Runden` : "kein Fabrik-Umzug",
+          c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Eisen + ${c.terr_move_k2} Gold, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${rebuildDistOn() ? "ebenso nach Entfernung" : `${c.terr_rebuild} Runden`}` : "kein Fabrik-Umzug",
           c.terr_bonus && !(c.terr_bread > 0) ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_bread > 0 ? `Brot im Lager: alle ${c.terr_bread} Runden geerntet, bezahlt die Tempokarten` : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
           c.terr_occupy ? (c.terr_control ? "Erntezähler läuft mit eigener Figur auf dem Feld oder in ihrem Einflussbereich" : "Erntezähler läuft nur mit eigener Figur auf dem Feld") : "Erntezähler läuft ohne Figur",
           c.terr_upkeep ? `Unterhalt: jede Figur kostet je Runde ${c.terr_upkeep_sq ? "ihre Stufe im Quadrat" : "ihre Stufe"} in Fläche (bei Minus löst sich eine Figur auf)` : "",
@@ -3869,7 +3910,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (ri) {
           rows.push(`Fabrik-Umzug hierher (von ${cellName(ri.from)}): ${roundsWord(ri.rounds)}, kostet ${ri.cost}${ri.miss.length ? ` (es fehlt: ${ri.miss.join(", ")})` : ""}. So lange kein Ertrag, alle deine Figuren wehrlos, der König gesperrt.`);
         } else if (R.config.terr_move && o === hp && !f.factories.some((x) => x.owner === hp)) {
-          rows.push(`Fabrik neu bauen (König muss hier stehen): ${roundsWord(R.config.terr_rebuild)}, kostenlos.`);
+          rows.push(`Fabrik neu bauen (König muss hier stehen): ${roundsWord(lostRounds(f, hp, cell))}, kostenlos.`);
         }
       }
     }
@@ -3976,7 +4017,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (v3) {
       const pr = (R.config.terr_ripen || []);
       ttx = { ...ttx,
-        factory: "Fabrik: die einzige des Spielers. Hier erscheinen neue Figuren; am Zugende sammelt sie die Fläche aller mit ihr verbundenen Felder. Betritt ein Gegner sie, wird sie zerstört; der König baut sie dann auf eigenem Land in " + (R.config.terr_rebuild || 3) + " Runden neu. Auch freiwillig kann er sie auf sein Feld umsetzen (Dauer = halbe Entfernung, aufgerundet; der Tooltip über deinem Land nennt sie vorab). Bis sie steht: kein Ertrag, alle Figuren wehrlos, der König gesperrt.",
+        factory: "Fabrik: die einzige des Spielers. Hier erscheinen neue Figuren; am Zugende sammelt sie die Fläche aller mit ihr verbundenen Felder. Betritt ein Gegner sie, wird sie zerstört; der König baut sie dann kostenlos auf eigenem Land neu (Dauer: " + rebuildRuleText() + "). Auch freiwillig kann er sie auf sein Feld umsetzen (Dauer = halbe Entfernung, aufgerundet; der Tooltip über deinem Land nennt sie vorab). Bis sie steht: kein Ertrag, alle Figuren wehrlos, der König gesperrt.",
         pill: bonusOn()
           ? "Lager an der Fabrik: Eisen und Gold als Symbol mit Zahl (Brot wird nicht gelagert)."
           : breadOn()
@@ -4192,6 +4233,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const buyNeedsPiece = (opts) => opts.length > 0 && opts.every(([a]) => a.target !== null && a.target !== undefined);
   function cardMissText(c, piece) {
     const why = piece.king ? "Der König bekommt keine Figurenkarten (für ihn gibt es den Königs-Boost)."
+      : c.key === "pawn_diagonal" ? (piece.perks && piece.perks.pawn_diag ? "Dieser Bauer kann schon diagonal ziehen." : "Diese Karte gibt es nur für Bauern (Stufe 1).")
       : piece.range < 2 ? "Eine Figur der Stufe 1 zieht nur ein Feld: da gibt es nichts zu kürzen, keine Ecke und keinen Sprung."
       : piece.perks && pkn(piece.perks[c.key]) && stackOn() ? `Mehr bringt nichts: eine Figur der Stufe ${piece.range} trägt „${c.name}“ höchstens ${piece.range - 1}-mal (der letzte Schritt ist das Ziel).`
       : piece.perks && pkn(piece.perks[c.key]) ? "Diese Figur kann das schon."
@@ -4219,14 +4261,50 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     renderPanel();
     requestAnimationFrame(draw);
   }
+  /** Ein Tipp auf eine Figur mit laufender Route unterbricht sie (auch ausser der Reihe). true = Route beendet. */
+  function interruptRoute(cell) {
+    if (cell === null || !routes.length || mode !== "play" || !live || R !== liveR) return false;
+    const piece = R.frames[R.frames.length - 1].pieces.find((q) => q.cell === cell);
+    if (!piece || !routes.some((r) => r.piece === piece.id)) return false;
+    routes = routes.filter((r) => r.piece !== piece.id);
+    routeNote = "Route unterbrochen.";
+    renderTurnBox();
+    requestAnimationFrame(draw);
+    return true;
+  }
+  /**
+   * Handy-Premove: Tipp auf ein Feld, das die gewaehlte Figur nicht in einem Zug erreicht, plant einen Weg dorthin;
+   * jedes weitere Feld verlaengert ihn, dasselbe Feld noch einmal tippen startet ihn, ein Tipp auf die Figur
+   * verwirft ihn. true = der Tipp ist verbraucht.
+   */
+  function tapRoute(f, cell) {
+    const piece = selected === null ? null : f.byId.get(selected);
+    if (!piece || cell === null) return false;
+    const building = ctrlPath && ctrlPath.piece === selected;
+    if (building) {
+      if (cell === piece.cell) { ctrlPath = null; routeNote = "Weg verworfen."; renderTurnBox(); requestAnimationFrame(draw); return true; }
+      const last = ctrlPath.cells[ctrlPath.cells.length - 1];
+      if (cell === last) { commitRoute(piece, ctrlPath.cells); return true; }
+      if (f.pieces.some((q) => q.cell === cell)) return false; // andere Figur: Auswahl wechselt, der Weg faellt weg
+      routeClick(cell, "tile");
+      return true;
+    }
+    if (cell === piece.cell || f.pieces.some((q) => q.cell === cell)) return false;
+    if (live.legal.some((a) => a.type === "move" && a.piece === selected && a.to === cell)) return false; // ein Zug: zweimal tippen zieht
+    pendingMove = null;
+    routeClick(cell, "tile");
+    return true;
+  }
   function boardClick(cell) {
     hideKingPop();
     if (!canAct()) {
+      if (interruptRoute(cell)) return;
       // Auch ausser der Reihe zeigt ein Klick auf die eigene Fabrik, was sie kann und wann.
       if (cell !== null && isTerr()) facClick(cell);
       return;
     }
     const f = R.frames[fi];
+    interruptRoute(cell); // ein Tipp auf eine Figur mit Route unterbricht sie; die Figur wird danach ganz normal gewaehlt
     if (shiftMode) {
       const k = cell === null ? -1 : live.legal.findIndex((a) => a.type === "shift_factory" && a.to === cell);
       shiftMode = false; routeNote = "";
@@ -4247,6 +4325,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       routeNote = "";
       renderPanel();
     }
+    if (touchUi() && selected !== null && tapRoute(f, cell)) return;
     if (cell !== null && selected !== null) {
       const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === cell);
       if (i >= 0) {
@@ -4258,9 +4337,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
     pendingMove = null;
+    ctrlPath = null;
     const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
     // Der Koenig leuchtet, wenn er sich verbessern laesst: Antippen zeigt die Blase mit dem Knopf (er ist trotzdem waehlbar)
-    if (piece && piece.king && kingUpIdx() >= 0) { kingPopOpen = true; renderKingPop(); }
+    if (piece && piece.king && (kingUpIdx() >= 0 || kingRebuildIdx() >= 0)) { kingPopOpen = true; renderKingPop(); }
     if (!piece && cell !== null && isTerr() && facClick(cell)) return;
     // Andere Figuren (auch gegnerische) und Figuren ohne Zug: nur ihre Ziehfelder zeigen.
     if (!(piece && destinations(piece.id).length) && inspectAt(cell)) { selected = null; return; }
@@ -4439,7 +4519,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const at = piece ? r.cells.indexOf(piece.cell) : -1;
       if (at >= 0) drawRoute(r.cells.slice(at), PLAYER[r.owner].color, 0.85, false);
     }
-    if (ctrlPath) drawRoute(ctrlPath.cells, accent, 0.8, false);
+    if (ctrlPath) {
+      drawRoute(ctrlPath.cells, accent, 0.8, false);
+      if (touchUi() && ctrlPath.cells.length > 1) {
+        // Handy: das letzte Feld ist markiert, nochmal tippen startet den Weg
+        const last = ctrlPath.cells[ctrlPath.cells.length - 1];
+        outlineCell(last, accent, 0.38);
+        ctx.save(); ctx.lineWidth = Math.max(3, geo.U * 0.08); ctx.strokeStyle = "#fff"; cellPath(last, 0.7); ctx.stroke(); ctx.restore();
+      }
+    }
     const prev = previewRoute();
     if (prev) drawRoute(prev, accent, 0.72, true);
   }
@@ -4530,7 +4618,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_move", label: "König baut die Fabrik neu", ph: () => "1", hint: () => "1 = Umzug und Neubau nach einer Zerstörung erlaubt; 0 = aus." },
       { key: "terr_move_k1", label: "Umzug: Kat 1", ph: () => "0", hint: () => "0 = der Umzug ist kostenlos. Sonst Kosten aus dem Lager der Fabrik." },
       { key: "terr_move_k2", label: "Umzug: Kat 2", ph: () => "0" },
-      { key: "terr_rebuild", label: "Neubau nach Zerstörung (Runden)", ph: () => "3", hint: () => "Fest, egal wo; beim Umzug zählt die Entfernung." },
+      { key: "terr_rebuild", label: "Neubau nach Zerstörung (Runden)", ph: () => "3", hint: () => "Feste Bauzeit nach einer Zerstörung, wenn die Entfernungsregel unten aus ist (oder der alte Platz unbekannt ist)." },
+      { key: "terr_rebuild_dist", label: "Neubau nach Entfernung", ph: () => "1", hint: () => "1 = auch nach einer Zerstörung zählt die Entfernung: halbe Strecke vom alten Platz der Fabrik bis zum König, aufgerundet, mindestens 1 Runde (wie beim Umzug). 0 = fest „Neubau nach Zerstörung“ Runden." },
       { key: "terr_bonus", label: "Kat 3: 2^k Fläche je Runde", ph: () => "1", hint: () => "1 = k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich, Kat 3 wird nicht geerntet; 0 = Kat 3 wird wie Kat 1 geerntet." },
       { key: "terr_occupy", label: "Zähler nur mit eigener Figur", ph: () => "1", hint: () => "1 = der Erntezähler eines Feldes läuft nur, wenn am Ende deines Zugs eine eigene Figur (auch der König) darauf steht, sonst pausiert er (ohne Rückstellung); 0 = er läuft immer. Nur mit Erntezähler." },
       { key: "terr_cardany", label: "Karten auf jede eigene Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung wirken sofort auf eine eigene Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2, nicht auf den König); 0 = sie liegen neben der Fabrik und wirken auf die nächste gebaute Figur." },
@@ -4615,7 +4704,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const price = [...row.querySelectorAll("[data-ced-price]")];
       const changed = price.some((x) => x.value.trim() !== "" && Number(x.value) !== Number(x.placeholder));
       row.classList.toggle("off", !cb.checked);
-      row.classList.toggle("changed", changed || !cb.checked);
+      row.classList.toggle("changed", changed || String(Number(cb.checked)) !== cb.dataset.cedDef);
     }
   }
   function renderCardEditor() {
@@ -4625,7 +4714,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       host.innerHTML = `<p class="ced-wait">${wasm ? "Dieser Spielkern kennt den Karten-Editor noch nicht. Bitte die neueste Seite laden." : "Die Karten werden vom Spielkern geladen …"}</p>`;
       return;
     }
-    const saved = pendingCards || { price: {}, off: [], custom: [] };
+    const saved = pendingCards || { price: {}, off: [], on: [], custom: [] };
     pendingCards = null;
     customCards = (Array.isArray(saved.custom) ? saved.custom : [])
       .filter((c) => c && typeof c.name === "string" && Array.isArray(c.parts) && Array.isArray(c.price))
@@ -4654,7 +4743,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       name.className = "ced-name";
       const lab = document.createElement("label");
       const cb = document.createElement("input");
-      cb.type = "checkbox"; cb.dataset.cedPool = c.key; cb.checked = !(saved.off || []).includes(c.key);
+      cb.type = "checkbox"; cb.dataset.cedPool = c.key; cb.dataset.cedDef = c.default_off ? "0" : "1";
+      cb.checked = c.default_off ? (saved.on || []).includes(c.key) : !(saved.off || []).includes(c.key);
       cb.title = "Im Pool: kann im Markt der Partie auftauchen";
       cb.addEventListener("change", cedMarkRows);
       const b = document.createElement("b");
@@ -4668,6 +4758,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (c.instant) {
         const tag = document.createElement("i");
         tag.className = "ced-tag"; tag.textContent = "sofort"; tag.title = "Wirkt sofort, ohne Figur";
+        lab.appendChild(tag);
+      }
+      if (c.default_off) {
+        const tag = document.createElement("i");
+        tag.className = "ced-tag"; tag.textContent = "Standard aus"; tag.title = "Liegt standardmäßig nicht im Markt; Haken setzen, um sie in den Pool zu nehmen";
         lab.appendChild(tag);
       }
       const small = document.createElement("small");
@@ -4773,7 +4868,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!catalog || !$("cardEditor")) return out;
     for (const c of poolCards()) {
       const cb = document.querySelector(`#cardEditor [data-ced-pool="${c.key}"]`);
-      if (cb && !cb.checked) out.push(`pool.${c.key}=0`);
+      if (cb && !cb.checked && !c.default_off) out.push(`pool.${c.key}=0`);
+      if (cb && cb.checked && c.default_off) out.push(`pool.${c.key}=1`);
       const ins = [...document.querySelectorAll(`#cardEditor [data-ced-price="${c.key}"]`)];
       if (!ins.some((x) => x.value.trim() !== "")) continue;
       const vals = ins.map((x, i) => {
@@ -4804,15 +4900,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Stand des Editors zum Merken (localStorage). */
   function cardsState() {
-    if (!catalog || !$("cardEditor")) return pendingCards || { price: {}, off: [], custom: [] };
-    const price = {}, off = [];
+    if (!catalog || !$("cardEditor")) return pendingCards || { price: {}, off: [], on: [], custom: [] };
+    const price = {}, off = [], on = [];
     for (const c of poolCards()) {
       const cb = document.querySelector(`#cardEditor [data-ced-pool="${c.key}"]`);
-      if (cb && !cb.checked) off.push(c.key);
+      if (cb && !cb.checked && !c.default_off) off.push(c.key);
+      if (cb && cb.checked && c.default_off) on.push(c.key);
       const ins = [...document.querySelectorAll(`#cardEditor [data-ced-price="${c.key}"]`)];
       if (ins.some((x) => x.value.trim() !== "")) price[c.key] = ins.map((x) => x.value.trim());
     }
-    return { price, off, custom: customCards.map((c) => ({ name: c.name, parts: c.parts.map((p) => p.slice()), price: c.price.slice() })) };
+    return { price, off, on, custom: customCards.map((c) => ({ name: c.name, parts: c.parts.map((p) => p.slice()), price: c.price.slice() })) };
   }
   const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), der Markt wird jede Partie zufällig aus einem großen Kartenpool gezogen (Preise in Eisen / Gold / Brot, im Karten-Editor änderbar, eigene Karten baubar; die Ecke darf nur am Ende des Wegs abbiegen), Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik kostenlos umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Brot-Felder (Kat 3) bringen jede Runde zusätzlich 2^k Fläche. Jede Figur kostet je Runde ihre Stufe an Unterhalt (bei Minus löst sich eine Figur auf), und der König wird direkt mit Gold verbessert.";
   const MENU_KEY = "spacevitan-menu-v4";
@@ -5229,7 +5326,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (a.type === "rebuild_factory") {
       const king = f.pieces.find((p) => p.king && p.owner === f.current);
       const fac = f.factories.find((x) => x.owner === f.current), c = R.config;
-      if (!fac) return `Fabrik neu bauen auf ${cellName(king.cell)}: kostenlos, ${c.terr_rebuild} Runden; dabei bist du wehrlos und der König darf sich nicht bewegen`;
+      if (!fac) return `Fabrik neu bauen auf ${cellName(king.cell)}: kostenlos, ${roundsWord(lostRounds(f, f.current, king.cell))}; dabei bist du wehrlos und der König darf sich nicht bewegen`;
       const n = relocRounds(fac.cell, king.cell);
       const cost = relocCostText();
       return `Fabrik hierher umziehen (${cellName(fac.cell)} → ${cellName(king.cell)}): kostet ${cost}, dauert ${n} Runde${n === 1 ? "" : "n"}; so lange kein Ertrag, alle Figuren wehrlos, König gesperrt`;
@@ -5248,7 +5345,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const fac = f.factories.find((x) => x.owner === me);
     const rebuild = R.config && R.config.terr_move > 0;
     if (!fac) return rebuild
-      ? `Deine Fabrik ist zerstört. Der König kann sie auf eigenem Land neu bauen (Knopf unten, ${R.config.terr_rebuild} Runden, kostenlos); bis dahin gibt es keine neuen Figuren und kein Einkommen.`
+      ? `Deine Fabrik ist zerstört. Der König kann sie auf eigenem Land neu bauen (Knopf unten oder Tipp auf den König, kostenlos, Dauer: ${rebuildRuleText()}); bis dahin gibt es keine neuen Figuren und kein Einkommen.`
       : "Deine Fabrik ist zerstört: keine neuen Figuren. Schütze den König und jage den gegnerischen.";
     if (fac.building > 0) return `Deine Fabrik ist im Bau: noch ${fac.building} Runde${fac.building === 1 ? "" : "n"}. Kein Einkommen, alle Figuren sind wehrlos (sie färben nichts und schlagen nicht), der König darf sich nicht bewegen.`;
     const blocked = f.pieces.some((x) => x.cell === fac.cell);
@@ -5300,8 +5397,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         : selected !== null
         ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur. Shift zeigt den ganzen Weg, Shift+Klick läuft ihn automatisch; Strg+Klick wählt Kacheln einzeln (Strg loslassen = los)."
         : isTerr() ? territorySub(now) : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
-      if (routes.length) sub = `Eine Route läuft von selbst weiter (Esc bricht ab). ${sub}`;
-      if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
+      if (routes.length) sub = `Eine Route läuft von selbst weiter (${touchUi() ? "Figur antippen" : "Esc"} bricht ab). ${sub}`;
+      if (ctrlPath) sub = touchUi()
+        ? `Premove über ${ctrlPath.cells.length - 1} ${ctrlPath.cells.length === 2 ? "Feld" : "Felder"}: weiteres Feld antippen verlängert ihn, dasselbe Feld nochmal startet ihn, die Figur antippen verwirft ihn.`
+        : `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
     }
     if (canAct() && now.charge) sub = `Sturmangriff: in diesem Zug ziehen alle Figuren ein Feld weiter. ${sub}`;

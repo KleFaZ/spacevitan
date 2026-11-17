@@ -135,6 +135,11 @@ pub struct Config {
     /// Version 3: Bauzeit in Runden, wenn die Fabrik zerstoert wurde (Neubau ohne Kosten).
     /// Beim Umzug entspricht die Bauzeit der Entfernung zum alten Platz.
     pub terr_rebuild: u32,
+    /// Version 3.2: auch nach einer Zerstoerung zaehlt die Entfernung: der Neubau dauert so lange
+    /// wie ein Umzug von der alten Fabrik zum Koenig (halbe Entfernung, aufgerundet, mindestens
+    /// 1), kostenlos und nur auf eigenem Land. `terr_rebuild` gilt dann nur noch, wenn der alte
+    /// Platz unbekannt ist. 0 = fest `terr_rebuild` Runden, egal wo.
+    pub terr_rebuild_dist: bool,
     /// Version 3 (alte Fassung): Kat 3 laesst sich gegen Flaeche tauschen: `k` Einheiten im Lager
     /// ergeben einmalig `2^k` Flaeche. Geht nur ohne `terr_bonus` (Kat 3 wird dann geerntet).
     pub terr_trade: bool,
@@ -295,6 +300,7 @@ impl Config {
             terr_move_k1: 0,
             terr_move_k2: 0,
             terr_rebuild: 0,
+            terr_rebuild_dist: true,
             terr_trade: false,
             terr_bonus: false,
             terr_occupy: false,
@@ -313,7 +319,7 @@ impl Config {
             terr_upkeep_sq: false,
             terr_yield_lvl: false,
             terr_bread: 0,
-            card_tweaks: crate::cards::CardTweaks::default(),
+            card_tweaks: crate::cards::CardTweaks::standard(),
             board_corners: 0,
         }
     }
@@ -452,6 +458,7 @@ impl Config {
             "terr_move_k1" => self.terr_move_k1 = as_u32(value)?,
             "terr_move_k2" => self.terr_move_k2 = as_u32(value)?,
             "terr_rebuild" => self.terr_rebuild = as_u32(value)?,
+            "terr_rebuild_dist" => self.terr_rebuild_dist = value != 0,
             "terr_trade" => self.terr_trade = value != 0,
             "terr_bonus" => self.terr_bonus = value != 0,
             "terr_occupy" => self.terr_occupy = value != 0,
