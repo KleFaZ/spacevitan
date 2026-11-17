@@ -77,7 +77,7 @@ select { padding: 7px 10px; max-width: min(460px, 100%); min-width: 0; }
 }
 .board-wrap { position: relative; }
 .board-frame, .board-scroll { position: relative; }
-.zoombar, .mini, .pendbar { display: none; }
+.zoombar, .mini { display: none; }
 canvas { display: block; width: 100%; height: auto; touch-action: manipulation; border-radius: 6px; }
 .tip {
   position: absolute; z-index: 2; pointer-events: none; max-width: 240px;
@@ -372,7 +372,63 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .armed { background: #3a3112; border-color: #8a741a; color: #f5d777; } }
 :root[data-theme="dark"] .armed { background: #3a3112; border-color: #8a741a; color: #f5d777; }
 :root { --gutl: max(16px, env(safe-area-inset-left, 0px)); --gutr: max(16px, env(safe-area-inset-right, 0px)); }
-/* Handy, 2D: Ressourcen oben, das Brett ueber die ganze Breite, darunter die Kartenoptionen */
+/* Spielkarten (Gebietsmodus): Bild, Name, kurzer Effekt, Preis. Bunt = kaufbar, grau = noch nicht. */
+.pcard, .market li.pcard { --ch: 210; position: relative; display: flex; flex-direction: column; padding: 0; border: 2px solid hsl(var(--ch) 45% 36%); border-radius: 10px; background: #fbf6e6; color: #2a2418; overflow: hidden; cursor: pointer; aspect-ratio: 5 / 7.6; min-width: 0; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); font-size: 0.8rem; line-height: 1.15; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; font-family: var(--font-body); text-align: left; }
+.pcard .pc-name { display: block; padding: 3px 3px 2px; text-align: center; font-family: var(--font-display); font-weight: 800; font-size: 0.82em; background: hsl(var(--ch) 50% 30%); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pcard .pc-art { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 38%, hsl(var(--ch) 72% 64%), hsl(var(--ch) 62% 36%)); }
+.pcard .pc-art svg { width: 92%; height: 92%; }
+.pcard .pc-fx { padding: 3px 3px 2px; text-align: center; font-size: 0.68em; font-weight: 700; min-height: 2.5em; display: flex; align-items: center; justify-content: center; }
+.pcard .pc-price { display: flex; justify-content: center; flex-wrap: wrap; gap: 0 5px; padding: 2px 3px 3px; background: rgb(0 0 0 / 0.07); font-size: 0.68em; min-height: 1.9em; align-items: center; }
+.pcard .pc-price .req { color: #5a5240; font-size: 1em; gap: 2px; }
+.pcard .pc-price .req.ok { color: #1f7a3f; }
+.pcard .pc-price .sym { width: 1.35em; height: 1.35em; vertical-align: 0; }
+.pcard.can, .market li.pcard.can { box-shadow: 0 0 0 2px #f2c94c, 0 3px 12px rgb(0 0 0 / 0.38); }
+.pcard.off, .market li.pcard.off { filter: grayscale(1) brightness(0.9); opacity: 0.5; box-shadow: none; }
+.pcard:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.cardpop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(0 0 0 / 0.58); }
+.cardpop .cp-box { width: min(350px, 100%); max-height: 100%; overflow: auto; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 16px 44px rgb(0 0 0 / 0.55); }
+.cardpop .cp-head { display: flex; gap: 12px; align-items: flex-start; }
+.cardpop .pcard { flex: none; width: 104px; cursor: default; font-size: 0.9rem; }
+.cardpop .cp-info { flex: 1; min-width: 0; }
+.cardpop .cp-info h3 { margin: 0; font-family: var(--font-display); font-size: 1.15rem; }
+.cardpop .cp-info p { margin: 5px 0 0; font-size: 0.86rem; line-height: 1.35; }
+.cardpop .cp-info .cp-st { font-weight: 700; color: var(--muted); }
+.cardpop .cp-info .cp-st.ok { color: #2b7a3f; }
+.cardpop .cp-need { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 6px; font-size: 0.9rem; }
+.cardpop .cp-btns { display: flex; gap: 8px; }
+.cardpop .cp-btns .btn { flex: 1; min-height: 44px; font-weight: 700; cursor: pointer; }
+.cardpop .cp-btns .btn:disabled { cursor: default; opacity: 0.5; }
+.cardpop .cp-btns .btn.go { background: #2f9e55; border-color: #2f9e55; color: #fff; }
+.kingpop { position: absolute; z-index: 4; width: 196px; padding: 8px 10px 10px; background: var(--surface); color: var(--ink); border: 2px solid #f2c94c; border-radius: 12px; box-shadow: 0 0 16px rgb(242 201 76 / 0.6), 0 6px 18px rgb(0 0 0 / 0.3); font-size: 0.8rem; line-height: 1.25; }
+.kingpop[hidden] { display: none; }
+.kingpop b { display: block; font-size: 0.86rem; }
+.kingpop small { display: block; color: var(--muted); margin-top: 1px; }
+.kingpop .need { display: flex; gap: 8px; margin-top: 4px; }
+.kingpop button.go { width: 100%; margin-top: 7px; padding: 9px 8px; min-height: 40px; font-weight: 800; background: #f2c94c; color: #3a2a00; border: 1px solid #c9962a; border-radius: 8px; cursor: pointer; }
+.kingpop button.go:disabled { opacity: 0.55; cursor: default; }
+.market.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 701px) { .market.cards .pcard { aspect-ratio: 5 / 6.4; } }
+.faccard.open.slim { width: min(300px, calc(100% - 12px)); }
+.faccard.slim .fc-head { padding: 6px 9px; }
+.faccard.slim .fc-sum small:empty { display: none; }
+.faccard.slim .fc-body { padding: 6px 8px 8px; gap: 5px; }
+.faccard.slim .fc-sec { gap: 4px; }
+.faccard.slim .fc-act { grid-template-columns: 26px minmax(0, 1fr) auto; padding: 4px 7px; gap: 0 7px; }
+.faccard.slim .fc-act .lb small { font-size: 0.64rem; margin-left: 4px; }
+.faccard.slim .fc-act .need { font-size: 0.7rem; gap: 0 8px; }
+.faccard.slim .fc-act .go { font-size: 0.7rem; }
+.faccard.slim .fc-shift { padding: 5px 8px; font-size: 0.78rem; }
+/* Handy: schlanke Kopfzeile (Name und "Neue Partie"), keine Reiter */
+@media (max-width: 700px) {
+  body { padding-top: 6px; padding-bottom: 16px; }
+  .top { margin-bottom: 6px; gap: 6px 12px; }
+  .brand { flex-wrap: nowrap; gap: 10px; align-items: center; }
+  .brand h1 { font-size: 1.2rem; white-space: nowrap; }
+  .brand h1 span { font-size: 0.72rem; }
+  .brand .tabs { display: none; }
+  .brand .btn { padding: 4px 10px; font-size: 0.82rem; white-space: nowrap; }
+}
+/* Handy, 2D: Ressourcen oben (klein), das Brett ueber die ganze Breite, darunter die vier Spielkarten */
 @media (max-width: 700px) {
   html.v2d .board-scroll { touch-action: pan-x pan-y; }
   html.v2d.pz .board-scroll { overflow: auto; max-height: 76vh; max-height: 76svh; overscroll-behavior: contain; }
@@ -381,39 +437,36 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   html.v2d .zoombar button { width: 44px; height: 40px; font-size: 1.4rem; line-height: 1; cursor: pointer; border-radius: 10px; padding: 0; }
   html.v2d .zoombar button:disabled { opacity: 0.4; cursor: default; }
   html.v2d.pz .mini { display: block; position: absolute; right: calc(var(--gutr) - 8px); bottom: 8px; z-index: 4; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; opacity: 0.93; touch-action: none; box-shadow: 0 2px 8px rgb(0 0 0 / 0.22); }
-  html.v2d .pendbar:not([hidden]) { display: flex; align-items: center; gap: 8px; position: absolute; top: 6px; left: 8px; right: 8px; z-index: 5; padding: 6px 8px; background: var(--surface); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.25); font-size: 0.85rem; font-weight: 650; }
-  html.v2d .pendbar span { flex: 1; min-width: 0; }
-  html.v2d .pendbar .btn { min-height: 40px; }
-}
   html.v2d body { margin: 0; }
-  html.v2d .layout { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+  html.v2d .layout { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
   html.v2d .layout > .stage, html.v2d .layout > aside { display: contents; }
   html.v2d #playError, html.v2d #error { order: 0; }
-  html.v2d #stockBox { order: 1; gap: 4px; }
+  html.v2d #stockBox { order: 1; gap: 0; }
   html.v2d .board-wrap { order: 2; margin: 0 calc(-1 * var(--gutr)) 0 calc(-1 * var(--gutl)); }
   html.v2d #facDock { order: 3; }
-  html.v2d #marketBox { order: 4; gap: 4px; }
-  html.v2d #turnBox { order: 5; margin-top: 0; }
+  html.v2d #marketBox { order: 4; gap: 0; }
+  html.v2d #turnBox { order: 5; margin-top: 0; padding: 6px 10px; gap: 4px; }
   html.v2d .controls { order: 6; margin-top: 0; }
   html.v2d .status { order: 7; margin: 0 2px; }
   html.v2d #more { order: 8; }
   html.v2d canvas { border-radius: 0; }
   html.v2d #stockTitle { display: none; }
-  html.v2d #stock.terr > :not(.resbar):not(.netline):not(.warn) { display: none; }
+  html.v2d #stock.terr > :not(.resbar):not(.warn):not(.armed) { display: none; }
   html.v2d #stock.terr .resbar { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
-  html.v2d #stock.terr .resbar .rs { flex-direction: column; justify-content: flex-start; gap: 1px; padding: 4px 2px 3px; text-align: center; }
-  html.v2d #stock.terr .resbar .rs b { font-size: 1.05rem; line-height: 1.1; }
-  html.v2d #stock.terr .netline { font-size: 0.72rem; }
-  html.v2d #marketBox > h2 { margin-bottom: 0; }
-  html.v2d #marketLegend { display: none; }
-  html.v2d #market { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
-  html.v2d #market li { padding: 5px 7px; }
-  html.v2d .market .copt .ct { flex-direction: column; gap: 0; }
-  html.v2d .market .copt .st { text-align: left; }
-  html.v2d .market .copt .tx { display: none; }
+  html.v2d #stock.terr .resbar .rs { flex-direction: row; justify-content: center; align-items: center; gap: 3px; padding: 3px 2px; border-radius: 7px; }
+  html.v2d #stock.terr .resbar .rs .sym { width: 16px; height: 16px; vertical-align: 0; }
+  html.v2d #stock.terr .resbar .rs b { font-size: 0.9rem; line-height: 1; }
+  html.v2d #stock.terr .resbar .rs .gr { font-size: 0.64rem; }
+  html.v2d #stock.terr .resbar .rs small.u { display: none; }
+  html.v2d .armed { margin: 4px 0 0; padding: 4px 8px; font-size: 0.74rem; }
+  html.v2d #marketBox > h2, html.v2d #marketBox > details, html.v2d #marketLegend { display: none; }
+  html.v2d #market { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  html.v2d #market li.pcard.king { display: none; }
+  html.v2d #market li.copt.note { grid-column: 1 / -1; }
   html.v2d .faccard.docked { margin-top: 0; max-width: none; }
-  html.v2d.facopen #marketBox { display: none; }
-  html.v2d .faccard.docked .fc-sum small { display: none; }
+  html.v2d .faccard.docked.quiet { display: none; }
+  html.v2d #hint small { font-size: 0.76rem; }
+  html.v2d .actions .note.mk { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
@@ -522,13 +575,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         <div class="board-scroll" id="boardScroll">
           <canvas id="board" aria-label="Isometrisches Spielbrett"></canvas>
           <div id="tip" class="tip" hidden></div>
+          <div id="kingPop" class="kingpop" hidden></div>
         </div>
         <canvas id="mini" class="mini" aria-label="Übersicht: Tippen oder Ziehen verschiebt den Ausschnitt"></canvas>
-        <div class="pendbar" id="pendBar" hidden>
-          <span id="pendText"></span>
-          <button type="button" id="pendOk" class="btn primary">Ziehen</button>
-          <button type="button" id="pendNo" class="btn" aria-label="Abbrechen">✕</button>
-        </div>
       </div>
       <div class="zoombar" id="zoomBar">
         <span id="zoomLabel" aria-live="polite">Ganzes Brett</span>
@@ -607,6 +656,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     </details>
   </aside>
 </main>
+<div id="cardPop" class="cardpop" hidden role="dialog" aria-modal="true" aria-label="Karte"></div>
 
 <script type="application/json" id="samples">[]</script>
 <script type="application/octet-stream" id="wasm"></script>
@@ -685,6 +735,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   let pendingMove = null; // Handy: Zielfeld, das auf die Bestaetigung wartet (zweites Tippen)
   let zoomLevel = 0;   // Handy, 2D: 0 = ganzes Brett, 1 = mittel, 2 = nah
   let cardMode = null; // Version 3: { card } = Karte gewaehlt, die Figur dafuer steht noch aus
+  let cardPopKey = null;   // Version 3.2: Karte, deren Fenster offen ist
+  let kingPopOpen = false; // Version 3.2: Blase "Koenig verbessern" am Koenig
+  let kingGlowDrawn = false, glowTimer = 0; // Leuchten des Koenigs: Puls ueber einen Zeitgeber
   let inspect = null;  // { R, fi, id, cells } = Ziehfelder einer beliebig angeklickten Figur (auch gegnerisch)
   let hoverReach = null;  // { R, fi, id, cells } = Ziehfelder der Figur unter dem Mauszeiger (verschwinden mit der Maus)
   let fx = [];         // Blitze: eine Karte hat eine Figur verbessert { R, id, start, dur, card }
@@ -980,6 +1033,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const phoneOK = () => !view3d && window.matchMedia("(max-width: 700px)").matches;
   /** Wie phoneOK, aber nur mit Fingerbedienung: dort bestaetigt ein zweites Tippen jeden Zug. */
   const touchUi = () => phoneOK() && window.matchMedia("(pointer: coarse)").matches;
+  /** Schmales Fenster (Handy), egal ob 2D oder 3D: Fabrik-Menue und Kopfzeile fallen schlanker aus. */
+  const compactUi = () => window.matchMedia("(max-width: 700px)").matches;
   const ZOOM_NAMES = ["Ganzes Brett", "Mittel", "Nah"];
   /** Feldbreite der Zoomstufen in Pixeln (Stufe 0 = Brett passt in die Breite). */
   const zoomU = (fit, level) => Math.min(96, Math.max(fit, level === 1 ? Math.max(fit * 1.35, 52) : Math.max(fit * 1.9, 76)));
@@ -1052,7 +1107,6 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     $("zoomOut").disabled = zoomLevel <= 0;
     $("zoomIn").disabled = zoomLevel >= 2;
     $("zoomLabel").textContent = ZOOM_NAMES[zoomLevel];
-    updatePend();
   }
   /** Neue Zoomstufe; `cell` kommt in die Bildmitte, sonst bleibt die Mitte des Ausschnitts. */
   function setZoom(level, cell) {
@@ -1177,32 +1231,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const end = (ev) => { if (ev.touches.length < 2) pinch = null; };
     sc.addEventListener("touchend", end, { passive: true });
     sc.addEventListener("touchcancel", end, { passive: true });
-    $("pendOk").addEventListener("click", () => confirmPending());
-    $("pendNo").addEventListener("click", () => { pendingMove = null; renderTurnBox(); updatePend(); requestAnimationFrame(draw); });
   })();
   let lastMultiTouch = 0;
   /** Zug mit dem Finger: erst Zielfeld antippen (wird markiert), dann bestaetigen. */
   function pendingValid() {
     if (pendingMove === null || selected === null || !canAct()) return false;
     return live.legal.some((a) => a.type === "move" && a.piece === selected && a.to === pendingMove);
-  }
-  function updatePend() {
-    const bar = $("pendBar");
-    if (!bar) return;
-    const on = touchUi() && pendingValid();
-    bar.hidden = !on;
-    if (on) {
-      const f = R.frames[fi];
-      const hostile = f.pieces.some((q) => q.cell === pendingMove && q.owner !== f.current) || f.factories.some((x) => x.cell === pendingMove && x.owner !== f.current);
-      $("pendText").textContent = `${hostile ? "Schlagen auf" : "Ziehen nach"} ${cellName(pendingMove)}?`;
-      $("pendOk").textContent = hostile ? "Schlagen" : "Ziehen";
-    }
-  }
-  function confirmPending() {
-    if (!pendingValid()) return;
-    const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === pendingMove);
-    pendingMove = null;
-    if (i >= 0) humanAct(i);
   }
   function iso(x, y) {
     if (geo.flat) {
@@ -2088,6 +2122,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function draw(now) {
     if (!R || !geo) return;
     refreshHoverReach();
+    kingGlowDrawn = false;
     const { dpr } = geo;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, geo.cssW, geo.cssH);
@@ -2223,6 +2258,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const fresh = prev && !prev.fById.has(fac.id);
       objs.push({ d: depth(x, y), o: 3, x, alpha: fresh ? k : 1, fn: () => { const [cx, cy] = iso(x, y); drawFactory(cx, cy, PLAYER[fac.owner].color, fac); } });
     }
+    const gh = ghostBuild();
+    if (gh) {
+      const [gx, gy] = R.board.cells[gh.cell];
+      objs.push({ d: depth(gx, gy) + 0.0005, o: 3.5, x: gx, alpha: 0.7, fn: () => { const [cx, cy] = iso(gx, gy); drawUnit(cx, cy + geo.W * 0.02, "#8d949c", { level: gh.level, range: gh.level, perks: {}, king: false }); } });
+    }
     if (prev) {
       for (const fac of prev.factories) {
         if (!f.fById.has(fac.id)) {
@@ -2267,6 +2307,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     drawFx(now);
     drawMini();
     if (tween || fx.length) requestAnimationFrame(draw);
+    // Der leuchtende Koenig pulsiert: ein paar Bilder je Sekunde reichen
+    if (kingGlowDrawn && !reduceMotion && !glowTimer) glowTimer = setTimeout(() => { glowTimer = 0; requestAnimationFrame(draw); }, 120);
   }
 
   /** Pausezeichen an der Figur, die in diesem Zug eine Karte bekam und deshalb ruht. */
@@ -2424,10 +2466,29 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     drawPieceBody(p, x, y);
   }
+  /** Der Koenig kann mit Gold verbessert werden: goldener Schein und Ring, die langsam pulsieren. */
+  function drawKingGlow(cx, cy) {
+    kingGlowDrawn = true;
+    const W = geo.W, ph = reduceMotion ? 0.6 : 0.5 + 0.5 * Math.sin(performance.now() / 300);
+    const gy = geo.flat ? cy : cy - W * 0.3, r = W * (0.88 + 0.22 * ph);
+    ctx.save();
+    const g = ctx.createRadialGradient(cx, gy, r * 0.1, cx, gy, r);
+    g.addColorStop(0, `rgba(255,240,150,${0.9 + 0.1 * ph})`);
+    g.addColorStop(0.45, `rgba(255,205,40,${0.55 + 0.2 * ph})`);
+    g.addColorStop(1, "rgba(255,190,20,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, gy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `rgba(255,248,190,${0.7 + 0.3 * ph})`;
+    ctx.lineWidth = Math.max(2.5, W * 0.06);
+    ctx.shadowColor = "rgba(255,210,60,0.95)"; ctx.shadowBlur = W * 0.35;
+    ctx.beginPath(); ctx.arc(cx, gy, W * 0.46, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
   function drawPieceBody(p, x, y) {
     const [cx, cy] = iso(x, y);
     const color = PLAYER[p.owner].color;
     if (p.king) {
+      if (p.owner === R.frames[fi].current && kingUpIdx() >= 0) drawKingGlow(cx, cy);
       drawKing(cx, cy + geo.W * 0.02, color, { ...p.perks, boost: kingBoostOf(p) });
       // Was der Koenig traegt, als Leiste ueber der Krone.
       const carried = (R.frames[fi].carried || [])[p.owner] || [];
@@ -2872,6 +2933,51 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     requestAnimationFrame(draw);
     return true;
   }
+  /** Das sichtbare Stueck des Brettes (beim Handy-Zoom ein Ausschnitt), in Canvas-Koordinaten. */
+  function visRect() {
+    const sc = $("boardScroll");
+    return { x0: sc.scrollLeft, y0: sc.scrollTop, x1: sc.scrollLeft + Math.min(sc.clientWidth || geo.cssW, geo.cssW), y1: sc.scrollTop + Math.min(sc.clientHeight || geo.cssH, geo.cssH) };
+  }
+  /** Die Figur, die die Fabrik jetzt bauen koennte (hoechste bezahlbare Stufe): sie steht grau auf der Fabrik. */
+  function ghostBuild() {
+    if (!facState || facState.R !== R || !facState.ready || !isTerr() || !canAct()) return null;
+    const level = facState.best;
+    if (!level || !live.legal.some((a) => a.type === "build_unit" && a.level === level)) return null;
+    return { cell: facState.fac.cell, level };
+  }
+  /** Index des erlaubten Kaufs "Koenigs-Boost" (der Koenig leuchtet dann), sonst -1. */
+  function kingUpIdx() {
+    if (!isTerr() || !live || !canAct()) return -1;
+    return live.legal.findIndex((a) => a.type === "buy" && a.card === "king_boost");
+  }
+  function hideKingPop() { kingPopOpen = false; $("kingPop").hidden = true; }
+  /** Blase am Koenig: Stufe, Preis und der Knopf "Verbessern". */
+  function renderKingPop() {
+    const el = $("kingPop");
+    const idx = kingPopOpen ? kingUpIdx() : -1;
+    const f = R && R.frames[fi];
+    const p = f ? f.current : null;
+    const ku = idx >= 0 ? kingUpInfo(f, p) : null;
+    const king = ku && !ku.done ? f.pieces.find((x) => x.king && x.owner === p) : null;
+    const fac = king ? f.factories.find((x) => x.owner === p) : null;
+    if (!king || !fac) { hideKingPop(); return; }
+    el.innerHTML = `<b>König verbessern</b><small>Stufe ${ku.level} von 3: zieht ${ku.extra} Felder weiter</small>` +
+      `<div class="need">${reqHtml(2, catUnits(fac.storage, 2), ku.gold, PLAYER[p].color)}</div><button type="button" class="go">Verbessern</button>`;
+    el.hidden = false;
+    const vr = visRect(), cw = el.offsetWidth, ch = el.offsetHeight;
+    const [kx, ky] = cellPx(king.cell), g = geo.U * 0.6;
+    const clampX = (x) => Math.max(vr.x0 + 6, Math.min(vr.x1 - cw - 6, x));
+    const clampY = (y) => Math.max(vr.y0 + 6, Math.min(vr.y1 - ch - 6, y));
+    const above = ky - g - ch >= vr.y0 + 6;
+    el.style.left = Math.round(clampX(kx - cw / 2)) + "px";
+    el.style.top = Math.round(clampY(above ? ky - g - ch : ky + g)) + "px";
+  }
+  $("kingPop").addEventListener("click", (ev) => {
+    if (!ev.target.closest("button.go")) return;
+    const i = kingUpIdx();
+    hideKingPop();
+    if (i >= 0) humanAct(i);
+  });
   function renderFactoryCard() {
     const card = $("facCard");
     facState = null;
@@ -2917,6 +3023,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (canShift) sub += " · Fabrik rücken möglich";
     else if (shiftStuck) sub += " · Fabrik rücken: kein Zielfeld";
     if (shiftMode) { title = "Fabrik rücken"; sub = "Klick auf ein markiertes Feld (Esc bricht ab)"; cls = "ready"; }
+    const slim = compactUi();
+    if (slim && open && !shiftMode) { title = "Figuren bauen"; sub = info.free ? "" : "Fabrik besetzt: zieh erst die Figur weg"; }
     let body = "";
     if (open) {
       const color = PLAYER[info.p].color, store = info.fac.storage;
@@ -2931,7 +3039,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const go = can ? "Bauen" : !st.ok ? (never ? "nie" : roundsText(st.rounds)) : !info.free ? "Fabrik besetzt" : !acting ? "nicht am Zug" : "nicht möglich";
         const tip = `${unitTitle(st.level)} (Stufe ${st.level}): ${terrPriceText(st.level)}${st.ok ? "" : ` – es fehlt: ${missingText(st)}`}`;
         return act(can ? "ok" : "", can ? `data-build="${st.level}"` : "disabled", symSvg("u" + st.level, 28, color, !st.ok, unitTitle(st.level)),
-          unitTitle(st.level), `Stufe ${st.level}${upkeepOn() ? ` · Unterhalt ${upkeepLevel(st.level)}` : ""}`, go,
+          unitTitle(st.level), compactUi() ? (upkeepOn() ? `Unterhalt ${upkeepLevel(st.level)}` : "") : `Stufe ${st.level}${upkeepOn() ? ` · Unterhalt ${upkeepLevel(st.level)}` : ""}`, go,
           st.needs.map((n) => reqHtml(n.kind, n.have, n.need, color)).join(""), tip);
       });
       // Koenig mit Gold
@@ -2961,16 +3069,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       let nextLine = "";
       if (next && !Number.isFinite(next.rounds)) nextLine = `<p class="muted">${escapeHtml(`${unitTitle(next.level)} (Stufe ${next.level}) kommt nicht: ${missingText(next)}. Verbinde Land mit passenden Vorkommen.`)}</p>`;
       body = `<div class="fc-body">` +
-        `<p class="muted">Je Runde: ${escapeHtml(incomeText(inc))}</p>` +
-        `<div class="fc-sec"><p class="fc-h">Figuren bauen</p>${figs.join("")}${nextLine}</div>` +
-        (king ? `<div class="fc-sec"><p class="fc-h">König verbessern</p>${king}</div>` : "") +
-        (cards.length || cardsNote || stockCard ? `<div class="fc-sec"><p class="fc-h">Karten</p>${cards.join("")}${stockCard}${cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : ""}</div>` : "") +
+        (slim ? "" : `<p class="muted">Je Runde: ${escapeHtml(incomeText(inc))}</p>`) +
+        `<div class="fc-sec">${slim ? "" : `<p class="fc-h">Figuren bauen</p>`}${figs.join("")}${nextLine}</div>` +
+        (!slim && king ? `<div class="fc-sec"><p class="fc-h">König verbessern</p>${king}</div>` : "") +
+        (!slim && (cards.length || cardsNote || stockCard) ? `<div class="fc-sec"><p class="fc-h">Karten</p>${cards.join("")}${stockCard}${cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : ""}</div>` : "") +
         (tradeI >= 0 ? `<button type="button" class="btn fc-shift" data-act="trade">${escapeHtml(actionLabel(live.legal[tradeI], f).split(";")[0])}</button>` : "") +
         (canShift ? `<button type="button" class="btn fc-shift" data-act="shift">${shiftMode ? "Abbrechen" : "Fabrik rücken (statt eines Zuges)"}</button>` : "") +
         relocSection(f, info, acting, moveI) +
         (shiftStuck ? `<p class="muted">Fabrik rücken: kein Zielfeld. Ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett).</p>` : "") + `</div>`;
     }
-    card.className = `faccard ${cls}${open ? " open" : ""}`;
+    card.className = `faccard ${cls}${open ? " open" : ""}${slim ? " slim" : ""}${slim && !open && cls !== "blocked" ? " quiet" : ""}`;
     document.documentElement.classList.toggle("facopen", open);
     card.innerHTML = headHtml(open, title, sub, info) + body;
     card.hidden = false;
@@ -3025,9 +3133,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       `2) ${relocCostText() === "nichts" ? "Der Umzug kostet nichts." : `Im Lager der Fabrik müssen ${relocCostText()} liegen.`} 3) Klick auf diesen Knopf; das ist dein Zug. ` +
       `Dauer = halbe Entfernung zur alten Fabrik, aufgerundet (mindestens 1 Runde); der Tooltip auf deinen Feldern nennt sie vorab. ` +
       `Bis die Fabrik steht: kein Ertrag, alle Figuren wehrlos, König gesperrt.`;
-    return `<div class="fc-sec"><p class="fc-h">Fabrik umziehen · der König baut sie auf seinem Feld</p>` +
+    const slim = compactUi();
+    return `<div class="fc-sec"><p class="fc-h">${slim ? "Fabrik umziehen" : "Fabrik umziehen · der König baut sie auf seinem Feld"}</p>` +
       `<button type="button" class="btn fc-shift" data-act="rebuild" ${can ? "" : "disabled"}>${escapeHtml(label)}</button>` +
-      `<p>${escapeHtml(rs.why)}</p>${explain(escapeHtml(steps))}</div>`;
+      (slim && can ? "" : `<p>${escapeHtml(rs.why)}</p>${slim ? "" : explain(escapeHtml(steps))}`) + `</div>`;
   }
   /** Version 3: Hinweis im Zugkasten, solange der Umzug (oder der Neubau nach einer Zerstoerung) noch nicht geht. */
   function relocTurnHint(f) {
@@ -3053,40 +3162,42 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     card.hidden = false;
     placeFactoryCard(card, info);
   }
-  /** Platz neben der Fabrik waehlen, an dem die Karte moeglichst wenig verdeckt (Figuren, Felder). */
+  /** Platz fuer das Menue waehlen: auf dem Handy ueber der Fabrik, sonst daneben, moeglichst ohne Figuren zu verdecken. */
   function placeFactoryCard(card, info) {
-    // Die geschlossene Leiste (nur Status) liegt in beiden Ansichten direkt unter dem Brett, nicht ueber den Feldern;
-    // das offene Menue ploppt neben der Fabrik auf.
-    // Auf dem Handy bleibt auch das offene Menue unter dem Brett (das Brett bleibt ganz sichtbar, nichts wird verdeckt).
-    const floating = facOpen && !window.matchMedia("(max-width: 700px)").matches;
+    // Die geschlossene Leiste (nur Status) liegt unter dem Brett; das offene Menue ploppt am Brett auf (auch auf dem Handy).
+    const floating = facOpen;
     const target = floating ? canvas.parentElement : $("facDock");
     if (card.parentElement !== target) target.appendChild(card);
     card.classList.toggle("docked", !floating);
     if (!floating) { card.style.left = ""; card.style.top = ""; return; }
-    const W = geo.cssW, H = geo.cssH, cw = card.offsetWidth, ch = card.offsetHeight;
+    const slim = compactUi();
+    const vr = visRect(), cw = card.offsetWidth, ch = card.offsetHeight;
     const f = R.frames[fi];
     const at = (cell) => { const [x, y] = R.board.cells[cell]; return iso(x, y); };
     const [fx, fy] = at(info.fac.cell);
     const g = geo.U * 0.55;
-    const clampX = (x) => Math.max(6, Math.min(W - cw - 6, x));
-    const clampY = (y) => Math.max(6, Math.min(H - ch - 6, y));
+    const clampX = (x) => Math.max(vr.x0 + 6, Math.min(vr.x1 - cw - 6, x));
+    const clampY = (y) => Math.max(vr.y0 + 6, Math.min(vr.y1 - ch - 6, y));
+    const above = [fx - cw / 2, fy - g - ch], below = [fx - cw / 2, fy + g];
+    const sides = [[fx + g, fy - ch / 2], [fx - g - cw, fy - ch / 2]];
     const cands = [
-      [fx + g, fy - ch / 2], [fx - g - cw, fy - ch / 2], [fx - cw / 2, fy - g - ch], [fx - cw / 2, fy + g],
+      ...(slim ? [above, below, ...sides] : [...sides, above, below]),
       [fx + g, fy - ch - g * 0.2], [fx - g - cw, fy - ch - g * 0.2], [fx + g, fy + g * 0.2], [fx - g - cw, fy + g * 0.2],
-      [6, 6], [W - cw - 6, 6], [6, H - ch - 6], [W - cw - 6, H - ch - 6],
+      [vr.x0 + 6, vr.y0 + 6], [vr.x1 - cw - 6, vr.y0 + 6], [vr.x0 + 6, vr.y1 - ch - 6], [vr.x1 - cw - 6, vr.y1 - ch - 6],
     ].map(([x, y]) => [clampX(x), clampY(y)]);
     const pieceCells = f.pieces.map((q) => at(q.cell));
     const cellPts = R.board.cells.map((_, c) => at(c));
     let best = null;
-    for (const [x, y] of cands) {
+    cands.forEach(([x, y], i) => {
       const inside = ([px, py]) => px > x && px < x + cw && py > y && py < y + ch;
       let score = 0;
       if (inside([fx, fy])) score += 1000;
       for (const pt of pieceCells) if (inside(pt)) score += 50;
       for (const pt of cellPts) if (inside(pt)) score += 2;
       score += Math.hypot(x + cw / 2 - fx, y + ch / 2 - fy) * 0.02;
+      if (slim) score += i * 40; // ueber der Fabrik zuerst, dann darunter
       if (!best || score < best.score) best = { score, x, y };
-    }
+    });
     card.style.left = Math.round(best.x) + "px";
     card.style.top = Math.round(best.y) + "px";
   }
@@ -3242,50 +3353,141 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     return best;
   }
+  // ----- Spielkarten (Gebietsmodus): Bild, Name, kurzer Effekt; bunt = kaufbar, grau = noch nicht ---------
+  /** Farbton (CSS --ch) und Kurztext je Karte; unbekannte Karten (Versionen 1 und 2) bekommen einen Satz aus ihrem Text. */
+  const CARD_LOOK = {
+    shorten: { h: 174, fx: "Ein Schritt weniger" },
+    bend: { h: 212, fx: "Um die Ecke ziehen" },
+    hop: { h: 128, fx: "Über Figuren springen" },
+    pass: { h: 276, fx: "Durch eigene Figuren" },
+    settle: { h: 24, fx: "Nachbarfelder färben" },
+    factory_shift: { h: 30, fx: "Fabrik diagonal rücken" },
+    charge: { h: 2, fx: "Alle Figuren +1 Feld" },
+    double_move: { h: 316, fx: "Zweite Aktion im Zug" },
+    mining: { h: 40, fx: "+1 Gold je Ernte" },
+    smelter: { h: 14, fx: "+1 Eisen je Ernte" },
+    king_boost: { h: 52, fx: "König zieht weiter" },
+  };
+  const ART_TXT = (x, y, size, t) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="${size}" font-weight="800" fill="#fff" stroke="none" font-family="sans-serif">${t}</text>`;
+  const CARD_ART = {
+    shorten: `<path d="M8 31H42M35 24l7 7-7 7"/><path d="M50 31h6" stroke-dasharray="1.5 4" opacity=".6"/>${ART_TXT(30, 16, 14, "−1")}`,
+    bend: `<path d="M14 8V32H48M41 25l7 7-7 7"/><circle cx="14" cy="8" r="3.5" fill="#fff" stroke="none"/>`,
+    hop: `<circle cx="32" cy="35" r="5" fill="#fff" fill-opacity=".9" stroke="none"/><path d="M8 37Q32 -8 56 37M49 31l7 6-9 2"/>`,
+    pass: `<path d="M6 24H56M48 17l8 7-8 7"/><circle cx="21" cy="24" r="5.5" fill="#fff" fill-opacity=".9" stroke="none"/><circle cx="37" cy="24" r="5.5" fill="#fff" fill-opacity=".9" stroke="none"/>`,
+    settle: (() => { let o = ""; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const x = 13.5 + i * 13, y = 3.5 + j * 13; o += (i === 1 && j === 1) ? `<circle cx="${x + 5.5}" cy="${y + 5.5}" r="5.2" fill="#fff" stroke="none"/>` : `<rect x="${x}" y="${y}" width="11" height="11" rx="1.5" fill="#fff" fill-opacity=".55" stroke="none"/>`; } return o; })(),
+    factory_shift: `<path d="M6 38V24l8 4v-4l8 4V16h6v22z" fill="#fff" fill-opacity=".92" stroke="none"/><path d="M32 32L55 9M45 9h10v10"/>`,
+    charge: `<path d="M37 3L16 25h13l-4 16 22-24H33z" fill="#ffe27a" stroke="#fff6c8" stroke-width="1.5"/>`,
+    double_move: `<path d="M7 12l12 10-12 10M23 12l12 10-12 10"/>${ART_TXT(49, 28, 16, "×2")}`,
+    mining: `<circle cx="42" cy="27" r="11" fill="#ffd23f" stroke="#fff6c8"/><circle cx="42" cy="27" r="5.5" stroke="#b8860b" stroke-width="1.6"/><path d="M8 39L28 14" stroke-width="3"/><path d="M18 8Q30 5 36 15"/>`,
+    smelter: `<path d="M10 38L17 26H47L54 38z" fill="#c4ccd6" stroke="#fff"/><path d="M32 4C38 11 40 15 36 20 35 17 33 16 32 17 29 15 27 18 28 21 24 17 28 9 32 4z" fill="#ff9a3c" stroke="#ffe0a8" stroke-width="1.2"/>`,
+    king_boost: `<path d="M10 38V18l9 9 11-15 11 15 9-9v20z" fill="#ffd23f" stroke="#fff6c8"/><path d="M54 14V4M49 9l5-5 5 5"/>`,
+  };
+  const CARD_ART_DEFAULT = `<path d="M32 5l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#ffe27a" stroke="#fff6c8" stroke-width="1.3"/>`;
+  const cardArt = (key) => `<svg viewBox="0 0 64 44" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CARD_ART[key] || CARD_ART_DEFAULT}</svg>`;
+  /** Alles zu einer Karte (Markt oder Koenigs-Upgrade) fuer Spielkarte und Fenster: Preis, Zustand, Texte; null, wenn es sie nicht gibt. */
+  function cardInfo(key) {
+    const f = R.frames[fi], p = focusPlayer(f);
+    if (p === null || p === undefined) return null;
+    const acting = canAct();
+    const fac = f.alive[p] ? f.factories.find((x) => x.owner === p) : null;
+    const store = fac ? fac.storage : [], color = PLAYER[p].color;
+    if (key === "king_boost") {
+      const ku = kingUpInfo(f, p);
+      if (!ku || ku.done) return null;
+      const idx = fac && acting ? live.legal.findIndex((a) => a.type === "buy" && a.card === "king_boost") : -1;
+      const have = catUnits(store, 2);
+      const status = idx >= 0 ? "kaufbar" : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft" : have < ku.gold ? `fehlt: ${ku.gold - have}× Gold` : "nicht möglich";
+      return { key, name: `König Stufe ${ku.level}`, fx: `+${ku.extra} Zugfelder`, text: `Der König zieht ${ku.extra} Felder mehr (auf freiem Brett). Das ist Stufe ${ku.level} von 3.`, needs: [[2, ku.gold]], can: idx >= 0, status, needPiece: false, store, color };
+    }
+    const c = (R.market || []).find((x) => x.key === key);
+    if (!c) return null;
+    const o = cardOption(c, f, p, acting, store, (f.stored_card || [])[p]);
+    const text = cardText(c).replace(/ Preis je Reichweite der Figur\./, "");
+    const look = CARD_LOOK[key];
+    return { key, name: c.name, fx: look ? look.fx : text.split(/[.:;]/)[0].slice(0, 40), text, needs: o.needs, can: o.can, status: o.can ? "kaufbar" : o.go, needPiece: o.needPiece, store, color };
+  }
+  const cardPrice = (o) => o.needs.map(([kind, n]) => reqHtml(kind, catUnits(o.store, kind), n, o.color)).join("") || `<span class="req ok">gratis</span>`;
+  const pcardInner = (o) => `<span class="pc-name">${escapeHtml(o.name)}</span><span class="pc-art">${cardArt(o.key)}</span><span class="pc-fx">${escapeHtml(o.fx)}</span><span class="pc-price">${cardPrice(o)}</span>`;
+  const pcardHue = (key) => String((CARD_LOOK[key] || { h: 220 }).h);
+  function openCardPop(key) {
+    cardPopKey = key;
+    renderCardPop();
+    const b = $("cardPop").querySelector("[data-cp='buy']:not(:disabled)") || $("cardPop").querySelector("[data-cp='close']");
+    if (b && !$("cardPop").hidden) b.focus({ preventScroll: true });
+  }
+  function closeCardPop() { cardPopKey = null; $("cardPop").hidden = true; }
+  /** Fenster zu einer Karte: grosse Karte, Erklaerung, Preis mit Lager, Kaufen. */
+  function renderCardPop() {
+    const box = $("cardPop");
+    const o = cardPopKey && R && isTerr() ? cardInfo(cardPopKey) : null;
+    if (!o) { cardPopKey = null; box.hidden = true; return; }
+    const lock = lockNote({ key: o.key });
+    const st = o.status.charAt(0).toUpperCase() + o.status.slice(1);
+    box.innerHTML = `<div class="cp-box"><div class="cp-head">` +
+      `<div class="pcard ${o.can ? "can" : "off"}" style="--ch:${pcardHue(o.key)}">${pcardInner(o)}</div>` +
+      `<div class="cp-info"><h3>${escapeHtml(o.name)}</h3><p>${escapeHtml(o.text + (lock ? " " + lock : ""))}</p>` +
+      `<div class="cp-need">${cardPrice(o)}</div>` +
+      `<p class="cp-st${o.can ? " ok" : ""}">${o.can ? "Jetzt kaufbar" : escapeHtml(st)}</p></div></div>` +
+      `<div class="cp-btns"><button type="button" class="btn" data-cp="close">Schließen</button>` +
+      `<button type="button" class="btn go" data-cp="buy"${o.can ? "" : " disabled"}>${o.needPiece ? "Figur wählen" : "Kaufen"}</button></div></div>`;
+    box.hidden = false;
+  }
+  $("cardPop").addEventListener("click", (ev) => {
+    const box = $("cardPop"), t = ev.target.closest("[data-cp]");
+    if (ev.target === box || (t && t.dataset.cp === "close")) { closeCardPop(); return; }
+    if (!t || t.dataset.cp !== "buy" || t.disabled) return;
+    const key = cardPopKey;
+    closeCardPop();
+    if (key === "king_boost") { const i = kingUpIdx(); if (i >= 0) humanAct(i); } else pickCard(key);
+  });
+  $("market").addEventListener("click", (ev) => {
+    const li = ev.target.closest("li[data-card]");
+    if (li) openCardPop(li.dataset.card);
+  });
+  $("market").addEventListener("keydown", (ev) => {
+    if ((ev.key === "Enter" || ev.key === " ") && ev.target.matches && ev.target.matches("li[data-card]")) { ev.preventDefault(); openCardPop(ev.target.dataset.card); }
+  });
   /**
-   * Gebietsmodus: die Kartenoptionen (Markt und Koenigs-Upgrade) mit Preis und Stand; nur zum Anschauen.
-   * Gekauft wird im Menue der Fabrik (Klick auf die Fabrik).
+   * Gebietsmodus: die Spielkarten (Markt und Koenigs-Upgrade). Bunt = jetzt kaufbar, grau = noch nicht;
+   * Antippen oeffnet ein Fenster mit Erklaerung und Kaufen-Knopf.
    */
   function renderCardOptions(f) {
     const market = R.market || [];
     const p = focusPlayer(f);
     const ku = p === null || p === undefined ? null : kingUpInfo(f, p);
     $("marketBox").hidden = market.length === 0 && !ku;
-    if (market.length === 0 && !ku) return;
+    if (market.length === 0 && !ku) { closeCardPop(); return; }
     $("marketTitle").textContent = "Karten";
-    const acting = canAct();
-    const fac = p === null || p === undefined || !f.alive[p] ? null : f.factories.find((x) => x.owner === p);
-    const store = fac ? fac.storage : [];
-    const color = p === null || p === undefined ? "#888" : PLAYER[p].color;
-    const stockCards = p === null || p === undefined ? null : (f.stored_card || [])[p];
-    $("marketNote").textContent = "Eine Karte je Zug, bezahlt aus dem Lager der Fabrik. Gekauft wird im Menü der Fabrik: tippe die Fabrik an (steht eine Figur darauf, zieh sie erst weg)." +
+    $("marketNote").textContent = "Eine Karte je Zug, bezahlt aus dem Lager der Fabrik. Bunte Karten kannst du jetzt kaufen, graue noch nicht. Tippe eine Karte an: das Fenster erklärt sie und kauft sie." +
       (cardLockMode() === 1 ? " Die verbesserte Figur ruht danach in diesem Zug." : cardLockMode() === 2 ? " Eine Verbesserung ist dein ganzer Zug." : "");
     $("marketLegend").innerHTML = "";
     const ul = $("market");
     ul.innerHTML = "";
-    const row = (name, text, needs, status, can) => {
+    ul.classList.add("cards");
+    const keys = market.map((c) => c.key);
+    if (ku && !ku.done) keys.unshift("king_boost");
+    for (const key of keys) {
+      const o = cardInfo(key);
+      if (!o) continue;
       const li = document.createElement("li");
-      li.className = "copt" + (can ? " can" : "");
-      li.innerHTML = `<div class="ct"><b>${escapeHtml(name)}</b><span class="st">${escapeHtml(status)}</span></div>` +
-        `<div class="cp">${needs.map(([kind, n]) => reqHtml(kind, catUnits(store, kind), n, color)).join("")}</div>` +
-        (text ? `<small class="tx">${escapeHtml(text)}</small>` : "");
+      li.className = `pcard ${o.can ? "can" : "off"}${key === "king_boost" ? " king" : ""}`;
+      li.dataset.card = key;
+      li.tabIndex = 0;
+      li.setAttribute("role", "button");
+      li.setAttribute("aria-label", `${o.name}: ${o.status}`);
+      li.style.setProperty("--ch", pcardHue(key));
+      li.innerHTML = pcardInner(o);
       ul.appendChild(li);
-    };
-    if (ku && !ku.done) {
-      const o = fac && acting && live.legal.findIndex((a) => a.type === "buy" && a.card === "king_boost") >= 0;
-      const have = catUnits(store, 2);
-      row(`König: Stufe ${ku.level} von 3`, `Der König zieht ${ku.extra} Felder mehr (auf freiem Brett).`, [[2, ku.gold]],
-        o ? "kaufbar" : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft" : have < ku.gold ? `fehlt: ${ku.gold - have}× Gold` : "nicht möglich", o);
     }
-    for (const c of market) {
-      const o = cardOption(c, f, p, acting, store, stockCards);
-      row(c.name, cardText(c).replace(/ Preis je Reichweite der Figur\./, ""), o.needs, o.can ? "kaufbar" : o.go, o.can);
-    }
-    if (stockCards) ul.insertAdjacentHTML("beforeend", `<li class="copt note"><small class="tx">Liegt neben der Fabrik bereit: ${escapeHtml(CARD(stockCards).name)}</small></li>`);
+    const sc = p === null || p === undefined ? null : (f.stored_card || [])[p];
+    if (sc) ul.insertAdjacentHTML("beforeend", `<li class="copt note"><small class="tx">Liegt neben der Fabrik bereit: ${escapeHtml(CARD(sc).name)}</small></li>`);
+    renderCardPop();
   }
   function renderMarket(f) {
     if (isTerr()) { renderCardOptions(f); return; }
     $("marketTitle").textContent = "Kartenmarkt";
+    $("market").classList.remove("cards");
+    closeCardPop();
     const market = R.market || [];
     $("marketBox").hidden = market.length === 0;
     if (!market.length) return;
@@ -3536,6 +3738,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     $("play").setAttribute("aria-label", playing ? "Anhalten" : "Abspielen");
     $("playIcon").setAttribute("d", playing ? "M5 4h4v12H5zM11 4h4v12h-4z" : "M6 4v12l10-6z");
     renderFactoryCard();
+    renderKingPop();
     renderTurnBox();
   }
   function boardText() {
@@ -4017,6 +4220,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     requestAnimationFrame(draw);
   }
   function boardClick(cell) {
+    hideKingPop();
     if (!canAct()) {
       // Auch ausser der Reihe zeigt ein Klick auf die eigene Fabrik, was sie kann und wann.
       if (cell !== null && isTerr()) facClick(cell);
@@ -4047,7 +4251,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === cell);
       if (i >= 0) {
         // Mit dem Finger: erst markieren, das zweite Tippen auf dasselbe Feld zieht
-        if (touchUi() && pendingMove !== cell) { pendingMove = cell; renderTurnBox(); updatePend(); requestAnimationFrame(draw); return; }
+        if (touchUi() && pendingMove !== cell) { pendingMove = cell; renderTurnBox(); requestAnimationFrame(draw); return; }
         pendingMove = null;
         humanAct(i);
         return;
@@ -4055,13 +4259,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     pendingMove = null;
     const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
+    // Der Koenig leuchtet, wenn er sich verbessern laesst: Antippen zeigt die Blase mit dem Knopf (er ist trotzdem waehlbar)
+    if (piece && piece.king && kingUpIdx() >= 0) { kingPopOpen = true; renderKingPop(); }
     if (!piece && cell !== null && isTerr() && facClick(cell)) return;
     // Andere Figuren (auch gegnerische) und Figuren ohne Zug: nur ihre Ziehfelder zeigen.
     if (!(piece && destinations(piece.id).length) && inspectAt(cell)) { selected = null; return; }
     inspect = null;
     selected = piece && destinations(piece.id).length ? piece.id : null;
     renderTurnBox();
-    updatePend();
     requestAnimationFrame(draw);
     if (selected !== null) focusSelection();
   }
@@ -5049,9 +5254,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const blocked = f.pieces.some((x) => x.cell === fac.cell);
     const afford = ((f.area || [])[me] || 0) >= terrPrice(1).area;
     if (blocked && afford) return "Die Fabrik ist besetzt: zieh die Figur von der Fabrik, dann kannst du bauen.";
-    if (facState && facState.R === R && facState.ready) return `Deine Fabrik ist bereit (${unitTitle(facState.pick)}, Stufe ${facState.pick}): Klick auf die Fabrik öffnet das Menü mit allem, was du jetzt kaufen kannst.`;
+    if (facState && facState.R === R && facState.ready) return phoneOK() ? "" : `Deine Fabrik ist bereit (${unitTitle(facState.pick)}, Stufe ${facState.pick}): der graue Marker zeigt die beste Figur; Klick auf die Fabrik öffnet das Baumenü. Karten kaufst du über die Karten.`;
     const stuck = f.pieces.filter((x) => x.owner === me && helpless(f, x)).length;
     const note = stuck ? ` ${stuck} deiner Figuren ${stuck === 1 ? "ist" : "sind"} vom Land abgeschnitten (blass): sie färben nichts und können nicht schlagen.` : "";
+    if (phoneOK()) return note.trim();
     return `Tippe eine Figur an: das Land färbt sich auf dem ganzen Weg. Was nicht mehr an der Fabrik hängt, ist nichts wert.${note}`;
   }
   function renderTurnBox() {
@@ -5087,12 +5293,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       hint = `Spieler ${playerName(now.current)} (Bot) ist am Zug …`;
     } else {
       hint = hotseat ? `Spieler ${playerName(now.current)} ist am Zug.` : "Du bist am Zug (Spieler A, rot).";
+      const compact = phoneOK();
       sub = cardMode
         ? `Karte „${CARD(cardMode.card).name}“: klicke die golden markierte Figur, die sie bekommen soll (Esc bricht ab).`
+        : selected !== null && compact ? ""
         : selected !== null
         ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur. Shift zeigt den ganzen Weg, Shift+Klick läuft ihn automatisch; Strg+Klick wählt Kacheln einzeln (Strg loslassen = los)."
         : isTerr() ? territorySub(now) : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
-      if (touchUi() && pendingValid()) sub = `${cellName(pendingMove)} ist markiert: noch einmal tippen (oder oben „${$("pendOk").textContent}“) zieht, ein anderes Zielfeld ändert die Wahl.`;
       if (routes.length) sub = `Eine Route läuft von selbst weiter (Esc bricht ab). ${sub}`;
       if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
@@ -5144,9 +5351,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const buys = live.legal.filter((a) => a.type === "buy").length;
       if ((R.market || []).length) {
         const note = document.createElement("p");
-        note.className = "note";
+        note.className = "note mk";
         note.textContent = isTerr()
-          ? (buys ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"}. Tippe dafür die Fabrik an (steht eine Figur darauf, erst wegziehen).` : "Karten: unter dem Brett steht, was dir zum Kaufen noch fehlt.")
+          ? (buys ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"}. Tippe eine bunte Karte an.` : "Karten: graue Karten sind noch nicht bezahlbar; Antippen zeigt, was fehlt.")
           : buys
           ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"} im Kartenmarkt der Übersicht (zusätzlich zum Zug).`
           : "Karten: im Kartenmarkt der Übersicht steht, was dir zum Kaufen noch fehlt.";
@@ -5379,7 +5586,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!R) return;
     if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
     if (e.key === "Escape") {
-      facClose();
+      facClose(); closeCardPop(); hideKingPop();
       if (shiftMode) { shiftMode = false; routeNote = ""; renderFactoryCard(); renderTurnBox(); }
       if (cardMode) { routeNote = ""; stopCardMode(); }
       if (inspect) { inspect = null; renderTurnBox(); requestAnimationFrame(draw); }
@@ -5441,6 +5648,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
     get cardMode() { return cardMode; }, get lockedId() { const f = R && R.frames[fi]; return f ? f.card_lock : null; }, get inspect() { return inspect; }, get hoverReach() { return hoverReachValid() ? hoverReach : null; }, get fx() { return fx; },
     get ready() { return wasm !== null; },
+    get ghost() { return ghostBuild(); }, get kingUp() { return kingUpIdx(); }, get cardPop() { return cardPopKey; }, get kingPopOpen() { return kingPopOpen; }, get facOpen() { return facOpen; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },
     /** Feld einer Figur im angezeigten Zug (fuer automatische Tests). */

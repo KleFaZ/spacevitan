@@ -123,11 +123,23 @@ Klick dasselbe, nur grau mit "nicht am Zug". Die Leiste neben der Fabrik (Stand 
 Menue per Klick auf. Die Rechnung steht im Viewer (`terrIncome`, `terrLevelStatus`, `renderFactoryCard`), der Spielkern
 aendert sich dafuer nicht.
 
-**Handy im 2D-Modus:** Das Brett fuellt die ganze Breite des Bildschirms, darueber stehen die Ressourcen (Flaeche, Eisen, Gold,
-Brot, bei Brot mit dem Zuwachs je Runde), darunter die Kartenoptionen des Marktes (nur zur Anzeige, gekauft wird ueber das
-Fabrik-Menue). Ein Sechseck wird in 2D so gedreht, dass zwei gegenueberliegende **Seiten** parallel zum Bildschirmrand liegen
-(nicht die Ecken). Das Fabrik-Menue oeffnet sich nur per Klick auf die Fabrik und klappt auf kleinen Bildschirmen unter dem
-Brett auf.
+**Handy (Bildschirm bis 700 px):** Die Kopfzeile ist schlank: nur "Spacevitan" und gleich daneben **Neue Partie** (die Reiter
+*Spielen* und *Partien ansehen* sind dort ausgeblendet). Im 2D-Modus fuellt das Brett die ganze Breite; darueber stehen die vier
+Ressourcen in kleinen Kacheln (Flaeche, Eisen, Gold, Brot mit Zuwachs je Runde, ohne Erklaertext), darunter die **vier Spielkarten**.
+Ein Sechseck wird in 2D so gedreht, dass zwei gegenueberliegende **Seiten** parallel zum Bildschirmrand liegen (nicht die Ecken).
+
+- **Fabrik antippen** (eigene Fabrik, keine Figur darauf): ein Popup mit dem Baumenue ploppt **ueber der Fabrik** auf (bei Platzmangel
+  darunter oder daneben, immer im sichtbaren Ausschnitt). Es zeigt nur die vier Figuren (bunt = baubar, sonst "in 3 Runden"), dazu
+  Kat-3-Tausch, Fabrik ruecken und Umziehen, falls moeglich. Die geschlossene Statusleiste unter dem Brett entfaellt auf dem Handy
+  (sie bleibt nur bei "Fabrik besetzt" und im Bau).
+- **Grauer Figur-Marker:** Ist die Fabrik frei und etwas baubar, steht auf ihr eine halbtransparente graue Figur der **hoechsten**
+  bezahlbaren Stufe.
+- **Spielkarten:** Die Karten des Marktes liegen unter dem Brett als Karten mit Bild, Namen, Kurzeffekt und Preis (Lager/Preis).
+  **Bunt mit goldenem Rand** = jetzt kaufbar, **grau** = nicht. Antippen oeffnet ein Fenster mit Erklaerung, Preis, dem, was
+  fehlt, und dem Knopf *Kaufen* (bei Karten auf eine Figur: *Figur waehlen*, dann die Figur auf dem Brett antippen). Auf dem
+  Desktop stehen dieselben Karten in der Seitenleiste.
+- **Leuchtender Koenig:** Laesst sich der Koenig mit Gold verbessern (Regel `terr_kingup`), pulsiert er golden (in 2D und 3D).
+  Antippen waehlt ihn wie gewohnt und zeigt eine Blase mit Stufe, Preis und dem Knopf *Verbessern*.
 
 **Handy: Zoom, Minimap, Zwei-Schritt-Tippen (nur 2D, Bildschirm bis 700 px):** Unter dem Brett stehen **− / +** mit drei Stufen
 (*Ganzes Brett*, *Mittel* ca. 52 px je Feld, *Nah* ca. 76 px). Ab *Mittel* liegt das Brett in einem Rahmen zum Verschieben
@@ -135,8 +147,8 @@ Brett auf.
 Antippen oder Ziehen auf der Minimap verschiebt den Ausschnitt. **Pinch** (zwei Finger) springt zwischen den Stufen;
 Doppeltippen zum Zoomen gibt es bewusst nicht, weil es mit dem Zwei-Schritt-Tippen kollidieren wuerde. Waehlt man eine Figur, rollt
 der Ausschnitt sie samt ihren Zielfeldern ins Bild. **Zwei-Schritt-Tippen** (nur mit Touch): erst die Figur, dann ein Zielfeld
-antippen: das Feld wird markiert und oben erscheint "Ziehen nach b1?" mit Knopf; erst das zweite Tippen auf dasselbe Feld (oder der
-Knopf) zieht; ein anderes Zielfeld aendert die Wahl, ✕ bricht ab. Das schuetzt vor Fehltipps auf kleinen Feldern. Die Leinwand
+antippen: das Feld wird auf dem Brett markiert (ohne Rueckfrage-Leiste); erst das zweite Tippen auf dasselbe Feld zieht; ein anderes
+Zielfeld aendert die Wahl. Das schuetzt vor Fehltipps auf kleinen Feldern. Die Leinwand
 ist auf etwa 14 Mio. Pixel begrenzt (sehr grosse Bretter zoomen dann etwas weicher).
 
 **Karten-Editor (Startmenue, Version 3):** Unter *Karten* steht eine Tabelle aller Karten des Pools mit Haken (im Pool oder
