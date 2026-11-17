@@ -557,12 +557,12 @@ impl Game {
         if let Some(text) = self.config.card_tweaks.custom_text(card) {
             return text;
         }
-        let mut text = if self.config.terr_cardset3 || (card == Card::Bend && self.config.terr_bend_tail)
-        {
-            card.v3_text().to_string()
-        } else {
-            card.text().to_string()
-        };
+        let mut text =
+            if self.config.terr_cardset3 || (card == Card::Bend && self.config.terr_bend_tail) {
+                card.v3_text().to_string()
+            } else {
+                card.text().to_string()
+            };
         if self.config.terr_delay && matches!(card, Card::Charge | Card::DoubleMove) {
             text.push_str(" Wirkt erst in deinem nächsten Zug.");
         }
@@ -1782,12 +1782,10 @@ impl Game {
     /// Version 3 (`terr_upkeep`): Unterhalt aller Figuren des Spielers (Summe der Stufen, der
     /// Koenig zahlt nichts). `None`, wenn die Regel aus ist.
     pub fn territory_upkeep(&self, player: PlayerId) -> Option<u32> {
-        self.config
-            .terr_upkeep
-            .then(|| {
-                let sq = self.config.terr_upkeep_sq;
-                self.pieces_of(player).map(|p| p.upkeep(sq)).sum()
-            })
+        self.config.terr_upkeep.then(|| {
+            let sq = self.config.terr_upkeep_sq;
+            self.pieces_of(player).map(|p| p.upkeep(sq)).sum()
+        })
     }
 
     /// Zieht den Unterhalt von der Flaeche ab. Reicht sie nicht, loest sich Figur um Figur auf, bis

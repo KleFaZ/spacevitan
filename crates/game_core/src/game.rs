@@ -610,7 +610,9 @@ impl Game {
                     Card::Mining => !perks.mining,
                     Card::Farming => !perks.farming,
                     Card::DoubleShift => self.factories_of(me).next().is_some(),
-                    Card::DoubleMove => !self.config.terr_delay || self.state.armed_extra[me.idx()] == 0,
+                    Card::DoubleMove => {
+                        !self.config.terr_delay || self.state.armed_extra[me.idx()] == 0
+                    }
                     Card::Charge => {
                         let free = if self.config.terr_delay {
                             !self.state.armed_charge[me.idx()]

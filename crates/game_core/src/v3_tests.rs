@@ -2583,20 +2583,30 @@ fn a_delayed_charge_works_only_in_the_next_own_turn() {
     assert!(g.state.armed_charge[0] && !g.state.armed_charge[1]);
     assert!(!g.piece_destinations(unit).contains(&far));
     assert!(
-        !buys(&g)
-            .iter()
-            .any(|a| matches!(a, Action::BuyCard { card: Card::Charge, .. })),
+        !buys(&g).iter().any(|a| matches!(
+            a,
+            Action::BuyCard {
+                card: Card::Charge,
+                ..
+            }
+        )),
         "zweimal bereit geht nicht"
     );
     play_a_move(&mut g);
     assert_eq!(g.state.current, P1);
     assert!(!g.state.charge, "der Gegner bekommt nichts");
-    assert!(g.state.armed_charge[0], "bleibt bereit, sichtbar fuer den Gegner");
+    assert!(
+        g.state.armed_charge[0],
+        "bleibt bereit, sichtbar fuer den Gegner"
+    );
     play_a_move(&mut g);
     assert_eq!(g.state.current, P0);
     assert!(g.state.charge, "jetzt wirkt er");
     assert!(!g.state.armed_charge[0]);
-    assert!(g.piece_destinations(unit).contains(&far), "drei statt zwei Felder");
+    assert!(
+        g.piece_destinations(unit).contains(&far),
+        "drei statt zwei Felder"
+    );
     play_a_move(&mut g);
     play_a_move(&mut g);
     assert!(!g.state.charge, "und nur in diesem einen Zug");
@@ -2763,7 +2773,14 @@ fn with_the_bread_stock_kat3_is_harvested_into_the_factory_and_pays_cards() {
     let ev = income(&mut g, P0);
     assert_eq!(storage_of(&g, P0, k3), 1, "{ev:?}");
     assert!(
-        ev.iter().any(|e| matches!(e, Event::Income { bonus: 0, kat3: 0, .. })),
+        ev.iter().any(|e| matches!(
+            e,
+            Event::Income {
+                bonus: 0,
+                kat3: 0,
+                ..
+            }
+        )),
         "kein 2^k-Bonus mehr"
     );
     assert_eq!(g.connected_kat3(P0), 0);
