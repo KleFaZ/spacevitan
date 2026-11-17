@@ -459,6 +459,19 @@ impl Card {
         }
     }
 
+    /// Preise mit Brot-Lager (`terr_bread`): die Tempokarten (Kuerzer, Sprung, Durchzug,
+    /// Sturmangriff, Doppelzug) kosten statt Eisen so viel Brot, alle anderen bleiben wie in
+    /// `v3_price`. Eisen ist dann fuer Raum und Dauer da, Gold fuer Dauerhaftes, Brot fuer Tempo.
+    pub fn v3_price_bread(self) -> [u32; 3] {
+        let [iron, gold, bread] = self.v3_price();
+        match self {
+            Card::Shorten | Card::Hop | Card::Pass | Card::Charge | Card::DoubleMove => {
+                [0, gold, bread + iron]
+            }
+            _ => [iron, gold, bread],
+        }
+    }
+
     pub fn target(self) -> CardTarget {
         match self {
             Card::Training

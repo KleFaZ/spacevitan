@@ -113,7 +113,7 @@ fn card_json(game: &Game, card: &Card) -> String {
 pub fn catalog_json() -> String {
     let cards = list(Card::V3_POOL.iter(), |c| {
         format!(
-            r#"{{"key":{},"name":{},"text":{},"target":{},"price":[{},{},{}],"square_only":{},"instant":{}}}"#,
+            r#"{{"key":{},"name":{},"text":{},"target":{},"price":[{},{},{}],"price_bread":[{},{},{}],"square_only":{},"instant":{}}}"#,
             esc(c.key()),
             esc(c.name()),
             esc(c.v3_text()),
@@ -124,6 +124,9 @@ pub fn catalog_json() -> String {
             c.v3_price()[0],
             c.v3_price()[1],
             c.v3_price()[2],
+            c.v3_price_bread()[0],
+            c.v3_price_bread()[1],
+            c.v3_price_bread()[2],
             !c.available_on(crate::board::GridKind::Hex),
             c.is_instant()
         )
@@ -500,7 +503,7 @@ pub fn state_json(game: &Game) -> String {
         String::new()
     };
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"card_lock":{},"extra_actions":{},"charge":{},"extra_deposits":{}{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"card_lock":{},"extra_actions":{},"charge":{},"armed_charge":{},"armed_extra":{},"extra_deposits":{}{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
@@ -522,6 +525,8 @@ pub fn state_json(game: &Game) -> String {
         st.card_lock.map_or("null".to_string(), |p| p.0.to_string()),
         st.extra_actions,
         st.charge,
+        list(st.armed_charge.iter(), |a| a.to_string()),
+        list(st.armed_extra.iter(), |n| n.to_string()),
         list(st.extra_deposits.iter(), |(c, rs)| format!(
             "[{},{}]",
             c.0,
@@ -556,7 +561,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{},"terr_bend_tail":{},"terr_cardset3":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{},"terr_bend_tail":{},"terr_cardset3":{},"terr_delay":{},"terr_upkeep_sq":{},"terr_yield_lvl":{},"terr_bread":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -607,7 +612,11 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_kingup,
         c.terr_kingup_price,
         c.terr_bend_tail,
-        c.terr_cardset3
+        c.terr_cardset3,
+        c.terr_delay,
+        c.terr_upkeep_sq,
+        c.terr_yield_lvl,
+        c.terr_bread
     );
     // Direktes Koenigs-Upgrade (`terr_kingup`): Kat 2 je zusaetzlichem Zugfeld, je Stufe.
     let king_up = format!(

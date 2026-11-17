@@ -152,9 +152,15 @@ impl Piece {
         }
     }
 
-    /// Unterhalt je Runde (`Config::terr_upkeep`): die Stufe, der Koenig zahlt nichts.
-    pub fn upkeep(&self) -> u32 {
-        u32::from(self.level())
+    /// Unterhalt je Runde (`Config::terr_upkeep`): die Stufe (mit `terr_upkeep_sq` die Stufe im
+    /// Quadrat), der Koenig zahlt nichts.
+    pub fn upkeep(&self, squared: bool) -> u32 {
+        let level = u32::from(self.level());
+        if squared {
+            level * level
+        } else {
+            level
+        }
     }
 }
 
@@ -229,6 +235,11 @@ pub struct State {
     pub extra_actions: u8,
     /// Sturmangriff: in diesem Zug haben alle Figuren des Spielers am Zug Reichweite +1.
     pub charge: bool,
+    /// Version 3.1 (`terr_delay`): der Spieler hat einen Sturmangriff gekauft, der in seinem
+    /// naechsten Zug wirkt (je Spieler).
+    pub armed_charge: Vec<bool>,
+    /// Version 3.1 (`terr_delay`): so viele Doppelzuege wirken im naechsten Zug des Spielers.
+    pub armed_extra: Vec<u8>,
     /// Vorkommen, die waehrend der Partie entstanden sind (Sternsplitter).
     pub extra_deposits: BTreeMap<CellId, Vec<ResourceId>>,
     /// Gebietsmodus: wem ein Feld gehoert (`None` = neutral). Sonst immer leer gefuellt.
@@ -271,6 +282,8 @@ impl State {
             card_lock: None,
             extra_actions: 0,
             charge: false,
+            armed_charge: vec![false; players],
+            armed_extra: vec![0; players],
             extra_deposits: BTreeMap::new(),
             land: vec![None; cells],
             area: vec![0; players],

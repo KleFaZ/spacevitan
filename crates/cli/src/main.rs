@@ -62,6 +62,10 @@ Optionen:
                  custom.0..7=Name|baustein*n+baustein|eisen/gold/brot (eigene Karte), z. B.
                  custom.0=Sturmecke|bend*2+charge|2/1/0; Karten: shorten, bend, hop, pass,
                  settle, factory_shift, charge, mining, smelter, double_move, king_boost
+                 Version 3.1 (alle Standard aus): terr_delay (Sturmangriff und Doppelzug wirken
+                 erst im naechsten eigenen Zug), terr_upkeep_sq (Unterhalt = Stufe im Quadrat),
+                 terr_yield_lvl (Figur der Stufe n erntet n Stueck), terr_bread=N (Brot wird alle
+                 N Runden geerntet und liegt im Lager; Tempokarten kosten dann Brot)
   --bots LISTE   pro Spieler: sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),
                  stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,

@@ -65,7 +65,7 @@ fn standing(g: &Game, p: PlayerId) -> i64 {
             for res in g.all_deposits(cell) {
                 let cat = usize::from(g.map.category(res)).clamp(1, 4) - 1;
                 // Kat 3 zaehlt mit Flaechenbonus nur ueber `2^k` unten, nicht als Vorkommen.
-                if g.config.terr_bonus && cat == 2 {
+                if g.config.kat3_bonus_on() && cat == 2 {
                     continue;
                 }
                 if g.config.terr_occupy {

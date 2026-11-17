@@ -444,7 +444,13 @@ impl Game {
                 .config
                 .card_tweaks
                 .price_override(card)
-                .unwrap_or_else(|| card.v3_price());
+                .unwrap_or_else(|| {
+                    if self.config.terr_bread > 0 {
+                        card.v3_price_bread()
+                    } else {
+                        card.v3_price()
+                    }
+                });
         }
         let m = self.config.terr_card_mult;
         if self.config.terr_cards == 1 {
@@ -530,9 +536,11 @@ impl Game {
     fn instant_has_room(&self, player: PlayerId, card: Card) -> bool {
         let pp = &self.state.player_perks[player.idx()];
         match card {
+            Card::Charge if self.config.terr_delay => !self.state.armed_charge[player.idx()],
             Card::Charge => !self.state.charge,
             Card::Mining => !pp.mining,
             Card::Smelter => !pp.smelter,
+            Card::DoubleMove if self.config.terr_delay => self.state.armed_extra[player.idx()] == 0,
             Card::DoubleMove => self.state.extra_actions == 0,
             _ => false,
         }
@@ -549,13 +557,16 @@ impl Game {
         if let Some(text) = self.config.card_tweaks.custom_text(card) {
             return text;
         }
-        if self.config.terr_cardset3 {
-            return card.v3_text().to_string();
+        let mut text = if self.config.terr_cardset3 || (card == Card::Bend && self.config.terr_bend_tail)
+        {
+            card.v3_text().to_string()
+        } else {
+            card.text().to_string()
+        };
+        if self.config.terr_delay && matches!(card, Card::Charge | Card::DoubleMove) {
+            text.push_str(" Wirkt erst in deinem nächsten Zug.");
         }
-        if card == Card::Bend && self.config.terr_bend_tail {
-            return Card::Bend.v3_text().to_string();
-        }
-        card.text().to_string()
+        text
     }
 
     /// Version 3 (Siedler): die Felder, die die Karte Siedler um diese Figur faerbt: alle
@@ -853,7 +864,7 @@ impl Game {
     /// Version 3: wie viele Kat-3-Felder auf dem mit der stehenden Fabrik verbundenen Land von
     /// `me` liegen (0 ohne `terr_bonus`, ohne stehende Fabrik oder ohne Anbindung).
     pub fn connected_kat3(&self, me: PlayerId) -> u32 {
-        if !self.config.terr_bonus || self.rebuilding(me) {
+        if !self.config.kat3_bonus_on() || self.rebuilding(me) {
             return 0;
         }
         let Some(connected) = self.connected_land(me) else {
@@ -1640,11 +1651,27 @@ impl Game {
     /// Version 3: Erntezeit in Runden (`terr_ripen` der Kategorie), 0 = jede Runde.
     pub fn harvest_period(&self, res: crate::ids::ResourceId) -> u32 {
         let cat = usize::from(self.map.category(res));
+        // Mit Brot-Lager (`terr_bread`) hat Kat 3 seinen eigenen Takt.
+        if cat == 3 && self.config.terr_bread > 0 {
+            return self.config.terr_bread;
+        }
         self.config
             .terr_ripen
             .get(cat.wrapping_sub(1))
             .copied()
             .unwrap_or(0)
+    }
+
+    /// Version 3.1 (`terr_yield_lvl`): so oft zaehlt eine Ernte auf diesem Feld. Steht eine eigene
+    /// Figur der Stufe `n` darauf, erntet sie `n` Stueck; der Koenig und leere Felder zaehlen 1.
+    pub fn yield_multiplier(&self, owner: PlayerId, cell: CellId) -> u32 {
+        if !self.config.terr_yield_lvl {
+            return 1;
+        }
+        self.state.occupant[cell.idx()]
+            .and_then(|id| self.state.pieces.get(&id))
+            .filter(|p| p.owner == owner)
+            .map_or(1, |p| u32::from(p.level()).max(1))
     }
 
     /// Version 3: ist das Vorkommen nach dem jetzigen Stand des Erntezaehlers dran?
@@ -1696,7 +1723,7 @@ impl Game {
         };
         let yield_n = self.config.terr_yield;
         let cycle = self.config.terr_cycle;
-        let bonus_on = self.config.terr_bonus;
+        let bonus_on = self.config.kat3_bonus_on();
         // Mit `terr_occupy` zaehlt und erntet ein Feld nur, solange es bearbeitet wird (eigene Figur
         // darauf, mit `terr_control` auch im Einflussbereich einer eigenen Figur).
         let worked_cells = self.config.terr_occupy.then(|| self.worked_cells(actor));
@@ -1724,7 +1751,8 @@ impl Game {
                     self.ripen_wait(cell, res) == 0
                 };
                 if ready {
-                    gained.add(res, yield_n + self.harvest_bonus(actor, res));
+                    let mult = self.yield_multiplier(actor, cell);
+                    gained.add(res, yield_n * mult + self.harvest_bonus(actor, res));
                 }
             }
         }
@@ -1756,7 +1784,10 @@ impl Game {
     pub fn territory_upkeep(&self, player: PlayerId) -> Option<u32> {
         self.config
             .terr_upkeep
-            .then(|| self.pieces_of(player).map(Piece::upkeep).sum())
+            .then(|| {
+                let sq = self.config.terr_upkeep_sq;
+                self.pieces_of(player).map(|p| p.upkeep(sq)).sum()
+            })
     }
 
     /// Zieht den Unterhalt von der Flaeche ab. Reicht sie nicht, loest sich Figur um Figur auf, bis
@@ -1765,22 +1796,22 @@ impl Game {
     /// Unterhalt, es wird nichts zurueckerstattet.
     fn pay_upkeep(&mut self, actor: PlayerId, mut upkeep: u32, events: &mut Vec<Event>) {
         let have = self.state.area[actor.idx()];
+        let sq = self.config.terr_upkeep_sq;
         while upkeep > have {
             let missing = upkeep - have;
-            let mut units: Vec<(u8, PieceId, CellId)> = self
+            // (Unterhalt, Id, Feld, Stufe)
+            let mut units: Vec<(u32, PieceId, CellId, u8)> = self
                 .pieces_of(actor)
-                .filter(|p| p.upkeep() > 0)
-                .map(|p| (p.level(), p.id, p.cell))
+                .filter(|p| p.upkeep(sq) > 0)
+                .map(|p| (p.upkeep(sq), p.id, p.cell, p.level()))
                 .collect();
-            units.sort_by_key(|&(level, id, _)| (level, std::cmp::Reverse(id)));
-            let covering = units
-                .iter()
-                .find(|&&(level, _, _)| u32::from(level) >= missing);
-            let Some(&(level, id, cell)) = covering.or(units.last()) else {
+            units.sort_by_key(|&(cost, id, _, _)| (cost, std::cmp::Reverse(id)));
+            let covering = units.iter().find(|&&(cost, _, _, _)| cost >= missing);
+            let Some(&(cost, id, cell, level)) = covering.or(units.last()) else {
                 break;
             };
             self.state.remove_piece(id);
-            upkeep -= u32::from(level);
+            upkeep -= cost;
             events.push(Event::Dissolved {
                 piece: id,
                 owner: actor,

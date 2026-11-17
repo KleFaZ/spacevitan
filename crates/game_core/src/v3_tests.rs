@@ -2555,3 +2555,290 @@ fn whole_games_with_every_card_on_offer_keep_every_invariant() {
         }
     }
 }
+
+// ----- Version 3.1: Verzoegerung, Unterhalt im Quadrat, Ertrag je Stufe, Brot-Lager -------------
+
+/// Irgendeinen Zug des Spielers am Zug ausfuehren (Zugende, wenn nichts anderes folgt).
+fn play_a_move(g: &mut Game) {
+    let mv = g
+        .legal_actions()
+        .into_iter()
+        .find(|a| matches!(a, Action::Move { .. }))
+        .expect("ein Zug ist moeglich");
+    g.apply(mv).unwrap();
+}
+
+#[test]
+fn a_delayed_charge_works_only_in_the_next_own_turn() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Charge]);
+    g.config.terr_delay = true;
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let (k1, k2) = (typ(&g, 0, 1), typ(&g, 0, 2));
+    stock(&mut g, P0, k1, 2);
+    stock(&mut g, P0, k2, 2);
+    let far = c(&g, 5, 8);
+    buy(&mut g, Card::Charge, None);
+    assert!(!g.state.charge, "noch nicht im selben Zug");
+    assert!(g.state.armed_charge[0] && !g.state.armed_charge[1]);
+    assert!(!g.piece_destinations(unit).contains(&far));
+    assert!(
+        !buys(&g)
+            .iter()
+            .any(|a| matches!(a, Action::BuyCard { card: Card::Charge, .. })),
+        "zweimal bereit geht nicht"
+    );
+    play_a_move(&mut g);
+    assert_eq!(g.state.current, P1);
+    assert!(!g.state.charge, "der Gegner bekommt nichts");
+    assert!(g.state.armed_charge[0], "bleibt bereit, sichtbar fuer den Gegner");
+    play_a_move(&mut g);
+    assert_eq!(g.state.current, P0);
+    assert!(g.state.charge, "jetzt wirkt er");
+    assert!(!g.state.armed_charge[0]);
+    assert!(g.piece_destinations(unit).contains(&far), "drei statt zwei Felder");
+    play_a_move(&mut g);
+    play_a_move(&mut g);
+    assert!(!g.state.charge, "und nur in diesem einen Zug");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn a_delayed_double_move_gives_the_second_action_one_turn_later() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::DoubleMove]);
+    g.config.terr_delay = true;
+    let (k1, k2) = (typ(&g, 0, 1), typ(&g, 0, 2));
+    stock(&mut g, P0, k1, 4);
+    stock(&mut g, P0, k2, 3);
+    buy(&mut g, Card::DoubleMove, None);
+    assert_eq!(g.state.extra_actions, 0);
+    assert_eq!(g.state.armed_extra[0], 1);
+    // Eine zweite Karte waere zu viel: der Doppelzug liegt schon bereit.
+    g.state.bought_this_turn = false;
+    assert!(buys(&g).is_empty());
+    play_a_move(&mut g); // P0 beendet den Zug
+    assert_eq!(g.state.current, P1);
+    assert_eq!(g.state.extra_actions, 0);
+    play_a_move(&mut g);
+    assert_eq!(g.state.current, P0);
+    assert_eq!(g.state.extra_actions, 1, "die zweite Aktion ist da");
+    assert_eq!(g.state.armed_extra[0], 0);
+    play_a_move(&mut g);
+    assert_eq!(g.state.current, P0, "noch einmal am Zug");
+    play_a_move(&mut g);
+    assert_eq!(g.state.current, P1);
+    assert_eq!(g.state.extra_actions, 0);
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_delay_is_a_switch_that_is_off_by_default_and_changes_the_card_text() {
+    use crate::cards::Card;
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1").unwrap();
+    assert!(!cfg.terr_delay && !cfg.terr_upkeep_sq && !cfg.terr_yield_lvl && cfg.terr_bread == 0);
+    cfg.set_all("terr_delay=1").unwrap();
+    assert!(cfg.terr_delay);
+    let g = with_deposits_cfg(cfg, &[]);
+    assert!(g.card_text(Card::DoubleMove).contains("nächsten Zug"));
+    assert!(g.card_text(Card::Charge).contains("nächsten Zug"));
+    assert!(!g.card_text(Card::Shorten).contains("nächsten Zug"));
+    let plain = v3_game(&[]);
+    assert!(!plain.card_text(Card::DoubleMove).contains("nächsten Zug"));
+}
+
+#[test]
+fn squared_upkeep_charges_the_level_squared_and_dissolves_the_big_one() {
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_sq = true;
+    g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    g.setup_unit(P0, c(&g, 4, 0), 3, 3);
+    give_area(&mut g, P0, 100);
+    assert_eq!(g.territory_upkeep(P0), Some(4 + 9), "2² + 3²");
+    let ev = income(&mut g, P0);
+    assert!(
+        ev.contains(&Event::Upkeep {
+            player: P0,
+            paid: 13
+        }),
+        "{ev:?}"
+    );
+    // Held (16) und ein Bauer (1): es fehlen 3, nur der Held deckt das allein.
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_sq = true;
+    let pawn = g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    let hero = g.setup_unit(P0, c(&g, 5, 0), 4, 4);
+    let e = earned(&g, P0);
+    give_area(&mut g, P0, 14 - e);
+    let ev = income(&mut g, P0);
+    assert_eq!(
+        ev.iter()
+            .filter_map(|x| match x {
+                Event::Dissolved { piece, level, .. } => Some((*piece, *level)),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![(hero, 4)]
+    );
+    assert!(g.state.pieces.contains_key(&pawn));
+    assert_eq!(g.state.area[0], 13, "14 minus der Unterhalt des Bauern");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn squared_upkeep_needs_the_upkeep_switch_and_changes_nothing_by_default() {
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1,terr_upkeep=0,terr_upkeep_sq=1")
+        .unwrap();
+    assert!(cfg.validate().is_err());
+    cfg.set_all("terr_upkeep=1").unwrap();
+    assert!(cfg.validate().is_ok());
+    let mut g = v3_game(&[]);
+    g.setup_unit(P0, c(&g, 3, 0), 4, 4);
+    assert_eq!(g.territory_upkeep(P0), Some(4), "ohne Schalter wie bisher");
+}
+
+#[test]
+fn a_figure_harvests_as_often_as_its_level_with_yield_by_level() {
+    let g0 = v3_game(&[]);
+    let k1 = typ(&g0, 0, 1);
+    let run = |level: u8, switch: bool, smelter: bool| -> u32 {
+        let mut g = v3_game(&[((1, 0), k1)]);
+        g.config.terr_yield_lvl = switch;
+        strip(&mut g, P0, 2);
+        g.setup_unit(P0, c(&g, 1, 0), level, level);
+        if smelter {
+            g.state.player_perks[0].smelter = true;
+        }
+        // Der Eisen-Takt ist 3: der Zaehler steht auf 2, nach dem Ertrag auf 3 = Ernte.
+        let field = c(&g, 1, 0);
+        g.state.age[field.idx()] = 2;
+        give_area(&mut g, P0, 10_000);
+        let before = storage_of(&g, P0, k1);
+        income(&mut g, P0);
+        g.check_invariants().unwrap();
+        storage_of(&g, P0, k1) - before
+    };
+    assert_eq!(run(3, false, false), 1, "ohne Schalter wie bisher");
+    assert_eq!(run(1, true, false), 1);
+    assert_eq!(run(3, true, false), 3, "Stufe 3 erntet dreifach");
+    assert_eq!(run(4, true, false), 4);
+    assert_eq!(run(3, true, true), 4, "Schmiede: das +1 kommt danach dazu");
+    // Der Koenig erntet einfach.
+    let mut g = v3_game(&[((0, 0), k1)]);
+    g.config.terr_yield_lvl = true;
+    let home = c(&g, 0, 0);
+    g.state.age[home.idx()] = 2;
+    give_area(&mut g, P0, 10_000);
+    let before = storage_of(&g, P0, k1);
+    income(&mut g, P0);
+    assert_eq!(storage_of(&g, P0, k1) - before, 1);
+}
+
+#[test]
+fn yield_by_level_needs_the_occupy_rule() {
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1,terr_occupy=0,terr_yield_lvl=1")
+        .unwrap();
+    assert!(cfg.validate().is_err());
+    cfg.set_all("terr_occupy=1").unwrap();
+    assert!(cfg.validate().is_ok());
+}
+
+#[test]
+fn with_the_bread_stock_kat3_is_harvested_into_the_factory_and_pays_cards() {
+    use crate::cards::Card;
+    let g0 = v3_game(&[]);
+    let k3 = typ(&g0, 0, 3);
+    let mut g = v3_game(&[((1, 0), k3)]);
+    g.config.terr_bread = 2;
+    g.config.validate().expect("Regeln gueltig");
+    strip(&mut g, P0, 2);
+    g.setup_unit(P0, c(&g, 1, 0), 1, 1);
+    give_area(&mut g, P0, 10_000);
+    // Takt 2: nach der ersten Runde noch nichts, nach der zweiten ein Brot.
+    income(&mut g, P0);
+    assert_eq!(storage_of(&g, P0, k3), 0);
+    let ev = income(&mut g, P0);
+    assert_eq!(storage_of(&g, P0, k3), 1, "{ev:?}");
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::Income { bonus: 0, kat3: 0, .. })),
+        "kein 2^k-Bonus mehr"
+    );
+    assert_eq!(g.connected_kat3(P0), 0);
+    // Die Tempokarten kosten jetzt Brot, die anderen weiter Eisen.
+    assert_eq!(g.territory_card_price(Card::Shorten), [0, 0, 3]);
+    assert_eq!(g.territory_card_price(Card::Pass), [0, 0, 2]);
+    assert_eq!(g.territory_card_price(Card::DoubleMove), [0, 3, 4]);
+    assert_eq!(g.territory_card_price(Card::Bend), [2, 1, 0]);
+    // Ein eigener Preis hat Vorrang.
+    let mut cfg = g.config.clone();
+    cfg.set_all("price.shorten=1/0/1").unwrap();
+    let h = with_deposits_cfg(cfg, &[]);
+    assert_eq!(h.territory_card_price(Card::Shorten), [1, 0, 1]);
+}
+
+#[test]
+fn bread_cards_can_only_be_bought_with_bread_in_the_store() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Shorten]);
+    g.config.terr_bread = 2;
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    let (k1, k3) = (typ(&g, 0, 1), typ(&g, 0, 3));
+    stock(&mut g, P0, k1, 50);
+    assert!(buys(&g).is_empty(), "Eisen zahlt die Tempokarte nicht mehr");
+    stock(&mut g, P0, k3, 3);
+    assert!(!buys(&g).is_empty());
+    buy(&mut g, Card::Shorten, Some(unit));
+    assert_eq!(storage_of(&g, P0, k3), 0);
+    assert_eq!(storage_of(&g, P0, k1), 50, "das Eisen bleibt unberuehrt");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_bread_stock_cannot_be_combined_with_trading_and_needs_the_counter() {
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1,terr_bread=2").unwrap();
+    assert!(cfg.validate().is_ok());
+    assert!(!cfg.kat3_bonus_on());
+    cfg.set_all("terr_trade=1").unwrap();
+    assert!(cfg.validate().is_err());
+    cfg.set_all("terr_trade=0,terr_cycle=0,terr_occupy=0,terr_move=0")
+        .unwrap();
+    assert!(cfg.validate().is_err(), "ohne Erntezaehler kein Brot-Takt");
+}
+
+#[test]
+fn whole_games_with_all_new_switches_keep_every_invariant_on_every_board() {
+    // Quadrat (4), Dreieck (3) und Sechseck-Bretter (6); jeder Bot-Typ, alle Schalter von 3.1.
+    for (players, corners, seed) in [(2u8, 4u8, 21u64), (3, 3, 22), (2, 6, 23), (4, 4, 24)] {
+        let mut cfg = Config::new(players, seed);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        cfg.board_corners = corners;
+        cfg.max_rounds = 60;
+        cfg.score_after = 60;
+        cfg.market_size = 11;
+        cfg.set_all("terr_delay=1,terr_upkeep_sq=1,terr_yield_lvl=1,terr_bread=2")
+            .unwrap();
+        let mut g = Game::new(cfg).unwrap_or_else(|e| panic!("{players}p {corners}e: {e:?}"));
+        let mut bots: Vec<Box<dyn Bot>> = (0..players)
+            .map(|i| match i % 3 {
+                0 => Box::new(RandomBot::new(seed + u64::from(i))) as Box<dyn Bot>,
+                1 => Box::new(GreedyBot::new(seed + u64::from(i))) as Box<dyn Bot>,
+                _ => Box::new(AreaBot::new(seed + u64::from(i))) as Box<dyn Bot>,
+            })
+            .collect();
+        let mut steps = 0;
+        while g.outcome().is_none() {
+            let me = g.current_player().idx();
+            let a = bots[me].choose(&g);
+            g.apply(a).unwrap();
+            g.check_invariants()
+                .unwrap_or_else(|e| panic!("{players}p {corners}e seed {seed} Zug {steps}: {e}"));
+            steps += 1;
+            assert!(steps < 30_000);
+        }
+    }
+}

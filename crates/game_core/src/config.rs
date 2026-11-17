@@ -188,6 +188,21 @@ pub struct Config {
     /// Preisen in Eisen / Gold / Brot (`Card::v3_price`, ohne Kartenfaktor) und selbst gebauten
     /// Karten. Braucht `terr_cards=1`.
     pub terr_cardset3: bool,
+    /// Version 3.1: Sturmangriff und Doppelzug wirken erst im naechsten eigenen Zug. Gekauft wird
+    /// beim jetzigen Zug, der Gegner sieht die Karte bereit liegen und kann reagieren.
+    pub terr_delay: bool,
+    /// Version 3.1: der Unterhalt einer Figur ist ihre Stufe im Quadrat (Stufe 4 = 16 Flaeche je
+    /// Runde) statt ihre Stufe. Der Koenig zahlt weiterhin nichts. Braucht `terr_upkeep`.
+    pub terr_upkeep_sq: bool,
+    /// Version 3.1: eine Figur der Stufe `n` auf einem Vorkommen erntet `n` mal so viel je Ernte
+    /// (der Takt bleibt, Karten wie Schmiede addieren danach ihr +1). Der Koenig erntet einfach.
+    /// Braucht `terr_occupy` (die Figur steht auf dem Feld).
+    pub terr_yield_lvl: bool,
+    /// Version 3.1: Brot als Lager. Mit `n >= 1` wird Kat 3 (Brot) nicht mehr als Flaechenbonus
+    /// gezaehlt, sondern wie Eisen und Gold alle `n` Runden geerntet (nur mit eigener Figur auf dem
+    /// Feld) und liegt im Lager der Fabrik. Karten koennen dann in Brot bezahlt werden, die
+    /// Standardpreise der Tempokarten sind dann in Brot (`Card::v3_price_bread`). 0 = aus.
+    pub terr_bread: u32,
     /// Eigene Preise, Karten, die nicht gezogen werden, und selbst gebaute Karten (Version 3).
     pub card_tweaks: crate::cards::CardTweaks,
     /// Brettform unabhaengig von der Spielerzahl: 0 = wie bisher nach Spielerzahl, sonst die
@@ -220,6 +235,11 @@ impl std::fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 impl Config {
+    /// Kat 3 zaehlt als Flaechenbonus `2^k` (und wird nicht geerntet): `terr_bonus` ohne Brot-Lager.
+    pub fn kat3_bonus_on(&self) -> bool {
+        self.terr_bonus && self.terr_bread == 0
+    }
+
     pub fn new(players: u8, seed: u64) -> Config {
         Config {
             players,
@@ -289,6 +309,10 @@ impl Config {
             terr_kingup_price: 1,
             terr_bend_tail: false,
             terr_cardset3: false,
+            terr_delay: false,
+            terr_upkeep_sq: false,
+            terr_yield_lvl: false,
+            terr_bread: 0,
             card_tweaks: crate::cards::CardTweaks::default(),
             board_corners: 0,
         }
@@ -442,6 +466,10 @@ impl Config {
             "terr_kingup_price" => self.terr_kingup_price = as_u32(value)?,
             "terr_bend_tail" => self.terr_bend_tail = value != 0,
             "terr_cardset3" => self.terr_cardset3 = value != 0,
+            "terr_delay" => self.terr_delay = value != 0,
+            "terr_upkeep_sq" => self.terr_upkeep_sq = value != 0,
+            "terr_yield_lvl" => self.terr_yield_lvl = value != 0,
+            "terr_bread" => self.terr_bread = as_u32(value)?,
             "board_corners" => self.board_corners = as_u32(value)?.min(255) as u8,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
@@ -607,6 +635,29 @@ impl Config {
             return Err(ConfigError::Invalid(
                 "terr_bonus und terr_trade gehen nicht zusammen (Kat 3 wird nur eines von beiden)",
             ));
+        }
+        if self.terr_bread > 0 && self.terr_trade {
+            return Err(ConfigError::Invalid(
+                "terr_bread und terr_trade gehen nicht zusammen (Kat 3 wird nur eines von beiden)",
+            ));
+        }
+        if self.terr_bread > 0 && !self.terr_cycle {
+            return Err(ConfigError::Invalid(
+                "terr_bread braucht terr_cycle (den Erntezaehler)",
+            ));
+        }
+        if self.terr_upkeep_sq && !self.terr_upkeep {
+            return Err(ConfigError::Invalid(
+                "terr_upkeep_sq braucht terr_upkeep (den Unterhalt)",
+            ));
+        }
+        if self.terr_yield_lvl && !self.terr_occupy {
+            return Err(ConfigError::Invalid(
+                "terr_yield_lvl braucht terr_occupy (die Figur steht auf dem Feld)",
+            ));
+        }
+        if self.terr_delay && !self.territory {
+            return Err(ConfigError::Invalid("terr_delay braucht den Gebietsmodus"));
         }
         if self.terr_up_mult == 0 {
             return Err(ConfigError::Invalid("terr_up_mult muss mindestens 1 sein"));

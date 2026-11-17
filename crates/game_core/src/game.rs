@@ -610,8 +610,15 @@ impl Game {
                     Card::Mining => !perks.mining,
                     Card::Farming => !perks.farming,
                     Card::DoubleShift => self.factories_of(me).next().is_some(),
-                    Card::DoubleMove => true,
-                    Card::Charge => !self.state.charge && self.pieces_of(me).any(|p| !p.is_king()),
+                    Card::DoubleMove => !self.config.terr_delay || self.state.armed_extra[me.idx()] == 0,
+                    Card::Charge => {
+                        let free = if self.config.terr_delay {
+                            !self.state.armed_charge[me.idx()]
+                        } else {
+                            !self.state.charge
+                        };
+                        free && self.pieces_of(me).any(|p| !p.is_king())
+                    }
                     Card::Recruit => match from {
                         PaySource::Factory(fid) => self.recruit_cell(fid).is_some(),
                         PaySource::King => false,
@@ -1109,10 +1116,23 @@ impl Game {
             }
             // Wirkt nicht beim Kauf, sondern als eigene Aktion (`Action::ShiftFactory`).
             Card::FactoryShift => {}
-            Card::Charge => self.state.charge = true,
+            Card::Charge => {
+                // Mit Verzoegerung (`terr_delay`) wirkt der Sturmangriff erst im naechsten eigenen Zug.
+                if self.config.terr_delay {
+                    self.state.armed_charge[actor.idx()] = true;
+                } else {
+                    self.state.charge = true;
+                }
+            }
             Card::Mining => self.state.player_perks[actor.idx()].mining = true,
             Card::Farming => self.state.player_perks[actor.idx()].farming = true,
-            Card::DoubleMove => self.state.extra_actions += 1,
+            Card::DoubleMove => {
+                if self.config.terr_delay {
+                    self.state.armed_extra[actor.idx()] += 1;
+                } else {
+                    self.state.extra_actions += 1;
+                }
+            }
             Card::DoubleShift => {
                 // Alles rund um die eigenen Fabriken waechst sofort nach und wird geerntet.
                 let cells: BTreeSet<CellId> = self
@@ -1341,6 +1361,11 @@ impl Game {
             }
         }
         self.state.current = PlayerId(i as u8);
+        // Verzoegerte Karten (`terr_delay`) wirken jetzt, im ersten Zug nach dem Kauf.
+        if std::mem::take(&mut self.state.armed_charge[i]) {
+            self.state.charge = true;
+        }
+        self.state.extra_actions += std::mem::take(&mut self.state.armed_extra[i]);
         if self.state.outcome.is_none() {
             let after = self.config.score_after;
             if after > 0 && self.state.round > after {
