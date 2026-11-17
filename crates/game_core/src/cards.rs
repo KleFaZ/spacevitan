@@ -419,6 +419,29 @@ impl Card {
     /// Version 3 (`terr_cardset3`): Grundpreis in Einheiten Kat 1 (Eisen), Kat 2 (Gold) und Kat 3
     /// (Brot), ohne Kartenfaktor. Wer andere Preise will, setzt `price.<karte>=eisen/gold/brot`.
     /// Brot gibt es mit `terr_bonus` nicht im Lager; ein Brotpreis ist dann nie bezahlbar.
+    /// Text der Karte im erweiterten Kartensatz von Version 3: Karten wirken auf eine gewaehlte
+    /// eigene Figur, die Ecke nur am Wegende, die Rohstoffe heissen Eisen, Gold und Brot.
+    pub fn v3_text(self) -> &'static str {
+        match self {
+            Card::Shorten => {
+                "Eine eigene Figur darf einen Schritt weniger ziehen (Stufe 3 mit zwei Karten: 3, 2 oder 1 Feld)."
+            }
+            Card::Bend => {
+                "Eine eigene Figur darf mit dem letzten Feld ihres Weges um die Ecke gehen (jede weitere Karte: ein Feld mehr, also das letzte und das vorletzte und so weiter)."
+            }
+            Card::Hop => "Eine eigene Figur darf auf ihrem Weg über eine Figur springen.",
+            Card::Pass => {
+                "Eine eigene Figur darf über eigene Figuren hinwegziehen (Gegner versperren den Weg weiter)."
+            }
+            Card::Settle => {
+                "Eine eigene Figur färbt sofort alle freien Nachbarfelder in deiner Farbe (auch gegnerisches Land, nie Felder mit einer Figur)."
+            }
+            Card::Mining => "Deine Fabrik erntet Gold (Kat 2) dauerhaft doppelt (+1 je Ernte).",
+            Card::Smelter => "Deine Fabrik erntet Eisen (Kat 1) dauerhaft doppelt (+1 je Ernte).",
+            other => other.text(),
+        }
+    }
+
     pub fn v3_price(self) -> [u32; 3] {
         match self {
             Card::Shorten => [3, 0, 0],
@@ -727,7 +750,23 @@ impl CardTweaks {
                 }
             })
             .collect();
-        Some(format!("Selbst gebaut aus: {}.", parts.join(" + ")))
+        let effects: Vec<String> = c
+            .parts
+            .iter()
+            .map(|(p, n)| {
+                let times = if *n > 1 {
+                    format!(" ×{n}")
+                } else {
+                    String::new()
+                };
+                format!("{}{times}: {}", p.name(), p.v3_text())
+            })
+            .collect();
+        Some(format!(
+            "Selbst gebaut aus: {}. {}",
+            parts.join(" + "),
+            effects.join(" ")
+        ))
     }
 
     /// Preis in Kat 1 / 2 / 3, wenn der Spieler ihn gesetzt hat (bei selbst gebauten Karten immer).

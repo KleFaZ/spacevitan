@@ -116,7 +116,7 @@ pub fn catalog_json() -> String {
             r#"{{"key":{},"name":{},"text":{},"target":{},"price":[{},{},{}],"square_only":{},"instant":{}}}"#,
             esc(c.key()),
             esc(c.name()),
-            esc(c.text()),
+            esc(c.v3_text()),
             esc(match c.target() {
                 crate::cards::CardTarget::Player => "player",
                 crate::cards::CardTarget::Unit => "unit",
@@ -133,7 +133,7 @@ pub fn catalog_json() -> String {
             r#"{{"key":{},"name":{},"text":{},"target":{},"square_only":{}}}"#,
             esc(c.key()),
             esc(c.name()),
-            esc(c.text()),
+            esc(c.v3_text()),
             esc(match c.target() {
                 crate::cards::CardTarget::Player => "player",
                 crate::cards::CardTarget::Unit => "unit",

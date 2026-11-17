@@ -549,8 +549,11 @@ impl Game {
         if let Some(text) = self.config.card_tweaks.custom_text(card) {
             return text;
         }
+        if self.config.terr_cardset3 {
+            return card.v3_text().to_string();
+        }
         if card == Card::Bend && self.config.terr_bend_tail {
-            return "Die nächste Figur darf mit dem letzten Feld ihres Weges um die Ecke gehen (jede weitere Karte: ein Feld mehr, also das letzte und das vorletzte und so weiter).".to_string();
+            return Card::Bend.v3_text().to_string();
         }
         card.text().to_string()
     }

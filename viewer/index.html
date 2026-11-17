@@ -297,6 +297,32 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .seats .chip { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: baseline; }
 .group label.check small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
 .group label.check.warn small { color: #b3261e; }
+/* Karten-Editor */
+.ced { display: flex; flex-direction: column; gap: 8px; }
+.ced-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.ced-row.off { opacity: 0.55; }
+.ced-row.changed { border-color: var(--accent); }
+.ced-row .ced-name { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ced-row .ced-name label { flex-direction: row; align-items: center; gap: 8px; font-weight: 700; font-size: 0.9rem; }
+.ced-row .ced-name small { color: var(--muted); font-size: 0.74rem; line-height: 1.3; padding-left: 26px; }
+.ced-tag { font-style: normal; font-weight: 600; font-size: 0.66rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
+.ced-price { display: flex; gap: 6px; align-items: flex-end; }
+.ced-price label { flex-direction: column; align-items: stretch; gap: 1px; font-size: 0.68rem; color: var(--muted); }
+.ced-price label > span { font-weight: 600; }
+.group .ced-price input[type=number], .group .ced-custom input[type=text] { width: 100%; padding: 5px 6px; }
+.ced-price input[type=number] { width: 58px; text-align: center; }
+.ced-sub { margin: 6px 0 0; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.ced-custom { display: flex; flex-direction: column; gap: 7px; padding: 9px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface); }
+.ced-custom .ced-head { display: flex; gap: 8px; align-items: center; }
+.ced-custom .ced-head input { flex: 1 1 auto; min-width: 0; }
+.ced-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ced-chip { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 0.82rem; font-weight: 600; background: var(--bg, transparent); }
+.ced-chip button, .ced-mini { font: inherit; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; min-width: 26px; height: 26px; cursor: pointer; line-height: 1; padding: 0 6px; }
+.ced-chip button:hover, .ced-mini:hover { border-color: var(--accent); }
+.ced-custom select { width: auto; max-width: 100%; }
+.ced-custom .ced-info { font-size: 0.76rem; color: var(--muted); line-height: 1.35; margin: 0; }
+.ced-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ced-wait { color: var(--muted); font-size: 0.82rem; }
 .menufoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; }
 .menufoot .note { margin: 0; }
 .btn { padding: 8px 12px; cursor: pointer; font-weight: 650; }
@@ -761,7 +787,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return R.cornerPlayer[home] >= 0 ? `Farbe ${playerName(R.cornerPlayer[home])}` : "Farbe einer freien Ecke";
   };
   const CARD = (key) => (R.market || []).find((c) => c.key === key) ||
-    (key === "king_boost" ? { key, name: "König-Upgrade", text: "Der König bekommt zusätzliche Zugfelder (bis Stufe 3), bezahlt mit Gold." } : { key, name: key, text: "" });
+    (key === "king_boost" ? { key, name: "König-Upgrade", text: "Der König bekommt zusätzliche Zugfelder (bis Stufe 3), bezahlt mit Gold." }
+      : cedBase(key) || { key, name: key, text: "" });
   function costParts(k) {
     const parts = [];
     if (k.color) parts.push(`${k.color}× ${resName(1)}`);
@@ -815,8 +842,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       for (let i = 1; i <= pkn(pk.shorten) && p.range - i >= 1; i++) lens.push(p.range - i);
       out.push(lens.length ? `darf auch ${lens.join(" oder ")} ${lens.length === 1 && lens[0] === 1 ? "Feld" : "Felder"} ziehen` : "Kürzer ohne Wirkung (zieht schon nur 1)");
     }
-    if (pk.bend) out.push(pkn(pk.bend) > 1 ? `darf bis zu ${pkn(pk.bend)}-mal um die Ecke gehen` : "darf einmal um die Ecke gehen");
+    if (pk.bend) {
+      const n = pkn(pk.bend), tail = !!(R && R.config && R.config.terr_bend_tail);
+      out.push(tail
+        ? (n > 1 ? `darf an den letzten ${n} Feldern abbiegen (Ecke ×${n})` : "darf am letzten Feld abbiegen (Ecke)")
+        : (n > 1 ? `darf bis zu ${n}-mal um die Ecke gehen` : "darf einmal um die Ecke gehen"));
+    }
     if (pk.hop) out.push(pkn(pk.hop) > 1 ? `darf über bis zu ${pkn(pk.hop)} Figuren springen` : "darf über eine Figur springen");
+    if (pk.pass) out.push(pkn(pk.pass) > 1 ? `darf durch bis zu ${pkn(pk.pass)} eigene Figuren hindurchziehen` : "darf durch eine eigene Figur hindurchziehen");
     if (pk.diagonal) out.push("schlägt diagonal");
     if (pk.lance) out.push("schlägt 2 Felder geradeaus");
     if (pk.spring) out.push("springt über Nachbarfiguren");
@@ -835,6 +868,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (pk.shorten) out.push(pkn(pk.shorten) > 1 ? `Kürzer ×${pkn(pk.shorten)}` : "Kürzer");
     if (pk.bend) out.push(pkn(pk.bend) > 1 ? `Ecke ×${pkn(pk.bend)}` : "Ecke");
     if (pk.hop) out.push(pkn(pk.hop) > 1 ? `Sprung ×${pkn(pk.hop)}` : "Sprung");
+    if (pk.pass) out.push(pkn(pk.pass) > 1 ? `Durchzug ×${pkn(pk.pass)}` : "Durchzug");
     if (pk.diagonal) out.push("Läuferschlag");
     if (pk.lance) out.push("Lanze");
     if (pk.spring) out.push("Sprungfeder");
@@ -1426,7 +1460,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 1; ctx.stroke();
     }
     // Version 2: Karten Kuerzer, Ecke, Sprung als weisse Abzeichen unter dem Sockel
-    const v2 = ["shorten", "bend", "hop"].filter((k) => pk[k]);
+    const v2 = ["shorten", "bend", "hop", "pass"].filter((k) => pk[k]);
     const bw = W * 0.075;
     v2.forEach((kind, i) => {
       const bx = cx + (i - (v2.length - 1) / 2) * bw * 2.3, by = cy + W * 0.19;
@@ -1691,6 +1725,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         for (let i = 0; i < segs; i++) { if (i % 2 === 0) y += dy; else x += dx; ctx.lineTo(x, y); }
       }
       ctx.stroke();
+    } else if (kind === "pass") {
+      // Durchzug: Pfeil, der durch einen Strich (die eigene Figur) geht.
+      ctx.beginPath();
+      ctx.moveTo(bx - q, by); ctx.lineTo(bx + q, by);
+      ctx.moveTo(bx + q * 0.45, by - q * 0.5); ctx.lineTo(bx + q, by); ctx.lineTo(bx + q * 0.45, by + q * 0.5);
+      ctx.moveTo(bx - q * 0.15, by - q * 0.85); ctx.lineTo(bx - q * 0.15, by + q * 0.85);
+      ctx.stroke();
     } else {
       // Ein Sprung: Bogen; n Spruenge: n Boegen nebeneinander.
       ctx.beginPath();
@@ -1713,6 +1754,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (pk.shorten) list.push("shorten");
     if (pk.bend) list.push("bend");
     if (pk.hop) list.push("hop");
+    if (pk.pass) list.push("pass");
     for (let i = 0; i < (pk.card_levels || 0); i++) list.push("star");
     const br = geo.W * 0.1;
     list.forEach((kind, i) => {
@@ -1726,7 +1768,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       else if (kind === "lance") { ctx.beginPath(); ctx.moveTo(bx, by + q); ctx.lineTo(bx, by - q); ctx.moveTo(bx - q * 0.6, by - q * 0.2); ctx.lineTo(bx, by - q); ctx.lineTo(bx + q * 0.6, by - q * 0.2); ctx.stroke(); }
       else if (kind === "spring") { ctx.beginPath(); for (let k = 0; k <= 4; k++) { const xx = bx - q + (k / 4) * 2 * q, yy = by + (k % 2 ? q * 0.6 : -q * 0.6); k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); } ctx.stroke(); }
       else if (kind === "star") star(bx, by, br * 0.85);
-      else if (kind === "shorten" || kind === "bend" || kind === "hop") v2Glyph(kind, bx, by, q, br, pkn(pk[kind]));
+      else if (kind === "shorten" || kind === "bend" || kind === "hop" || kind === "pass") v2Glyph(kind, bx, by, q, br, pkn(pk[kind]));
       else {
         ctx.font = `700 ${Math.round(br * (kind === "range" ? 1.0 : 1.3))}px ${cssVar("--font-data") || "monospace"}`;
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -2321,13 +2363,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const y = (R.config && R.config.terr_yield) || 1;
     // Mit der Besetzungsregel zaehlt nur, wo am Ende des Zugs eine eigene Figur steht (so wie es jetzt aussieht).
     const mine = occupyOn() ? new Set(f.pieces.filter((x) => x.owner === p).map((x) => x.cell)) : null;
+    // Schmiede (+1 Eisen) und Bergbau (+1 Gold) bringen je Ernte eine Einheit mehr.
+    const ppl = (f.player_perks || [])[p] || {};
+    const more = { 1: ppl.smelter ? 1 : 0, 2: ppl.mining ? 1 : 0, 3: 0, 4: 0 };
     for (let c = 0; c < f.land.length; c++) {
       if (f.land[c] !== p || !f.linked[c]) continue;
       inc.area++;
       for (const res of liveDeposits(f, c)) {
         if (bonusOn() && category(res) === 3) { inc.k3++; continue; }
         if (mine && !mine.has(c)) continue;
-        if (cycleOn() ? harvestIn(f, c, res) === 1 : !ripenLeft(f, c, res)) inc[category(res)] += y;
+        if (cycleOn() ? harvestIn(f, c, res) === 1 : !ripenLeft(f, c, res)) inc[category(res)] += y + (more[category(res)] || 0);
       }
     }
     inc.bonus = bonusArea(inc.k3);
@@ -3065,6 +3110,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           c.terr_upkeep ? "Unterhalt: jede Figur kostet je Runde ihre Stufe in Fläche (bei Minus löst sich eine Figur auf)" : "",
           c.terr_kingup ? `König-Upgrade mit Gold (${c.terr_kingup_price || 1} je Zugfeld)` : "",
           c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
+          c.terr_cardset3 ? `Neuer Kartensatz: Markt zufällig aus dem Pool, feste Preise in Eisen/Gold/Brot, ${c.terr_bend_tail ? "Ecke nur am Ende des Wegs" : "Ecke irgendwo auf dem Weg"}` : "",
           c.terr_cardany ? `Karten wirken auf jede eigene Figur (auch gebaute)${c.terr_stack ? ", mehrfach auf dieselbe (Stufe n höchstens n−1 mal)" : ""}` : "Karten wirken auf die nächste gebaute Figur",
           cut, score];
         return v3.filter(Boolean).join(" · ");
@@ -3122,7 +3168,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const pp = (f.player_perks || [])[p];
       const cardBits = [];
       if (pp) {
-        if (pp.mining) cardBits.push("Bergbau");
+        if (pp.mining) cardBits.push(isTerr() ? "Bergbau (+1 Gold je Ernte)" : "Bergbau");
+        if (pp.smelter) cardBits.push("Schmiede (+1 Eisen je Ernte)");
         if (pp.farming) cardBits.push("Ackerbau");
         if (pp.runes) cardBits.push(`Runen ${pp.runes}/3`);
         if (pp.shards) cardBits.push(`Splitter ${pp.shards}/3`);
@@ -3944,6 +3991,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Karten", fields: [
       { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
     ] },
+    { title: "Karten-Editor (Version 3)", wide: true, editor: true, note: "Jede Partie zieht die Karten des Marktes zufällig aus dem Kartenpool, deshalb ist jede Partie anders. Hier änderst du die Preise (leer = Standard), nimmst Karten aus dem Pool oder baust eigene Karten aus Bausteinen. Bausteine einer Karte wirken zusammen: „Ecke ×2“ ist doppelte Ecke (die letzten beiden Felder dürfen abbiegen). Der Königs-Boost liegt immer aus; seinen Preis stellst du unten bei „Gold je zusätzlichem Zugfeld“ ein.", fields: [] },
     { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400; in Version 3 ab Stufe 2 noch einmal doppelt: 200 / 400 / 800). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Die Rohstoffe heißen Eisen (Kat 1), Gold (Kat 2) und Brot (Kat 3); die Kachel trägt einen Rand in der Farbe des Vorkommens.", fields: [
       { key: "terr_ver", label: "Regelstufe (3, 2 oder 1)", ph: () => "3", hint: () => "3 = Version 3 (Erntezähler, Fabrik-Umzug, Kat 3 als Flächenbonus); 2 = Version 2; 1 = Version 1 (Referenz: Zugweite bis n, Preise mit Rohstoffen, sofortiger Ertrag)." },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
@@ -3959,7 +4007,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_reconnect", label: "Wehrlose Figur wieder anbinden", ph: () => "1", hint: () => "1 = steht sie neben ihrem verbundenen Land, ist sie aktiv und färbt ihr Feld; 0 = aus" },
       { key: "terr_enclose", label: "Umschlossene neutrale Fläche", ph: () => "1", hint: () => "1 = ganz umschlossene neutrale Fläche geht an die umschließende Farbe; 0 = aus" },
       { key: "terr_enclose_edge", label: "Brettrand zählt als Wand", ph: () => "0", hint: () => "0 = eine neutrale Fläche am Brettrand wird nie umschlossen; 1 = der Rand ist eine Wand (ein „L“ aus der Ecke holt ein Quadrat)" },
-      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => (menuVer() === 3 ? "8" : "16"), hint: () => "Preise der Karten mal diese Zahl durch 16. Version 2 (16): Kürzer 6, Ecke 10, Sprung 8, Fabrik rücken 6 Kat 1, Königs-Boost 3 Kat 2 je Stufe. Version 3 (8): Kürzer 3, Ecke 5, Sprung 4, Fabrik rücken 3, Königs-Boost 1 Kat 2 je Stufe." },
+      { key: "terr_card_mult", label: "Kartenpreis mal", ph: () => (menuVer() === 3 ? "8" : "16"), hint: () => "Preise der Karten mal diese Zahl durch 16. Version 2 (16): Kürzer 6, Ecke 10, Sprung 8, Fabrik rücken 6 Kat 1, Königs-Boost 3 Kat 2 je Stufe. Version 3 mit neuem Kartensatz hat feste Preise (Karten-Editor), dieser Wert gilt dort nicht mehr." },
     ] },
     { title: "Version 3: Fabrik, Ernte, Rohstoffe", wide: true, grid: true, note: "Fabrik-Umzug: der König baut die Fabrik auf seinem Feld (verbundenes Land) neu, die alte fällt weg und ihr Lager zieht mit um; das kostet nichts (Kat 1 / Kat 2 lassen sich unten als Preis einstellen) und dauert die halbe Entfernung vom alten Platz (aufgerundet, mindestens 1 Runde; der Tooltip über deinem Land nennt die Dauer vorab). Wurde die Fabrik zerstört, baut er sie auf eigenem Land fest in 3 Runden neu (kostenlos). Während des Baus gibt es kein Einkommen, die Erntezähler stehen still, das Land ist nicht verbunden (alle Figuren wehrlos, sie färben nichts), der König darf sich nicht bewegen. Erntezähler: jedes Vorkommen wird alle N Runden einmal geerntet, dann beginnt es von vorn; er läuft aber nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (sonst pausiert er). Kat 3 wird nicht geerntet: k Kat-3-Felder auf dem mit der Fabrik verbundenen Land bringen am Ende jedes eigenen Zugs zusätzlich 2^k Fläche (kein Feld: nichts). Die Kat-3-Felder liegen einzeln und gleichmäßig verteilt auf dem Brett. Figuren ab Stufe 2 kosten doppelt (200 / 400 / 800 Fläche); Kat 2 wird alle 5 Runden geerntet. Eine Karte sperrt die verbesserte Figur für diesen Zug.", fields: [
       { key: "terr_cycle", label: "Erntezähler je Vorkommen", ph: () => "1", hint: () => "1 = jedes Vorkommen wird alle N Runden (Erntezeit) einmal geerntet; 0 = Version 2 (nach der Reifezeit jede Runde)." },
@@ -3971,6 +4019,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_occupy", label: "Zähler nur mit eigener Figur", ph: () => "1", hint: () => "1 = der Erntezähler eines Feldes läuft nur, wenn am Ende deines Zugs eine eigene Figur (auch der König) darauf steht, sonst pausiert er (ohne Rückstellung); 0 = er läuft immer. Nur mit Erntezähler." },
       { key: "terr_cardany", label: "Karten auf jede eigene Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung wirken sofort auf eine eigene Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2, nicht auf den König); 0 = sie liegen neben der Fabrik und wirken auf die nächste gebaute Figur." },
       { key: "terr_stack", label: "Karten mehrfach auf eine Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung dürfen mehrmals auf dieselbe Figur gelegt werden, so oft es Sinn hat (Stufe n höchstens n−1 mal: Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld); 0 = jede Karte nur einmal je Figur. Braucht „Karten auf jede eigene Figur“." },
+      { key: "terr_cardset3", label: "Neuer Kartensatz", ph: () => "1", hint: () => "1 = großer Kartenpool (Kürzer, Ecke, Sprung, Durchzug, Siedler, Fabrik rücken, Sturmangriff, Bergbau, Schmiede, Doppelzug), jede Partie zieht den Markt zufällig, feste Preise in Eisen / Gold / Brot (im Karten-Editor einstellbar); 0 = die alten Karten der Version 3 mit halbem Grundpreis. Braucht Kartenpreise der Version 2." },
+      { key: "terr_bend_tail", label: "Ecke nur am Wegende", ph: () => "1", hint: () => "1 = nur das letzte Feld darf abbiegen (mit zwei Ecken-Karten auch das vorletzte usw.); 0 = die Ecke darf irgendwo auf dem Weg liegen (Version 2)." },
       { key: "terr_cardlock", label: "Karte sperrt die Figur", ph: () => "1", hint: () => "1 = die verbesserte Figur (beim Königs-Boost der König) darf in diesem Zug nicht ziehen; 2 = Verbessern ist der ganze Zug; 0 = Karten kosten keinen Zug." },
       { key: "terr_upkeep", label: "Unterhalt je Figur", ph: () => "1", hint: () => "1 = jede Figur kostet am Ende deines Zugs ihre Stufe in Fläche (der König nichts), abgezogen nach dem Einkommen. Reicht die Fläche nicht, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung); 0 = kein Unterhalt." },
       { key: "terr_kingup", label: "König-Upgrade mit Gold", ph: () => "1", hint: () => "1 = der Königs-Boost liegt immer aus (keine Karte nötig) und kostet Gold (Kat 2): je zusätzlichem Zugfeld so viel wie „Gold je Zugfeld“ (Quadrat 4 / 4 / 8 Felder, Sechseck 6 / 6 / 12; auf dem Dreieck gibt es keinen Boost); 0 = der Boost kommt nur als Karte aus dem Markt." },
@@ -3987,7 +4037,259 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "center_mix", label: "Kat 2/3 in der Mitte", ph: () => "0", hint: () => "Zusätzliche Felder jeder Regionsfarbe rund um die Kartenmitte." },
     ] },
   ];
-  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), und sind billiger, Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik kostenlos umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Brot-Felder (Kat 3) bringen jede Runde zusätzlich 2^k Fläche. Jede Figur kostet je Runde ihre Stufe an Unterhalt (bei Minus löst sich eine Figur auf), und der König wird direkt mit Gold verbessert.";
+  // ----- Karten-Editor (Menue) -------------------------------------------------------------------
+  // Preise und Kartenpool stellt man hier ein, eigene Karten baut man aus Bausteinen zusammen. Alles
+  // wird als Regeln (price.*, pool.*, custom.*) an den Spielkern gegeben; die Liste der Karten und
+  // Bausteine kommt vom Spielkern selbst (sv_cards).
+  let catalog = null;        // { cards, blocks, max_custom }
+  let pendingCards = null;   // gemerkter Stand, bis der Katalog da ist
+  let customCards = [];      // eigene Karten: { name, parts: [[key, n], ...], price: ["", "", ""] }
+  const PRICE_LABEL = ["Eisen", "Gold", "Brot"];
+  const poolCards = () => (catalog ? catalog.cards.filter((c) => c.key !== "king_boost") : []);
+  const cedBase = (key) => (catalog && catalog.cards.find((c) => c.key === key)) || null;
+  const priceText = (v) => v.map((n, i) => (n ? `${n}× ${PRICE_LABEL[i]}` : "")).filter(Boolean).join(" + ") || "gratis";
+  /** Richtwert einer eigenen Karte: Summe der Preise ihrer Bausteine. */
+  function cedSuggest(cc) {
+    const sum = [0, 0, 0];
+    for (const [key, n] of cc.parts) {
+      const b = cedBase(key);
+      if (b) for (let i = 0; i < 3; i++) sum[i] += b.price[i] * n;
+    }
+    return sum.map((n) => Math.min(99, n));
+  }
+  function loadCatalog() {
+    if (!catalog && wasm && typeof wasm.sv_cards === "function") {
+      try { catalog = callWasm("sv_cards"); } catch (err) { catalog = null; }
+    }
+    renderCardEditor();
+  }
+  function cedNumberInput(attrs, placeholder, value, onInput) {
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.min = "0"; inp.max = "99"; inp.step = "1"; inp.inputMode = "numeric";
+    inp.placeholder = String(placeholder);
+    if (value !== "" && value !== undefined && value !== null) inp.value = String(value);
+    for (const [k, v] of Object.entries(attrs)) inp.dataset[k] = String(v);
+    inp.addEventListener("input", onInput);
+    return inp;
+  }
+  function cedPriceBox(label, makeInput) {
+    const box = document.createElement("div");
+    box.className = "ced-price";
+    for (let i = 0; i < 3; i++) {
+      const l = document.createElement("label");
+      const sp = document.createElement("span");
+      sp.textContent = label[i];
+      l.append(sp, makeInput(i));
+      box.appendChild(l);
+    }
+    return box;
+  }
+  function cedMarkRows() {
+    for (const row of document.querySelectorAll("#cardEditor .ced-row")) {
+      const cb = row.querySelector("[data-ced-pool]");
+      const price = [...row.querySelectorAll("[data-ced-price]")];
+      const changed = price.some((x) => x.value.trim() !== "" && Number(x.value) !== Number(x.placeholder));
+      row.classList.toggle("off", !cb.checked);
+      row.classList.toggle("changed", changed || !cb.checked);
+    }
+  }
+  function renderCardEditor() {
+    const host = $("cardEditor");
+    if (!host) return;
+    if (!catalog) {
+      host.innerHTML = `<p class="ced-wait">${wasm ? "Dieser Spielkern kennt den Karten-Editor noch nicht. Bitte die neueste Seite laden." : "Die Karten werden vom Spielkern geladen …"}</p>`;
+      return;
+    }
+    const saved = pendingCards || { price: {}, off: [], custom: [] };
+    pendingCards = null;
+    customCards = (Array.isArray(saved.custom) ? saved.custom : [])
+      .filter((c) => c && typeof c.name === "string" && Array.isArray(c.parts) && Array.isArray(c.price))
+      .slice(0, catalog.max_custom)
+      .map((c) => ({
+        name: c.name.slice(0, 24),
+        parts: c.parts.filter((p) => Array.isArray(p) && catalog.blocks.some((b) => b.key === p[0]) && p[1] >= 1 && p[1] <= 3).map((p) => [p[0], p[1] | 0]),
+        price: [0, 1, 2].map((i) => (c.price[i] === undefined || c.price[i] === null ? "" : String(c.price[i]))),
+      }));
+    host.innerHTML = "";
+    const bar = document.createElement("div");
+    bar.className = "ced-bar";
+    const reset = document.createElement("button");
+    reset.type = "button"; reset.className = "preset"; reset.textContent = "Karten zurücksetzen";
+    reset.title = "Alle Preise zurück auf Standard, alle Karten im Pool, keine eigenen Karten";
+    reset.addEventListener("click", () => { pendingCards = null; renderCardEditor(); });
+    bar.appendChild(reset);
+    host.appendChild(bar);
+    const sub1 = document.createElement("p");
+    sub1.className = "ced-sub"; sub1.textContent = "Kartenpool und Preise";
+    host.appendChild(sub1);
+    for (const c of poolCards()) {
+      const row = document.createElement("div");
+      row.className = "ced-row";
+      const name = document.createElement("div");
+      name.className = "ced-name";
+      const lab = document.createElement("label");
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.dataset.cedPool = c.key; cb.checked = !(saved.off || []).includes(c.key);
+      cb.title = "Im Pool: kann im Markt der Partie auftauchen";
+      cb.addEventListener("change", cedMarkRows);
+      const b = document.createElement("b");
+      b.textContent = c.name;
+      lab.append(cb, b);
+      if (c.square_only) {
+        const tag = document.createElement("i");
+        tag.className = "ced-tag"; tag.textContent = "nur Quadrat"; tag.title = "Auf Sechseck- und Dreieckbrettern wirkungslos, dort nicht im Pool";
+        lab.appendChild(tag);
+      }
+      if (c.instant) {
+        const tag = document.createElement("i");
+        tag.className = "ced-tag"; tag.textContent = "sofort"; tag.title = "Wirkt sofort, ohne Figur";
+        lab.appendChild(tag);
+      }
+      const small = document.createElement("small");
+      small.textContent = c.text;
+      name.append(lab, small);
+      const sv = (saved.price || {})[c.key] || [];
+      const price = cedPriceBox(PRICE_LABEL, (i) => {
+        const v = sv[i] !== undefined && sv[i] !== "" && Number(sv[i]) !== c.price[i] ? sv[i] : "";
+        return cedNumberInput({ cedPrice: c.key, i }, c.price[i], v, cedMarkRows);
+      });
+      row.append(name, price);
+      host.appendChild(row);
+    }
+    const sub2 = document.createElement("p");
+    sub2.className = "ced-sub"; sub2.textContent = "Eigene Karten";
+    host.appendChild(sub2);
+    const note = document.createElement("p");
+    note.className = "note";
+    note.textContent = "Baue eine Karte aus Bausteinen: Name, Bausteine (jeder bis ×3) und Preis. Ohne Preis gilt der Richtwert (Summe der Bausteine). Eigene Karten kommen wie alle anderen zufällig in den Markt.";
+    host.appendChild(note);
+    const list = document.createElement("div");
+    list.id = "cedCustom"; list.className = "ced";
+    host.appendChild(list);
+    const add = document.createElement("button");
+    add.type = "button"; add.className = "preset"; add.id = "cedAdd"; add.textContent = "+ Eigene Karte";
+    add.addEventListener("click", () => {
+      if (customCards.length >= catalog.max_custom) return;
+      customCards.push({ name: "", parts: [], price: ["", "", ""] });
+      renderCustomCards();
+      const names = document.querySelectorAll("#cedCustom .ced-head input");
+      if (names.length) names[names.length - 1].focus();
+    });
+    host.appendChild(add);
+    renderCustomCards();
+    cedMarkRows();
+  }
+  function renderCustomCards() {
+    const host = $("cedCustom");
+    if (!host) return;
+    host.innerHTML = "";
+    customCards.forEach((cc, idx) => {
+      const box = document.createElement("div");
+      box.className = "ced-custom";
+      const head = document.createElement("div");
+      head.className = "ced-head";
+      const nameIn = document.createElement("input");
+      nameIn.type = "text"; nameIn.maxLength = 24; nameIn.placeholder = "Name der Karte"; nameIn.value = cc.name;
+      nameIn.addEventListener("input", () => { cc.name = nameIn.value; });
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "ced-mini"; del.textContent = "Löschen"; del.title = "Diese Karte entfernen";
+      del.addEventListener("click", () => { customCards.splice(idx, 1); renderCustomCards(); });
+      head.append(nameIn, del);
+      const chips = document.createElement("div");
+      chips.className = "ced-chips";
+      const setCount = (key, n) => {
+        const k = cc.parts.findIndex((q) => q[0] === key);
+        if (k < 0) return;
+        if (n <= 0) cc.parts.splice(k, 1); else cc.parts[k][1] = Math.min(3, n);
+        renderCustomCards();
+      };
+      for (const [key, n] of cc.parts) {
+        const blk = catalog.blocks.find((q) => q.key === key);
+        const chip = document.createElement("span");
+        chip.className = "ced-chip";
+        chip.title = blk ? blk.text : key;
+        chip.append(`${blk ? blk.name : key} ×${n}`);
+        const minus = document.createElement("button");
+        minus.type = "button"; minus.textContent = "−"; minus.title = "Einmal weniger";
+        minus.addEventListener("click", () => setCount(key, n - 1));
+        const plus = document.createElement("button");
+        plus.type = "button"; plus.textContent = "+"; plus.title = "Einmal mehr (bis ×3)"; plus.disabled = n >= 3;
+        plus.addEventListener("click", () => setCount(key, n + 1));
+        chip.append(minus, plus);
+        chips.appendChild(chip);
+      }
+      const sel = document.createElement("select");
+      sel.setAttribute("aria-label", "Baustein hinzufügen");
+      sel.add(new Option("+ Baustein hinzufügen …", ""));
+      for (const blk of catalog.blocks) sel.add(new Option(`${blk.name}${blk.square_only ? " (nur Quadrat)" : ""}`, blk.key));
+      sel.addEventListener("change", () => {
+        const key = sel.value;
+        if (!key) return;
+        const k = cc.parts.findIndex((q) => q[0] === key);
+        if (k >= 0) cc.parts[k][1] = Math.min(3, cc.parts[k][1] + 1); else cc.parts.push([key, 1]);
+        renderCustomCards();
+      });
+      chips.appendChild(sel);
+      const sug = cedSuggest(cc);
+      const price = cedPriceBox(PRICE_LABEL, (i) => cedNumberInput({}, sug[i], cc.price[i], (e) => { cc.price[i] = e.target.value; }));
+      const info = document.createElement("p");
+      info.className = "ced-info";
+      const effects = cc.parts.map(([key, n]) => { const blk = catalog.blocks.find((q) => q.key === key); return blk ? `${blk.name}${n > 1 ? ` ×${n}` : ""}: ${blk.text}` : ""; }).filter(Boolean);
+      info.textContent = cc.parts.length ? `Richtwert ${priceText(sug)}. ${effects.join(" · ")}` : "Noch kein Baustein.";
+      box.append(head, chips, price, info);
+      host.appendChild(box);
+    });
+    const add = $("cedAdd");
+    if (add) add.disabled = customCards.length >= catalog.max_custom;
+  }
+  /** Regeln aus dem Editor: Preise, Pool und eigene Karten. Wirft einen Text, wenn etwas nicht stimmt. */
+  function cardRuleParts() {
+    const out = [];
+    if (!catalog || !$("cardEditor")) return out;
+    for (const c of poolCards()) {
+      const cb = document.querySelector(`#cardEditor [data-ced-pool="${c.key}"]`);
+      if (cb && !cb.checked) out.push(`pool.${c.key}=0`);
+      const ins = [...document.querySelectorAll(`#cardEditor [data-ced-price="${c.key}"]`)];
+      if (!ins.some((x) => x.value.trim() !== "")) continue;
+      const vals = ins.map((x, i) => {
+        const raw = x.value.trim();
+        if (raw === "") return c.price[i];
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 0 || n > 99) throw new Error(`Karte „${c.name}“, ${PRICE_LABEL[i]}: bitte eine ganze Zahl von 0 bis 99 eintragen.`);
+        return n;
+      });
+      if (vals.some((v, i) => v !== c.price[i])) out.push(`price.${c.key}=${vals.join("/")}`);
+    }
+    customCards.forEach((cc, i) => {
+      const name = cc.name.trim();
+      if (!name) throw new Error(`Eigene Karte ${i + 1}: bitte einen Namen eintragen (oder die Karte löschen).`);
+      if (/[=|,]/.test(name)) throw new Error(`Eigene Karte „${name}“: im Namen sind = | und , nicht erlaubt.`);
+      if (!cc.parts.length) throw new Error(`Eigene Karte „${name}“: bitte mindestens einen Baustein wählen.`);
+      const sug = cedSuggest(cc);
+      const vals = cc.price.map((raw, k) => {
+        const t = String(raw).trim();
+        if (t === "") return sug[k];
+        const n = Number(t);
+        if (!Number.isInteger(n) || n < 0 || n > 99) throw new Error(`Eigene Karte „${name}“, ${PRICE_LABEL[k]}: bitte eine ganze Zahl von 0 bis 99 eintragen.`);
+        return n;
+      });
+      out.push(`custom.${i}=${name}|${cc.parts.map(([k, n]) => (n > 1 ? `${k}*${n}` : k)).join("+")}|${vals.join("/")}`);
+    });
+    return out;
+  }
+  /** Stand des Editors zum Merken (localStorage). */
+  function cardsState() {
+    if (!catalog || !$("cardEditor")) return pendingCards || { price: {}, off: [], custom: [] };
+    const price = {}, off = [];
+    for (const c of poolCards()) {
+      const cb = document.querySelector(`#cardEditor [data-ced-pool="${c.key}"]`);
+      if (cb && !cb.checked) off.push(c.key);
+      const ins = [...document.querySelectorAll(`#cardEditor [data-ced-price="${c.key}"]`)];
+      if (ins.some((x) => x.value.trim() !== "")) price[c.key] = ins.map((x) => x.value.trim());
+    }
+    return { price, off, custom: customCards.map((c) => ({ name: c.name, parts: c.parts.map((p) => p.slice()), price: c.price.slice() })) };
+  }
+  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), der Markt wird jede Partie zufällig aus einem großen Kartenpool gezogen (Preise in Eisen / Gold / Brot, im Karten-Editor änderbar, eigene Karten baubar; die Ecke darf nur am Ende des Wegs abbiegen), Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik kostenlos umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Brot-Felder (Kat 3) bringen jede Runde zusätzlich 2^k Fläche. Jede Figur kostet je Runde ihre Stufe an Unterhalt (bei Minus löst sich eine Figur auf), und der König wird direkt mit Gold verbessert.";
   const MENU_KEY = "spacevitan-menu-v4";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
@@ -4006,6 +4308,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         box.appendChild(p);
       }
       let inner = box;
+      if (g.editor) {
+        const host2 = document.createElement("div");
+        host2.className = "ced";
+        host2.id = "cardEditor";
+        host2.innerHTML = `<p class="ced-wait">Die Karten werden vom Spielkern geladen …</p>`;
+        box.appendChild(host2);
+        host.appendChild(box);
+        continue;
+      }
       if (g.details || g.grid) {
         inner = document.createElement("div");
         inner.className = "inner";
@@ -4136,6 +4447,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
       parts.push(`${key}=${n}`);
     }
+    // Karten-Editor: Preise, Pool und eigene Karten (nur Version 3)
+    if (ver === 3) parts.push(...cardRuleParts());
     return ["territory=1", ...(ver === 3 ? ["terr_v3=1"] : ver === 2 ? ["terr_v2=1"] : []), ...parts].join(",");
   }
   /** Text in den Eingabepuffer des Spielkerns schreiben; gibt die Laenge zurueck. */
@@ -4163,7 +4476,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         else if (input.value.trim() !== "") rules[input.dataset.rule] = input.value.trim();
       }
       localStorage.setItem(MENU_KEY, JSON.stringify({
-        board: $("setBoard").value, players: $("setPlayers").value, fill: $("setFill").checked, seats: seatChoice, rules,
+        board: $("setBoard").value, players: $("setPlayers").value, fill: $("setFill").checked, seats: seatChoice, rules, cards: cardsState(),
       }));
     } catch (err) { /* Speicher gesperrt: dann eben ohne Merken */ }
   }
@@ -4174,6 +4487,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (saved.board !== undefined && [...$("setBoard").options].some((o) => o.value === String(saved.board))) $("setBoard").value = String(saved.board);
       fillPlayerOptions(Number(saved.players));
       if (typeof saved.fill === "boolean") $("setFill").checked = saved.fill;
+      if (saved.cards && typeof saved.cards === "object") pendingCards = saved.cards;
       if (Array.isArray(saved.seats)) seatChoice = SEAT_DEFAULT.map((d, i) => (Number.isInteger(saved.seats[i]) ? saved.seats[i] : d));
       for (const input of ruleInputs()) {
         const v = saved.rules && saved.rules[input.dataset.rule];
@@ -4390,6 +4704,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
     }
+    if (canAct() && now.charge) sub = `Sturmangriff: in diesem Zug ziehen alle Figuren ein Feld weiter. ${sub}`;
+    if (canAct() && now.extra_actions > 0) sub = `Doppelzug: du hast ${now.extra_actions === 1 ? "noch eine weitere Aktion" : `noch ${now.extra_actions} weitere Aktionen`} in diesem Zug. ${sub}`;
     const resting = canAct() && !(inspectValid() && inspect.id === now.card_lock) ? lockedPiece(now) : null;
     if (resting) sub = `${pieceLabel(resting)} auf ${cellName(resting.cell)} hat eine Karte bekommen und ruht in diesem Zug (Pausenzeichen). ${sub}`;
     if (inspectValid()) sub = inspectText() + (sub ? " " + sub : "");
@@ -4589,6 +4905,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   $("menuReset").addEventListener("click", () => {
     $("setBoard").value = "4"; fillPlayerOptions(2); $("setFill").checked = true; seatChoice = SEAT_DEFAULT.slice(); $("setSeed").value = "";
     clearRuleFields();
+    pendingCards = null;
+    renderCardEditor();
     refreshSeats();
   });
   $("file").addEventListener("change", (e) => {
@@ -4721,6 +5039,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   };
   loadWasm().then((ex) => {
     wasm = ex;
+    loadCatalog();
     setMode("play");
   }).catch((err) => {
     $("modePlay").disabled = true;
