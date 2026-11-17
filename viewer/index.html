@@ -4223,6 +4223,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Kartentext; mit Karten auf gebaute Figuren gilt "die naechste Figur" nicht mehr. */
   function cardText(c) {
+    if (c.key === "pawn_diagonal") return c.text; // nur Bauern, nur einmal: der Satz zum Stapeln gilt hier nicht
     if (!(cardAnyOn() && c.target === "unit")) return c.text;
     const base = c.text.replace(/^Die nächste Figur/, "Eine Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2)");
     return stackOn() ? `${base} Auch mehrmals auf dieselbe Figur: Stufe n höchstens n−1 mal.` : base;
