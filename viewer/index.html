@@ -76,6 +76,8 @@ select { padding: 7px 10px; max-width: min(460px, 100%); min-width: 0; }
   padding: 10px; min-width: 0;
 }
 .board-wrap { position: relative; }
+.board-frame, .board-scroll { position: relative; }
+.zoombar, .mini, .pendbar { display: none; }
 canvas { display: block; width: 100%; height: auto; touch-action: manipulation; border-radius: 6px; }
 .tip {
   position: absolute; z-index: 2; pointer-events: none; max-width: 240px;
@@ -324,6 +326,27 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .ced-custom .ced-info { font-size: 0.76rem; color: var(--muted); line-height: 1.35; margin: 0; }
 .ced-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ced-wait { color: var(--muted); font-size: 0.82rem; }
+.quick { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.qrow { display: flex; flex-direction: column; gap: 5px; }
+.qlabel { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { min-height: 44px; padding: 8px 16px; cursor: pointer; font-weight: 650; border-radius: 8px; }
+.seg button[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.seg button:disabled { opacity: 0.45; cursor: not-allowed; }
+.qnote { margin: 0; max-width: 78ch; min-height: 2.6em; }
+.qgo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.qgo .btn { min-height: 44px; }
+.btn.big { min-height: 52px; padding: 10px 26px; font-size: 1.05rem; }
+.qfriend { margin: 0; color: var(--muted); font-size: 0.8rem; }
+.adv { border-top: 1px solid var(--line); padding-top: 10px; }
+.adv > summary { cursor: pointer; font-weight: 700; padding: 6px 0; min-height: 36px; }
+.adv > .menuhead { margin-top: 8px; }
+@media (max-width: 700px) {
+  .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #qPlayers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .qgo { flex-direction: column; align-items: stretch; }
+  .qgo .btn.big { width: 100%; }
+}
 .menufoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; }
 .menufoot .note { margin: 0; }
 .btn { padding: 8px 12px; cursor: pointer; font-weight: 650; }
@@ -344,9 +367,24 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .market .copt .tx { color: var(--muted); font-size: 0.72rem; line-height: 1.3; }
 .market li.copt.note { border-style: dashed; }
 .resbar .rs small.u { font-size: 0.66rem; }
+.armed { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 6px 9px; border: 1px solid #c9a227; border-radius: 7px; background: #fbf3d6; color: #5a4300; font-size: 0.82rem; line-height: 1.3; }
+.armed .chip { flex: none; width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .armed { background: #3a3112; border-color: #8a741a; color: #f5d777; } }
+:root[data-theme="dark"] .armed { background: #3a3112; border-color: #8a741a; color: #f5d777; }
 :root { --gutl: max(16px, env(safe-area-inset-left, 0px)); --gutr: max(16px, env(safe-area-inset-right, 0px)); }
 /* Handy, 2D: Ressourcen oben, das Brett ueber die ganze Breite, darunter die Kartenoptionen */
 @media (max-width: 700px) {
+  html.v2d .board-scroll { touch-action: pan-x pan-y; }
+  html.v2d.pz .board-scroll { overflow: auto; max-height: 76vh; max-height: 76svh; overscroll-behavior: contain; }
+  html.v2d .zoombar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 6px var(--gutr) 0 var(--gutl); font-size: 0.78rem; color: var(--muted); }
+  html.v2d .zoombar span { margin-right: auto; }
+  html.v2d .zoombar button { width: 44px; height: 40px; font-size: 1.4rem; line-height: 1; cursor: pointer; border-radius: 10px; padding: 0; }
+  html.v2d .zoombar button:disabled { opacity: 0.4; cursor: default; }
+  html.v2d.pz .mini { display: block; position: absolute; right: calc(var(--gutr) - 8px); bottom: 8px; z-index: 4; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; opacity: 0.93; touch-action: none; box-shadow: 0 2px 8px rgb(0 0 0 / 0.22); }
+  html.v2d .pendbar:not([hidden]) { display: flex; align-items: center; gap: 8px; position: absolute; top: 6px; left: 8px; right: 8px; z-index: 5; padding: 6px 8px; background: var(--surface); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.25); font-size: 0.85rem; font-weight: 650; }
+  html.v2d .pendbar span { flex: 1; min-width: 0; }
+  html.v2d .pendbar .btn { min-height: 40px; }
+}
   html.v2d body { margin: 0; }
   html.v2d .layout { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
   html.v2d .layout > .stage, html.v2d .layout > aside { display: contents; }
@@ -400,14 +438,53 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
 <section class="menu" id="menu" hidden aria-label="Neue Partie einrichten">
   <form id="setup" novalidate>
-    <div class="menuhead">
-      <h2>Neue Partie · Version 3</h2>
-      <div class="presets" role="group" aria-label="Einstellungen">
-        <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
+    <div class="quick" id="quick">
+      <h2>Neue Partie</h2>
+      <div class="qrow">
+        <span class="qlabel" id="qBotLabel">Gegner</span>
+        <div class="seg" id="qBot" role="radiogroup" aria-labelledby="qBotLabel">
+          <button type="button" role="radio" aria-checked="false" data-bot="0">Leicht</button>
+          <button type="button" role="radio" aria-checked="false" data-bot="4">Mittel</button>
+          <button type="button" role="radio" aria-checked="false" data-bot="3">Schwer</button>
+          <button type="button" role="radio" aria-checked="false" data-bot="5">Sehr schwer</button>
+        </div>
       </div>
-      <p class="note" id="presetNote"></p>
+      <div class="qrow">
+        <span class="qlabel" id="qPlayersLabel">Spieler</span>
+        <div class="seg" id="qPlayers" role="radiogroup" aria-labelledby="qPlayersLabel">
+          <button type="button" role="radio" aria-checked="false" data-n="2">2</button>
+          <button type="button" role="radio" aria-checked="false" data-n="3">3</button>
+          <button type="button" role="radio" aria-checked="false" data-n="4">4</button>
+        </div>
+      </div>
+      <div class="qrow">
+        <span class="qlabel" id="qPresetLabel">Regeln</span>
+        <div class="seg" id="qPreset" role="radiogroup" aria-labelledby="qPresetLabel">
+          <button type="button" role="radio" aria-checked="false" data-preset="standard">Standard</button>
+          <button type="button" role="radio" aria-checked="false" data-preset="ideas">Neue Regelideen</button>
+          <button type="button" role="radio" aria-checked="false" data-preset="fast">Schnelle Partie</button>
+          <button type="button" role="radio" aria-checked="false" data-preset="cards">Viele Karten</button>
+        </div>
+      </div>
+      <p class="note qnote" id="qNote"></p>
+      <div class="qgo">
+        <button class="btn primary big" type="submit" id="menuStart">Partie starten</button>
+        <button class="btn" type="button" id="qHot">Zu zweit an einem Gerät</button>
+        <button class="btn" type="button" id="qWatch">Zuschauen (Bot gegen Bot)</button>
+        <button class="btn" type="button" id="menuBack" hidden>Zurück zur Partie</button>
+      </div>
+      <p class="note qfriend">Gegen einen Freund per Link spielen kommt, sobald der Spiel-Server steht.</p>
+      <p class="error" id="menuError" hidden></p>
     </div>
-    <div class="groups" id="menuGroups">
+    <details class="adv" id="adv">
+      <summary>Erweiterte Einstellungen</summary>
+      <div class="menuhead">
+        <div class="presets" role="group" aria-label="Einstellungen">
+          <button type="button" class="preset" id="menuReset">Alles zurücksetzen</button>
+        </div>
+        <p class="note" id="presetNote"></p>
+      </div>
+      <div class="groups" id="menuGroups">
       <fieldset class="group wide" id="gameGroup">
         <legend>Spiel</legend>
         <div class="inner">
@@ -433,21 +510,31 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         </label>
         <div class="seats" id="setSeats" role="group" aria-label="Wer spielt welchen Platz"></div>
       </fieldset>
-    </div>
-    <p class="error" id="menuError" hidden></p>
-    <div class="menufoot">
-      <button class="btn primary" type="submit" id="menuStart">Partie starten</button>
-      <button class="btn" type="button" id="menuBack" hidden>Zurück zur Partie</button>
-      <span class="note">Leere Felder gelten als Standard (grau angezeigt). Alle Einstellungen gelten nur für die nächste Partie.</span>
-    </div>
+      </div>
+    </details>
   </form>
 </section>
 
 <main class="layout">
   <section class="stage" aria-label="Spielbrett">
     <div class="board-wrap">
-      <canvas id="board" aria-label="Isometrisches Spielbrett"></canvas>
-      <div id="tip" class="tip" hidden></div>
+      <div class="board-frame">
+        <div class="board-scroll" id="boardScroll">
+          <canvas id="board" aria-label="Isometrisches Spielbrett"></canvas>
+          <div id="tip" class="tip" hidden></div>
+        </div>
+        <canvas id="mini" class="mini" aria-label="Übersicht: Tippen oder Ziehen verschiebt den Ausschnitt"></canvas>
+        <div class="pendbar" id="pendBar" hidden>
+          <span id="pendText"></span>
+          <button type="button" id="pendOk" class="btn primary">Ziehen</button>
+          <button type="button" id="pendNo" class="btn" aria-label="Abbrechen">✕</button>
+        </div>
+      </div>
+      <div class="zoombar" id="zoomBar">
+        <span id="zoomLabel" aria-live="polite">Ganzes Brett</span>
+        <button type="button" id="zoomOut" aria-label="Verkleinern">−</button>
+        <button type="button" id="zoomIn" aria-label="Vergrößern">+</button>
+      </div>
       <div id="facCard" class="faccard" hidden></div>
     </div>
     <div id="facDock"></div>
@@ -595,6 +682,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   let liveR = null;    // vorbereitete laufende Partie (waechst Zug fuer Zug)
   let botTimer = null;
   let selected = null; // ausgewaehlte eigene Figur
+  let pendingMove = null; // Handy: Zielfeld, das auf die Bestaetigung wartet (zweites Tippen)
+  let zoomLevel = 0;   // Handy, 2D: 0 = ganzes Brett, 1 = mittel, 2 = nah
   let cardMode = null; // Version 3: { card } = Karte gewaehlt, die Figur dafuer steht noch aus
   let inspect = null;  // { R, fi, id, cells } = Ziehfelder einer beliebig angeklickten Figur (auch gegnerisch)
   let hoverReach = null;  // { R, fi, id, cells } = Ziehfelder der Figur unter dem Mauszeiger (verschwinden mit der Maus)
@@ -887,10 +976,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
   // ----- Geometrie ---------------------------------------------------------------------------
   const TILT = 0.62; // Neigung der Draufsicht bei Dreieck und Hex
+  /** Handy-Ansicht: 2D und schmales Fenster (nur dort gibt es Zoomstufen und das Zwei-Schritt-Tippen). */
+  const phoneOK = () => !view3d && window.matchMedia("(max-width: 700px)").matches;
+  /** Wie phoneOK, aber nur mit Fingerbedienung: dort bestaetigt ein zweites Tippen jeden Zug. */
+  const touchUi = () => phoneOK() && window.matchMedia("(pointer: coarse)").matches;
+  const ZOOM_NAMES = ["Ganzes Brett", "Mittel", "Nah"];
+  /** Feldbreite der Zoomstufen in Pixeln (Stufe 0 = Brett passt in die Breite). */
+  const zoomU = (fit, level) => Math.min(96, Math.max(fit, level === 1 ? Math.max(fit * 1.35, 52) : Math.max(fit * 1.9, 76)));
   function layout() {
     if (!R) return;
     const wrap = canvas.parentElement;
-    const cssW = Math.max(240, wrap.clientWidth);
+    const viewW = Math.max(240, wrap.clientWidth);
     const square = R.board.kind === "square";
     const flat = !view3d;
     const rot = flat && !square ? flatRotation() : 0;
@@ -906,20 +1002,28 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
     // Rand fuer Beschriftung (in Feldbreiten); 2D: Koordinaten stehen im Brett, aber Lagerleisten ragen hinaus
-    const pad = flat ? (cssW <= 700 ? 0.25 : 1) : square ? 2.2 : 0.6;
-    const U = Math.min(flat ? 72 : square ? 84 : 72, cssW / (maxX - minX + pad));
+    const pad = flat ? (viewW <= 700 ? 0.25 : 1) : square ? 2.2 : 0.6;
+    const span = maxX - minX + pad;
+    let U = Math.min(flat ? 72 : square ? 84 : 72, viewW / span);
+    if (!phoneOK()) zoomLevel = 0;
+    // Handy-Zoom: das Brett wird breiter als der Bildschirm und liegt in einem Rahmen zum Verschieben
+    if (zoomLevel > 0) U = Math.min(zoomU(U, zoomLevel), Math.max(U, 4096 / span));
+    const cssW = Math.max(viewW, Math.ceil(span * U));
     const W = U * (square ? 1 : R.board.kind === "hex" ? 0.9 : 0.72); // Figurengroesse
     const thick = flat ? 0 : W * 0.12;
     const top = flat ? U * 0.32 : W * 1.05 + (square ? U * 0.15 : 0); // Platz fuer hohe Figuren
     const ox = cssW / 2 - ((minX + maxX) / 2) * U;
     const oy = top - minY * U;
     const cssH = Math.ceil(oy + maxY * U + thick + (flat ? U * 0.32 : W * 0.35));
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (cssW * cssH * dpr * dpr > 14e6) dpr = Math.max(1, Math.sqrt(14e6 / (cssW * cssH)));
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW > viewW ? cssW + "px" : "";
     canvas.style.height = cssH + "px";
-    geo = { U, W, thick, ox, oy, cssW, cssH, dpr, square, flat, side: R.side, rot };
+    geo = { U, W, thick, ox, oy, cssW, cssH, dpr, square, flat, side: R.side, rot, proj1, bounds: { minX, maxX, minY, maxY } };
     canvas.setAttribute("aria-label", flat ? "Spielbrett von oben" : "Isometrisches Spielbrett");
+    updateZoomUi();
     if (typeof renderFactoryCard === "function" && live) renderFactoryCard();
   }
   /**
@@ -939,6 +1043,166 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function flatXY(x, y, square, side, rot) {
     if (square) return [x, side - 1 - y];
     return rot ? [y, -x] : [x, y];
+  }
+  // ----- Handy: Zoomstufen, Minimap, Pinch ----------------------------------------------------
+  const cellPx = (cell) => { const [x, y] = R.board.cells[cell]; return iso(x, y); };
+  function updateZoomUi() {
+    const phone = phoneOK();
+    document.documentElement.classList.toggle("pz", phone && zoomLevel > 0);
+    $("zoomOut").disabled = zoomLevel <= 0;
+    $("zoomIn").disabled = zoomLevel >= 2;
+    $("zoomLabel").textContent = ZOOM_NAMES[zoomLevel];
+    updatePend();
+  }
+  /** Neue Zoomstufe; `cell` kommt in die Bildmitte, sonst bleibt die Mitte des Ausschnitts. */
+  function setZoom(level, cell) {
+    level = Math.max(0, Math.min(2, level));
+    if (!R || !geo || !phoneOK() || level === zoomLevel) return;
+    const sc = $("boardScroll");
+    const fx = (sc.scrollLeft + sc.clientWidth / 2) / geo.cssW, fy = (sc.scrollTop + sc.clientHeight / 2) / geo.cssH;
+    zoomLevel = level;
+    layout();
+    if (level > 0) {
+      let tx = fx * geo.cssW, ty = fy * geo.cssH;
+      if (cell !== null && cell !== undefined) [tx, ty] = cellPx(cell);
+      sc.scrollTo({ left: tx - sc.clientWidth / 2, top: ty - sc.clientHeight / 2, behavior: "auto" });
+    }
+    requestAnimationFrame(draw);
+  }
+  /** Beim Auswaehlen einer Figur: sie samt ihren Zielfeldern in den Ausschnitt holen. */
+  function focusSelection() {
+    if (!R || !geo || !phoneOK() || zoomLevel === 0 || selected === null) return;
+    const me = R.frames[fi].byId.get(selected);
+    if (!me) return;
+    const sc = $("boardScroll");
+    const pts = [me.cell, ...destinations(selected)].map(cellPx);
+    const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const [px, py] = cellPx(me.cell);
+    const tx = x1 - x0 + 2 * geo.U <= sc.clientWidth ? (x0 + x1) / 2 : px;
+    const ty = y1 - y0 + 2 * geo.U <= sc.clientHeight ? (y0 + y1) / 2 : py;
+    sc.scrollTo({ left: tx - sc.clientWidth / 2, top: ty - sc.clientHeight / 2, behavior: reduceMotion ? "auto" : "smooth" });
+  }
+  const MINI_PAD = 3;
+  function drawMini() {
+    const m = $("mini");
+    if (!m || !R || !geo || !geo.proj1 || !document.documentElement.classList.contains("pz")) return;
+    const sc = $("boardScroll"), b = geo.bounds;
+    const bw = b.maxX - b.minX, bh = b.maxY - b.minY;
+    const sMini = 92 / Math.max(bw, bh);
+    const w = Math.round(bw * sMini) + 2 * MINI_PAD, h = Math.round(bh * sMini) + 2 * MINI_PAD;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (m._w !== w || m._h !== h || m._dpr !== dpr) {
+      m.width = Math.round(w * dpr); m.height = Math.round(h * dpr);
+      m.style.width = w + "px"; m.style.height = h + "px";
+      m._w = w; m._h = h; m._dpr = dpr;
+    }
+    m._s = sMini;
+    const c = m.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    const f = R.frames[fi];
+    const X = (x) => MINI_PAD + (x - b.minX) * sMini, Y = (y) => MINI_PAD + (y - b.minY) * sMini;
+    for (let cell = 0; cell < R.board.cells.length; cell++) {
+      c.beginPath();
+      R.board.shapes[cell].forEach(([x, y], i) => {
+        const [px, py] = geo.proj1(x, y);
+        if (i === 0) c.moveTo(X(px), Y(py)); else c.lineTo(X(px), Y(py));
+      });
+      c.closePath();
+      const o = f.land ? f.land[cell] : -1;
+      c.globalAlpha = o >= 0 ? 0.85 : 1;
+      c.fillStyle = o >= 0 ? PLAYER[o].color : "rgba(150,150,150,0.35)";
+      c.fill();
+    }
+    c.globalAlpha = 1;
+    const at = (cell) => { const [x, y] = R.board.cells[cell]; const [px, py] = geo.proj1(x, y); return [X(px), Y(py)]; };
+    for (const fac of f.factories) {
+      const [x, y] = at(fac.cell);
+      c.fillStyle = PLAYER[fac.owner].color; c.fillRect(x - 3, y - 3, 6, 6);
+      c.strokeStyle = "#fff"; c.lineWidth = 1; c.strokeRect(x - 3, y - 3, 6, 6);
+    }
+    for (const p of f.pieces) {
+      const [x, y] = at(p.cell);
+      c.beginPath(); c.arc(x, y, p.king ? 3.4 : 2.2, 0, Math.PI * 2);
+      c.fillStyle = PLAYER[p.owner].color; c.fill();
+      c.strokeStyle = "#fff"; c.lineWidth = p.king ? 1.5 : 1; c.stroke();
+    }
+    // Ausschnitt: das sieht man gerade im grossen Brett
+    const rx = X((sc.scrollLeft - geo.ox) / geo.U), ry = Y((sc.scrollTop - geo.oy) / geo.U);
+    const rw = sc.clientWidth / geo.U * sMini, rh = sc.clientHeight / geo.U * sMini;
+    const accent = cssVar("--accent") || "#2f55a4";
+    c.fillStyle = accent; c.globalAlpha = 0.14; c.fillRect(rx, ry, rw, rh); c.globalAlpha = 1;
+    c.strokeStyle = accent; c.lineWidth = 2; c.strokeRect(rx, ry, rw, rh);
+  }
+  function miniGo(ev) {
+    const m = $("mini");
+    if (!R || !geo || !m._s) return;
+    const r = m.getBoundingClientRect(), b = geo.bounds, sc = $("boardScroll");
+    const px = (ev.clientX - r.left - MINI_PAD) / m._s + b.minX, py = (ev.clientY - r.top - MINI_PAD) / m._s + b.minY;
+    sc.scrollTo({ left: geo.ox + px * geo.U - sc.clientWidth / 2, top: geo.oy + py * geo.U - sc.clientHeight / 2, behavior: "auto" });
+  }
+  (function setupZoom() {
+    const sc = $("boardScroll"), m = $("mini");
+    $("zoomIn").addEventListener("click", () => {
+      const me = selected !== null && R ? R.frames[fi].byId.get(selected) : null;
+      setZoom(zoomLevel + 1, me ? me.cell : null);
+    });
+    $("zoomOut").addEventListener("click", () => setZoom(zoomLevel - 1, null));
+    sc.addEventListener("scroll", () => requestAnimationFrame(drawMini), { passive: true });
+    let dragging = false;
+    m.addEventListener("pointerdown", (ev) => { ev.preventDefault(); ev.stopPropagation(); dragging = true; m.setPointerCapture(ev.pointerId); miniGo(ev); });
+    m.addEventListener("pointermove", (ev) => { if (dragging) miniGo(ev); });
+    const stop = () => { dragging = false; };
+    m.addEventListener("pointerup", stop);
+    m.addEventListener("pointercancel", stop);
+    // Pinch: zwei Finger springen zwischen den drei Stufen (kein stufenloses Zoomen)
+    let pinch = null;
+    const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    sc.addEventListener("touchstart", (ev) => {
+      if (ev.touches.length >= 2) { lastMultiTouch = performance.now(); if (phoneOK()) pinch = { d: dist(ev.touches) }; }
+    }, { passive: true });
+    sc.addEventListener("touchmove", (ev) => {
+      if (!pinch || ev.touches.length < 2 || !R || !geo) return;
+      ev.preventDefault();
+      lastMultiTouch = performance.now();
+      const ratio = dist(ev.touches) / pinch.d;
+      if (ratio > 1.28 || ratio < 0.78) {
+        const rect = canvas.getBoundingClientRect();
+        const mx = (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left, my = (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top;
+        setZoom(zoomLevel + (ratio > 1 ? 1 : -1), cellAt(mx, my));
+        pinch.d = dist(ev.touches);
+      }
+    }, { passive: false });
+    const end = (ev) => { if (ev.touches.length < 2) pinch = null; };
+    sc.addEventListener("touchend", end, { passive: true });
+    sc.addEventListener("touchcancel", end, { passive: true });
+    $("pendOk").addEventListener("click", () => confirmPending());
+    $("pendNo").addEventListener("click", () => { pendingMove = null; renderTurnBox(); updatePend(); requestAnimationFrame(draw); });
+  })();
+  let lastMultiTouch = 0;
+  /** Zug mit dem Finger: erst Zielfeld antippen (wird markiert), dann bestaetigen. */
+  function pendingValid() {
+    if (pendingMove === null || selected === null || !canAct()) return false;
+    return live.legal.some((a) => a.type === "move" && a.piece === selected && a.to === pendingMove);
+  }
+  function updatePend() {
+    const bar = $("pendBar");
+    if (!bar) return;
+    const on = touchUi() && pendingValid();
+    bar.hidden = !on;
+    if (on) {
+      const f = R.frames[fi];
+      const hostile = f.pieces.some((q) => q.cell === pendingMove && q.owner !== f.current) || f.factories.some((x) => x.cell === pendingMove && x.owner !== f.current);
+      $("pendText").textContent = `${hostile ? "Schlagen auf" : "Ziehen nach"} ${cellName(pendingMove)}?`;
+      $("pendOk").textContent = hostile ? "Schlagen" : "Ziehen";
+    }
+  }
+  function confirmPending() {
+    if (!pendingValid()) return;
+    const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === pendingMove);
+    pendingMove = null;
+    if (i >= 0) humanAct(i);
   }
   function iso(x, y) {
     if (geo.flat) {
@@ -1143,7 +1407,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Version 3: Erntezeit der Kategorie (Runden, 0 = jede Runde). */
   const cycleOn = () => !!(R.config && R.config.terr_cycle);
   /** Version 3: Kat 3 wird nicht geerntet, k verbundene Kat-3-Felder bringen je Runde 2^k Flaeche dazu. */
-  const bonusOn = () => !!(R.config && R.config.terr_bonus);
+  const breadOn = () => !!(R.config && R.config.terr_bread > 0);
+  const bonusOn = () => !!(R.config && R.config.terr_bonus && !(R.config.terr_bread > 0));
+  /** Version 3.1: Ertrag je Stufe, Verzoegerung der Karten Sturmangriff und Doppelzug. */
+  const yieldLvlOn = () => !!(R.config && R.config.terr_yield_lvl);
+  const delayOn = () => !!(R.config && R.config.terr_delay);
   const bonusArea = (k) => (k > 0 ? Math.pow(2, Math.min(k, 20)) : 0);
   /** Version 3: der Erntezaehler eines Feldes laeuft nur, solange eine eigene Figur darauf steht. */
   const occupyOn = () => !!(R.config && R.config.terr_occupy);
@@ -1188,7 +1456,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (k2 < c.terr_move_k2) miss.push(`${c.terr_move_k2 - k2}× Gold`);
     return { from: fac.cell, rounds: relocRounds(fac.cell, cell), cost: relocCostText(), miss };
   }
-  const harvestPeriod = (res) => ((R.config && R.config.terr_ripen) || [])[category(res) - 1] || 0;
+  const harvestPeriod = (res) => {
+    const cat = category(res);
+    if (cat === 3 && breadOn()) return R.config.terr_bread;
+    return ((R.config && R.config.terr_ripen) || [])[cat - 1] || 0;
+  };
   /**
    * Version 3: wie viele eigene Zugenden bis zur naechsten Ernte dieses Vorkommens (1 = am Ende deines naechsten
    * Zugs). Nur auf Land, das jemandem gehoert; der Zaehler laeuft nur bei stehender Fabrik und verbundenem Feld.
@@ -1882,6 +2154,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
 
+    if (touchUi() && pendingValid()) {
+      const hostile = f.pieces.some((q) => q.cell === pendingMove && q.owner !== f.current) || f.factories.some((x) => x.cell === pendingMove && x.owner !== f.current);
+      outlineCell(pendingMove, hostile ? HOSTILE : cssVar("--accent") || "#2f55a4", 0.38);
+      ctx.save(); ctx.lineWidth = Math.max(3, geo.U * 0.08); ctx.strokeStyle = "#fff"; cellPath(pendingMove, 0.7); ctx.stroke(); ctx.restore();
+    }
+
     // Ziehfelder einer angeklickten Figur (auch gegnerisch oder wenn man nicht am Zug ist)
     if (inspectValid()) {
       const me = f.byId.get(inspect.id);
@@ -1987,6 +2265,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
     drawLockBadge(f);
     drawFx(now);
+    drawMini();
     if (tween || fx.length) requestAnimationFrame(draw);
   }
 
@@ -2257,7 +2536,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       case "enclosed": return `${playerName(e.player)} umschließt ${e.cells.length} neutrale${e.cells.length === 1 ? "s Feld" : " Felder"}: ${e.cells.length === 1 ? "es geht" : "sie gehen"} an ${playerName(e.player)} (${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}).`;
       case "reconnected": return `Figur von ${playerName(e.owner)} auf ${cellName(e.cell)} grenzt wieder an ihr Land: wieder aktiv, das Feld gehört jetzt ${playerName(e.owner)}.`;
       case "income": return `Fabrik von ${playerName(e.player)} sammelt ${e.area} Fläche${e.bonus ? `, dazu ${e.bonus} Bonus-Fläche (${e.kat3}× Brot: 2^${e.kat3})` : ""}${e.gained.length ? ` und ${invText(e.gained)}` : ""}.`;
-      case "upkeep": return `Unterhalt von ${playerName(e.player)}: −${e.paid} Fläche (Summe der Figurenstufen).`;
+      case "upkeep": return `Unterhalt von ${playerName(e.player)}: −${e.paid} Fläche (${upkeepSqOn() ? "Summe der Stufen im Quadrat" : "Summe der Figurenstufen"}).`;
       case "dissolved": return `Figur Stufe ${e.level} von ${playerName(e.owner)} auf ${cellName(e.cell)} löst sich auf: die Fläche reichte nicht für den Unterhalt.`;
       case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
       case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
@@ -2345,8 +2624,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const scoreNote = () => (isTerr() ? "Land + Figurenstufen" : "Figurenstufen + Fabriken + Farben");
   /** Einkommen am Ende des eigenen Zugs: Flaeche = verbundene Felder, dazu terr_yield je Vorkommen darauf. */
   const upkeepOn = () => !!(R && R.config && R.config.terr_upkeep);
+  /** Version 3.1: Unterhalt = Stufe im Quadrat. */
+  const upkeepSqOn = () => !!(R && R.config && R.config.terr_upkeep_sq);
+  const upkeepLevel = (lvl) => (upkeepSqOn() ? lvl * lvl : lvl);
   /** Unterhalt je Runde: Summe der Stufen aller Figuren des Spielers, der Koenig zahlt nichts. */
-  const upkeepOf = (f, p) => (upkeepOn() ? f.pieces.filter((x) => x.owner === p && !x.king).reduce((a, x) => a + (x.level || 1), 0) : 0);
+  const upkeepOf = (f, p) => (upkeepOn() ? f.pieces.filter((x) => x.owner === p && !x.king).reduce((a, x) => a + upkeepLevel(x.level || 1), 0) : 0);
   const signed = (n) => (n < 0 ? `−${-n}` : `+${n}`);
   /** Koenigs-Upgrade mit Gold (Regel terr_kingup): naechste Stufe, Zusatzfelder und Preis in Gold; null, wenn aus. */
   const kingUpOn = () => !!(R && R.king_up && R.king_up.on);
@@ -2363,7 +2645,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!f.land || !f.anchored[p]) return inc;
     const y = (R.config && R.config.terr_yield) || 1;
     // Mit der Besetzungsregel zaehlt nur, wo am Ende des Zugs eine eigene Figur steht (so wie es jetzt aussieht).
-    const mine = occupyOn() ? new Set(f.pieces.filter((x) => x.owner === p).map((x) => x.cell)) : null;
+    const mine = occupyOn() ? new Map(f.pieces.filter((x) => x.owner === p).map((x) => [x.cell, x.king ? 1 : x.level || 1])) : null;
     // Schmiede (+1 Eisen) und Bergbau (+1 Gold) bringen je Ernte eine Einheit mehr.
     const ppl = (f.player_perks || [])[p] || {};
     const more = { 1: ppl.smelter ? 1 : 0, 2: ppl.mining ? 1 : 0, 3: 0, 4: 0 };
@@ -2373,7 +2655,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       for (const res of liveDeposits(f, c)) {
         if (bonusOn() && category(res) === 3) { inc.k3++; continue; }
         if (mine && !mine.has(c)) continue;
-        if (cycleOn() ? harvestIn(f, c, res) === 1 : !ripenLeft(f, c, res)) inc[category(res)] += y + (more[category(res)] || 0);
+        if (cycleOn() ? harvestIn(f, c, res) === 1 : !ripenLeft(f, c, res)) inc[category(res)] += y * (yieldLvlOn() && mine ? mine.get(c) || 1 : 1) + (more[category(res)] || 0);
       }
     }
     inc.bonus = bonusArea(inc.k3);
@@ -2435,9 +2717,22 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const explain = (text) => `<details class="explain"><summary>Erklärung</summary><span class="sub">${text}</span></details>`;
   /** Zeile der Uebersicht: Symbol, grosse Zahl, Zuwachs je Runde in Klammern. */
   const rsHtml = (sym, big, tail, tip) => `<div class="rs" title="${escapeHtml(tip)}">${sym}<b>${big}</b>${tail}</div>`;
+  /** Version 3.1 (Verzoegerung): welche Karten bei wem fuer den naechsten Zug bereitliegen. */
+  function armedRows(f) {
+    if (!delayOn()) return [];
+    const out = [];
+    for (let q = 0; q < f.alive.length; q++) {
+      const bits = [];
+      if ((f.armed_charge || [])[q]) bits.push("Sturmangriff (alle Figuren +1 Feld)");
+      const n = (f.armed_extra || [])[q] || 0;
+      if (n) bits.push(n === 1 ? "Doppelzug (eine zweite Aktion)" : `${n}× Doppelzug`);
+      if (bits.length) out.push(`<div class="armed"><i class="chip" style="background:${PLAYER[q].color}"></i><span><b>Bereit bei ${playerName(q)}:</b> ${bits.join(", ")}. Wirkt im nächsten Zug von ${playerName(q)}.</span></div>`);
+    }
+    return out;
+  }
   function renderTerritoryStock(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
-    const rows = [];
+    const rows = [...armedRows(f)];
     const color = PLAYER[p].color;
     const area = (f.area || [])[p] || 0;
     if (!fac) {
@@ -2474,7 +2769,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       rows.push(`<div class="warn">Die Fläche reicht am Zugende nicht für den Unterhalt: eine Figur löst sich auf.</div>`);
     }
     rows.push(explain(`Am Ende deines Zugs sammelt die Fabrik alle Felder, die an ihr hängen (je 1 Fläche), dazu das Eisen, Gold und Brot auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.` +
-      (upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ihre Stufe in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
+      (upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ${upkeepSqOn() ? "ihre Stufe im Quadrat (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16)" : "ihre Stufe"} in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
     // --- Figuren: grau, solange nicht bezahlbar; Farbe, wenn bereit
     rows.push(`<p class="sec">Figuren bauen</p>`);
     for (let level = 1; level <= terrMaxLevel(); level++) {
@@ -2484,7 +2779,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const reqs = st.needs.map((n) => reqHtml(n.kind, n.have, n.need, color)).join("");
       const tip = `${unitTitle(level)} (Stufe ${level}): ${terrPriceText(level)}${st.ok ? "" : never ? ` – es kommt kein ${st.needs.filter((n) => !Number.isFinite(n.rounds)).map((n) => KAT_NAME[n.kind]).join(" / ")} dazu` : ` – ${roundsText(st.rounds)}`}`;
       rows.push(`<div class="loc lad${st.ok ? " ok" : ""}${never ? " never" : ""}" title="${escapeHtml(tip)}">${symSvg("u" + level, 28, color, !st.ok, `${unitTitle(level)} (Stufe ${level})`)}` +
-        `<div class="lb"><b>${unitTitle(level)}</b><small>Stufe ${level}${upkeepOn() ? ` · Unterhalt ${level}` : ""}</small></div><span class="st">${when}</span><div class="need">${reqs}</div></div>`);
+        `<div class="lb"><b>${unitTitle(level)}</b><small>Stufe ${level}${upkeepOn() ? ` · Unterhalt ${upkeepLevel(level)}` : ""}</small></div><span class="st">${when}</span><div class="need">${reqs}</div></div>`);
     }
     // --- Koenig mit Gold verbessern
     const ku = kingUpInfo(f, p);
@@ -2636,7 +2931,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const go = can ? "Bauen" : !st.ok ? (never ? "nie" : roundsText(st.rounds)) : !info.free ? "Fabrik besetzt" : !acting ? "nicht am Zug" : "nicht möglich";
         const tip = `${unitTitle(st.level)} (Stufe ${st.level}): ${terrPriceText(st.level)}${st.ok ? "" : ` – es fehlt: ${missingText(st)}`}`;
         return act(can ? "ok" : "", can ? `data-build="${st.level}"` : "disabled", symSvg("u" + st.level, 28, color, !st.ok, unitTitle(st.level)),
-          unitTitle(st.level), `Stufe ${st.level}${upkeepOn() ? ` · Unterhalt ${st.level}` : ""}`, go,
+          unitTitle(st.level), `Stufe ${st.level}${upkeepOn() ? ` · Unterhalt ${upkeepLevel(st.level)}` : ""}`, go,
           st.needs.map((n) => reqHtml(n.kind, n.have, n.need, color)).join(""), tip);
       });
       // Koenig mit Gold
@@ -3101,14 +3396,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (c.terr_enclose === false) extra.push("ohne Umschließen");
       else if (c.terr_enclose_edge === true) extra.push("Brettrand zählt als Wand");
       if (c.terr_cycle) {
-        const per = (c.terr_ripen || []).slice(0, c.terr_cats || 3).map((n) => n || "jede").join(" / ");
+        const per = (c.terr_ripen || []).slice(0, c.terr_cats || 3).map((n, i) => (i === 2 && c.terr_bread > 0 ? c.terr_bread : n) || "jede").join(" / ");
         const v3 = ["Version 3", ...extra,
           `Figuren nur aus Fläche: ${[1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow || 2, l - 1) * (l >= 2 ? c.terr_up_mult || 1 : 1)).join(" / ")}`,
-          c.terr_bonus ? `Ernte alle ${(c.terr_ripen || []).slice(0, 2).map((n) => n || "jede").join(" / ")} Runden (Eisen / Gold)` : `Ernte alle ${per} Runden (Eisen / Gold / Brot)`,
+          c.terr_bonus && !(c.terr_bread > 0) ? `Ernte alle ${(c.terr_ripen || []).slice(0, 2).map((n) => n || "jede").join(" / ")} Runden (Eisen / Gold)` : `Ernte alle ${per} Runden (Eisen / Gold / Brot)`,
           c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Eisen + ${c.terr_move_k2} Gold, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${c.terr_rebuild} Runden` : "kein Fabrik-Umzug",
-          c.terr_bonus ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
+          c.terr_bonus && !(c.terr_bread > 0) ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_bread > 0 ? `Brot im Lager: alle ${c.terr_bread} Runden geerntet, bezahlt die Tempokarten` : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
           c.terr_occupy ? (c.terr_control ? "Erntezähler läuft mit eigener Figur auf dem Feld oder in ihrem Einflussbereich" : "Erntezähler läuft nur mit eigener Figur auf dem Feld") : "Erntezähler läuft ohne Figur",
-          c.terr_upkeep ? "Unterhalt: jede Figur kostet je Runde ihre Stufe in Fläche (bei Minus löst sich eine Figur auf)" : "",
+          c.terr_upkeep ? `Unterhalt: jede Figur kostet je Runde ${c.terr_upkeep_sq ? "ihre Stufe im Quadrat" : "ihre Stufe"} in Fläche (bei Minus löst sich eine Figur auf)` : "",
+          c.terr_yield_lvl ? "Ertrag je Stufe: eine Figur der Stufe n erntet n Stück je Ernte" : "",
+          c.terr_delay ? "Sturmangriff und Doppelzug wirken erst im nächsten eigenen Zug" : "",
           c.terr_kingup ? `König-Upgrade mit Gold (${c.terr_kingup_price || 1} je Zugfeld)` : "",
           c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
           c.terr_cardset3 ? `Neuer Kartensatz: Markt zufällig aus dem Pool, feste Preise in Eisen/Gold/Brot, ${c.terr_bend_tail ? "Ecke nur am Ende des Wegs" : "Ecke irgendwo auf dem Weg"}` : "",
@@ -3402,7 +3699,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!downAt || !R || !geo) return;
     const moved = Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]);
     downAt = null;
-    if (moved > 10) return;
+    if (moved > 10 || performance.now() - lastMultiTouch < 500) return;
     $("tip").hidden = true;
     const rect = canvas.getBoundingClientRect();
     const cell = cellAt(ev.clientX - rect.left, ev.clientY - rect.top);
@@ -3477,13 +3774,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const pr = (R.config.terr_ripen || []);
       ttx = { ...ttx,
         factory: "Fabrik: die einzige des Spielers. Hier erscheinen neue Figuren; am Zugende sammelt sie die Fläche aller mit ihr verbundenen Felder. Betritt ein Gegner sie, wird sie zerstört; der König baut sie dann auf eigenem Land in " + (R.config.terr_rebuild || 3) + " Runden neu. Auch freiwillig kann er sie auf sein Feld umsetzen (Dauer = halbe Entfernung, aufgerundet; der Tooltip über deinem Land nennt sie vorab). Bis sie steht: kein Ertrag, alle Figuren wehrlos, der König gesperrt.",
-        pill: R.config.terr_bonus
+        pill: bonusOn()
           ? "Lager an der Fabrik: Eisen und Gold als Symbol mit Zahl (Brot wird nicht gelagert)."
-          : "Lager an der Fabrik: Eisen, Gold, Brot als Symbol mit Zahl. Brot lässt sich in der Fabrik gegen Fläche tauschen: k Stück ergeben 2^k.",
+          : breadOn()
+            ? "Lager an der Fabrik: Eisen, Gold und Brot als Symbol mit Zahl. Brot bezahlt die Tempokarten (Kürzer, Sprung, Durchzug, Sturmangriff, Doppelzug)."
+            : "Lager an der Fabrik: Eisen, Gold, Brot als Symbol mit Zahl. Brot lässt sich in der Fabrik gegen Fläche tauschen: k Stück ergeben 2^k.",
         crystal: `Eisen (Kat 1), Hauptrohstoff. Die Zahl zählt herunter (alle ${pr[0] || 3} Runden): bei 0 erntet die Fabrik es einmal, dann beginnt der Zähler von vorn. Ohne stehende Fabrik oder ohne Anbindung steht der Zähler still; ein Umfärben setzt ihn zurück.${R.config.terr_occupy ? " Er läuft nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (Zahl grau mit Pausenbalken = er steht still)." : ""}`,
         ingot: `Gold (Kat 2, Goldbarren): wie Eisen, Erntezeit ${pr[1] || 10} Runden. Gold verbessert den König direkt (je zusätzlichem Zugfeld ${(R.king_up && R.king_up.price) || 1} Gold) und bezahlt Karten und den Fabrik-Umzug, wenn er etwas kosten soll.`,
-        grain: R.config.terr_bonus
+        grain: bonusOn()
           ? "Brot (Kat 3, Laib): wird nicht geerntet. Jedes Brot-Feld auf deinem mit der Fabrik verbundenen Land zählt: k Felder bringen dir am Ende jedes Zugs zusätzlich 2^k Fläche (2, 4, 8, 16 …), ohne Zähler. Umfärben nimmt es dir."
+          : breadOn()
+            ? `Brot (Kat 3, Laib): wie Eisen, aber alle ${R.config.terr_bread} Runden geerntet, solange eine eigene Figur auf dem Feld steht. Es liegt im Lager und bezahlt die Tempokarten (Kürzer, Sprung, Durchzug, Sturmangriff, Doppelzug).`
           : `Brot (Kat 3, Laib): wie Eisen, Erntezeit ${pr[2] || 10} Runden. Das Lager tauscht es gegen Fläche: k Stück ergeben 2^k Fläche.`,
         helpless: "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an einer stehenden Fabrik hängt (zum Beispiel, solange die Fabrik im Bau ist): sie färbt nichts und kann nicht schlagen.",
       };
@@ -3744,8 +4045,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     if (cell !== null && selected !== null) {
       const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === cell);
-      if (i >= 0) { humanAct(i); return; }
+      if (i >= 0) {
+        // Mit dem Finger: erst markieren, das zweite Tippen auf dasselbe Feld zieht
+        if (touchUi() && pendingMove !== cell) { pendingMove = cell; renderTurnBox(); updatePend(); requestAnimationFrame(draw); return; }
+        pendingMove = null;
+        humanAct(i);
+        return;
+      }
     }
+    pendingMove = null;
     const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
     if (!piece && cell !== null && isTerr() && facClick(cell)) return;
     // Andere Figuren (auch gegnerische) und Figuren ohne Zug: nur ihre Ziehfelder zeigen.
@@ -3753,7 +4061,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     inspect = null;
     selected = piece && destinations(piece.id).length ? piece.id : null;
     renderTurnBox();
+    updatePend();
     requestAnimationFrame(draw);
+    if (selected !== null) focusSelection();
   }
   // ----- Premoves -------------------------------------------------------------------------------
   /** Nachbarfelder (gemeinsame Kante), aus den Feldumrissen abgeleitet; gilt fuer jede Brettform. */
@@ -4037,6 +4347,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "center_cells", label: "Kat 1 in der Mitte: Felder", ph: () => "2", hint: () => "Felder je Zentrumsfarbe." },
       { key: "center_mix", label: "Kat 2/3 in der Mitte", ph: () => "0", hint: () => "Zusätzliche Felder jeder Regionsfarbe rund um die Kartenmitte." },
     ] },
+    { title: "Version 3.1: neue Regelideen (Standard aus)", wide: true, grid: true, note: "Vier Ideen zum Ausprobieren, alle sind ohne Eintrag aus. Zusammen einschalten geht über den Knopf „Neue Regelideen“ oben. Sie brauchen Regelstufe 3.", fields: [
+      { key: "terr_delay", label: "Verzögerung: Sturmangriff und Doppelzug", ph: () => "0", hint: () => "1 = beide Karten wirken erst in deinem nächsten Zug. Der Gegner sieht sie bereitliegen und kann reagieren. 0 = sie wirken sofort." },
+      { key: "terr_upkeep_sq", label: "Unterhalt: Stufe im Quadrat", ph: () => "0", hint: () => "1 = eine Figur der Stufe n kostet je Runde n×n Fläche (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16). Braucht den Unterhalt." },
+      { key: "terr_yield_lvl", label: "Ertrag je Stufe", ph: () => "0", hint: () => "1 = eine Figur der Stufe n erntet n Stück je Ernte (Takt bleibt gleich; Schmiede und Bergbau addieren danach ihr +1). Der König erntet einfach. Braucht „Zähler nur mit eigener Figur“." },
+      { key: "terr_bread", label: "Brot im Lager: Erntetakt (Runden)", ph: () => "0", hint: () => "0 = aus (Brot gibt 2^k Fläche). Eine Zahl N = Brot wird alle N Runden geerntet, solange eine eigene Figur darauf steht, und bezahlt die Tempokarten (Kürzer, Sprung, Durchzug, Sturmangriff, Doppelzug). Ohne den Brot-Bonus wächst die Fläche langsamer: Stufe 4 kommt in Bot-Partien um Runde 85 statt 57. Gut zum Start: 2." },
+    ] },
   ];
   // ----- Karten-Editor (Menue) -------------------------------------------------------------------
   // Preise und Kartenpool stellt man hier ein, eigene Karten baut man aus Bausteinen zusammen. Alles
@@ -4048,13 +4364,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const PRICE_LABEL = ["Eisen", "Gold", "Brot"];
   const poolCards = () => (catalog ? catalog.cards.filter((c) => c.key !== "king_boost") : []);
   const cedBase = (key) => (catalog && catalog.cards.find((c) => c.key === key)) || null;
+  /** Mit Brot-Lager (Regel terr_bread) gelten die Brot-Standardpreise (Tempokarten kosten Brot statt Eisen). */
+  const breadRuleOn = () => { const el = $("rule_terr_bread"); return !!el && Number(el.value) > 0; };
+  const cedPrice = (c) => (breadRuleOn() && c.price_bread ? c.price_bread : c.price);
   const priceText = (v) => v.map((n, i) => (n ? `${n}× ${PRICE_LABEL[i]}` : "")).filter(Boolean).join(" + ") || "gratis";
   /** Richtwert einer eigenen Karte: Summe der Preise ihrer Bausteine. */
   function cedSuggest(cc) {
     const sum = [0, 0, 0];
     for (const [key, n] of cc.parts) {
       const b = cedBase(key);
-      if (b) for (let i = 0; i < 3; i++) sum[i] += b.price[i] * n;
+      if (b) for (let i = 0; i < 3; i++) sum[i] += cedPrice(b)[i] * n;
     }
     return sum.map((n) => Math.min(99, n));
   }
@@ -4151,8 +4470,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       name.append(lab, small);
       const sv = (saved.price || {})[c.key] || [];
       const price = cedPriceBox(PRICE_LABEL, (i) => {
-        const v = sv[i] !== undefined && sv[i] !== "" && Number(sv[i]) !== c.price[i] ? sv[i] : "";
-        return cedNumberInput({ cedPrice: c.key, i }, c.price[i], v, cedMarkRows);
+        const v = sv[i] !== undefined && sv[i] !== "" && Number(sv[i]) !== cedPrice(c)[i] ? sv[i] : "";
+        return cedNumberInput({ cedPrice: c.key, i }, cedPrice(c)[i], v, cedMarkRows);
       });
       row.append(name, price);
       host.appendChild(row);
@@ -4254,12 +4573,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (!ins.some((x) => x.value.trim() !== "")) continue;
       const vals = ins.map((x, i) => {
         const raw = x.value.trim();
-        if (raw === "") return c.price[i];
+        if (raw === "") return cedPrice(c)[i];
         const n = Number(raw);
         if (!Number.isInteger(n) || n < 0 || n > 99) throw new Error(`Karte „${c.name}“, ${PRICE_LABEL[i]}: bitte eine ganze Zahl von 0 bis 99 eintragen.`);
         return n;
       });
-      if (vals.some((v, i) => v !== c.price[i])) out.push(`price.${c.key}=${vals.join("/")}`);
+      if (vals.some((v, i) => v !== cedPrice(c)[i])) out.push(`price.${c.key}=${vals.join("/")}`);
     }
     customCards.forEach((cc, i) => {
       const name = cc.name.trim();
@@ -4349,6 +4668,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         label.htmlFor = input.id;
         input.addEventListener("input", refreshMenu);
         input.addEventListener("change", refreshMenu);
+        if (f.key === "terr_bread") {
+          input.addEventListener("input", () => { if (catalog) { pendingCards = cardsState(); renderCardEditor(); } });
+        }
         inner.appendChild(label);
       }
       host.appendChild(box);
@@ -4412,6 +4734,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (small) small.textContent = f.hint ? f.hint() : "";
       }
     }
+    syncQuick();
   }
   /** Zuruecksetzen: alle Regelfelder leer, dann gelten die Standardwerte der Version 3. */
   function clearRuleFields() {
@@ -4498,6 +4821,73 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     } catch (err) { /* kaputter Eintrag: Voreinstellungen */ }
   }
+  // ----- Schnellstart im Startmenue -----------------------------------------------------------
+  /** Gegnerstufen des Schnellstarts: Code im Spielkern, Anzeige im Knopf. */
+  const QUICK_BOTS = [0, 4, 3, 5];
+  /** Regelpakete: nur belegte Felder; alles andere bleibt auf dem Standard der Version 3. */
+  const QUICK_PRESETS = {
+    standard: { note: "Version 3 ohne Zusatzregeln, der am besten getestete Stand.", rules: {} },
+    ideas: {
+      note: "Standard plus die vier neuen Schalter: Doppelzug und Sturmangriff wirken erst eine Runde nach dem Kauf, der Unterhalt wächst mit der Stufe zum Quadrat, der Ertrag eines Feldes wächst mit der Stufe der Figur darauf, und Brot ist ein Lager (alle 3 Runden geerntet), mit dem man die Tempokarten bezahlt. Brot macht das Hochstufen deutlich langsamer.",
+      rules: { terr_delay: 1, terr_upkeep_sq: 1, terr_yield_lvl: 1, terr_bread: 3 },
+    },
+    fast: { note: "Kleineres Brett (8 Felder je Kante) und Wertung schon nach Runde 40: kurze Partien zum Ausprobieren.", rules: { side: 8, score_after: 40 } },
+    cards: { note: "12 Karten im Markt statt 2 je Spieler: viele Möglichkeiten, jede Partie wird stark von den Karten bestimmt.", rules: { market_size: 12 } },
+  };
+  /** Einstellung als sortierte Liste `name=wert` (belegte Regelfelder plus Karten-Editor). */
+  function ruleSig() {
+    const list = [];
+    for (const input of ruleInputs()) {
+      if (input.disabled) continue;
+      if (input.type === "checkbox") { if (input.checked) list.push(`${input.dataset.rule}=1`); }
+      else if (input.value.trim() !== "") list.push(`${input.dataset.rule}=${Number(input.value.trim())}`);
+    }
+    try { list.push(...cardRuleParts()); } catch (err) { list.push("karten=ungueltig"); }
+    return list.sort().join(",");
+  }
+  const presetSig = (p) => Object.entries(p.rules).map(([k, v]) => `${k}=${v}`).sort().join(",");
+  function activePreset() {
+    const sig = ruleSig();
+    return Object.keys(QUICK_PRESETS).find((k) => presetSig(QUICK_PRESETS[k]) === sig) || null;
+  }
+  function applyPreset(name) {
+    const p = QUICK_PRESETS[name];
+    if (!p) return;
+    clearRuleFields();
+    pendingCards = null;
+    renderCardEditor();
+    for (const [k, v] of Object.entries(p.rules)) {
+      const el = $(`rule_${k}`);
+      if (el) el.value = String(v);
+    }
+    // Brot aendert die Kartenpreise: den Editor mit den neuen Platzhaltern neu zeichnen
+    if (catalog) { pendingCards = cardsState(); renderCardEditor(); }
+    refreshMenu();
+    saveMenu();
+  }
+  /** Stufe fuer „Zuschauen“ und „zu zweit“: die erste Bot-Stufe der Gegnerplaetze (Standard stark). */
+  function quickBotLevel() {
+    for (let i = 1; i < Math.max(menuPlan.players, 2); i++) if (seatChoice[i] !== 2 && seatChoice[i] !== undefined) return seatChoice[i];
+    return 3;
+  }
+  /** Knoepfe und Hinweis des Schnellstarts spiegeln den echten Stand der Einstellungen. */
+  function syncQuick() {
+    const box = $("quick");
+    if (!box) return;
+    const total = menuPlan.players, asked = menuAsked();
+    const levels = [];
+    for (let i = 1; i < total; i++) levels.push(seatChoice[i]);
+    const uni = levels.length && levels.every((v) => v === levels[0]) ? levels[0] : null;
+    for (const b of $("qBot").querySelectorAll("button")) b.setAttribute("aria-checked", String(uni !== null && Number(b.dataset.bot) === uni));
+    for (const b of $("qPlayers").querySelectorAll("button")) b.setAttribute("aria-checked", String(Number(b.dataset.n) === asked));
+    const preset = activePreset();
+    for (const b of $("qPreset").querySelectorAll("button")) b.setAttribute("aria-checked", String(b.dataset.preset === preset));
+    const board = BOARD_NAME[menuBoard()];
+    const who = seatChoice[0] === 2 ? "Du spielst Spieler A" : "Spieler A ist ein Bot";
+    const plan = `${who} · ${asked} Spieler auf dem ${board}${menuPlan.added ? `, dazu ${menuPlan.added === 1 ? "ein Auffüll-Bot" : menuPlan.added + " Auffüll-Bots"}` : ""}.`;
+    const rules = preset ? QUICK_PRESETS[preset].note : "Eigene Regeln (siehe Erweiterte Einstellungen).";
+    $("qNote").textContent = `${plan} ${rules}`;
+  }
   function openMenu(canGoBack) {
     menuOpen = true;
     clearTimeout(botTimer);
@@ -4561,6 +4951,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     else renderPanel();
   }
   function humanAct(i) {
+    pendingMove = null;
     if (!canAct()) return;
     shiftMode = false;
     cardMode = null;
@@ -4701,6 +5092,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         : selected !== null
         ? "Wähle ein markiertes Zielfeld (rot = schlagen) oder eine andere Figur. Shift zeigt den ganzen Weg, Shift+Klick läuft ihn automatisch; Strg+Klick wählt Kacheln einzeln (Strg loslassen = los)."
         : isTerr() ? territorySub(now) : "Tippe eine eigene Figur an (umrandet) oder wähle eine Aktion.";
+      if (touchUi() && pendingValid()) sub = `${cellName(pendingMove)} ist markiert: noch einmal tippen (oder oben „${$("pendOk").textContent}“) zieht, ein anderes Zielfeld ändert die Wahl.`;
       if (routes.length) sub = `Eine Route läuft von selbst weiter (Esc bricht ab). ${sub}`;
       if (ctrlPath) sub = `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
@@ -4866,13 +5258,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   $("modeView").addEventListener("click", () => setMode("view"));
   $("toNow").addEventListener("click", () => { setPlaying(false); goTo(R.frames.length - 1, false); });
   const hadGame = () => Boolean(liveR && mode === "play");
-  $("setup").addEventListener("submit", (e) => {
-    e.preventDefault();
+  /** Partie aus dem Menue starten. kind: "" = wie eingestellt, "hot" = zwei Menschen an einem Geraet,
+   *  "watch" = nur Bots (Zuschauen). Platzarten im Menue bleiben dabei unveraendert. */
+  function submitMenu(kind) {
     const raw = $("setSeed").value.trim();
     let seed = null;
     if (raw !== "") {
       seed = Number.parseInt(raw, 10);
       if (!Number.isSafeInteger(seed) || seed < 0) {
+        $("adv").open = true;
         showMenuError("Der Seed muss eine ganze Zahl ab 0 sein.");
         return;
       }
@@ -4880,7 +5274,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     try {
       sendRules(ruleText());
       closeMenu();
-      const seats = menuPlan.players > 0 ? [...Array(menuPlan.players).keys()].map((i) => Number($(`seat_${i}`).value)) : [];
+      let seats = menuPlan.players > 0 ? [...Array(menuPlan.players).keys()].map((i) => Number($(`seat_${i}`).value)) : [];
+      const bot = quickBotLevel();
+      if (kind === "watch") seats = seats.map((x) => (x === 2 ? bot : x));
+      if (kind === "hot") seats = seats.map((x, i) => (i < 2 ? 2 : x === 2 ? bot : x));
       startLive(seats, menuBoard(), seed);
       saveMenu();
     } catch (err) {
@@ -4888,6 +5285,27 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       openMenu(hadGame());
       showMenuError(err.message);
     }
+  }
+  $("setup").addEventListener("submit", (e) => { e.preventDefault(); submitMenu(""); });
+  $("qHot").addEventListener("click", () => submitMenu("hot"));
+  $("qWatch").addEventListener("click", () => submitMenu("watch"));
+  // Schnellstart: Gegnerstaerke, Spielerzahl, Regelpaket
+  $("qBot").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-bot]");
+    if (!b) return;
+    for (let i = 1; i < 8; i++) seatChoice[i] = Number(b.dataset.bot);
+    refreshSeats(); saveMenu();
+  });
+  $("qPlayers").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-n]");
+    if (!b) return;
+    const n = Number(b.dataset.n);
+    $("setBoard").value = n === 3 ? "3" : "4";   // 3 Spieler: Dreieck (alle gleich), sonst Quadrat
+    fillPlayerOptions(n); refreshSeats(); saveMenu();
+  });
+  $("qPreset").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-preset]");
+    if (b) applyPreset(b.dataset.preset);
   });
   $("setBoard").addEventListener("change", () => { fillPlayerOptions(menuAsked()); refreshSeats(); saveMenu(); });
   $("setPlayers").addEventListener("change", () => { refreshSeats(); saveMenu(); });

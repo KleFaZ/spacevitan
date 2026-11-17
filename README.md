@@ -95,6 +95,15 @@ Menue nicht mehr waehlbar, bleiben aber im Spielkern und in der CLI (`--rule ...
 `territory=1`) erhalten. Gespeicherte Menue-Staende aelterer Seiten werden ignoriert, soweit ihre
 Felder weggefallen sind.
 
+**Schnellstart:** Das Menue beginnt mit drei Zeilen: **Gegner** (Leicht = gierig, Mittel = flaeche, Schwer = stark, Sehr schwer
+= sehr stark), **Spieler** (2, 3 oder 4; bei 3 wird das Dreieck-Brett gewaehlt, damit alle gleich stehen, sonst das Quadrat) und
+**Regeln** als Paket: *Standard* (Version 3 pur), *Neue Regelideen* (die vier Schalter der Version 3.1, siehe unten), *Schnelle
+Partie* (Seite 8, Wertung nach Runde 40) und *Viele Karten* (12 im Markt). Ein Paket bleibt nur markiert, solange die
+Einstellungen genau dazu passen; aendert man danach ein Feld, steht dort "Eigene Regeln". Darunter: *Partie starten*, *Zu zweit
+an einem Geraet* (die ersten beiden Plaetze Mensch) und *Zuschauen (Bot gegen Bot)* (alle Plaetze Bot, in der gewaehlten Stufe).
+Alles Weitere (Seed, Brettform, Plaetze einzeln, alle Regelfelder, Karten-Editor) steht unter **Erweiterte Einstellungen**.
+Mit Freund per Link spielen gibt es noch nicht (dafuer braeuchte es einen Spiel-Server).
+
 **Startmenue:** *Spielen* oeffnet zuerst ein Menue; eine Partie beginnt erst mit *Partie
 starten*; *Neue Partie* oben neben *Spielen* oeffnet es jederzeit wieder. Dort stehen **Brettform** (Dreieck, Quadrat,
 Fuenfeck bis Achteck), Spielerzahl, *Mit Bots auffuellen*, je Platz **Mensch oder Bot-Stufe** (sehr stark, stark, flaeche, gierig,
@@ -119,6 +128,16 @@ Brot, bei Brot mit dem Zuwachs je Runde), darunter die Kartenoptionen des Markte
 Fabrik-Menue). Ein Sechseck wird in 2D so gedreht, dass zwei gegenueberliegende **Seiten** parallel zum Bildschirmrand liegen
 (nicht die Ecken). Das Fabrik-Menue oeffnet sich nur per Klick auf die Fabrik und klappt auf kleinen Bildschirmen unter dem
 Brett auf.
+
+**Handy: Zoom, Minimap, Zwei-Schritt-Tippen (nur 2D, Bildschirm bis 700 px):** Unter dem Brett stehen **− / +** mit drei Stufen
+(*Ganzes Brett*, *Mittel* ca. 52 px je Feld, *Nah* ca. 76 px). Ab *Mittel* liegt das Brett in einem Rahmen zum Verschieben
+(normales Wischen), unten rechts zeigt eine **Minimap** das ganze Brett mit Landfarben, Figuren und dem sichtbaren Ausschnitt;
+Antippen oder Ziehen auf der Minimap verschiebt den Ausschnitt. **Pinch** (zwei Finger) springt zwischen den Stufen;
+Doppeltippen zum Zoomen gibt es bewusst nicht, weil es mit dem Zwei-Schritt-Tippen kollidieren wuerde. Waehlt man eine Figur, rollt
+der Ausschnitt sie samt ihren Zielfeldern ins Bild. **Zwei-Schritt-Tippen** (nur mit Touch): erst die Figur, dann ein Zielfeld
+antippen: das Feld wird markiert und oben erscheint "Ziehen nach b1?" mit Knopf; erst das zweite Tippen auf dasselbe Feld (oder der
+Knopf) zieht; ein anderes Zielfeld aendert die Wahl, ✕ bricht ab. Das schuetzt vor Fehltipps auf kleinen Feldern. Die Leinwand
+ist auf etwa 14 Mio. Pixel begrenzt (sehr grosse Bretter zoomen dann etwas weicher).
 
 **Karten-Editor (Startmenue, Version 3):** Unter *Karten* steht eine Tabelle aller Karten des Pools mit Haken (im Pool oder
 nicht) und drei Preisfeldern (Eisen / Gold / Brot; leer = Standardpreis, grauer Wert = Standard). Darunter baut man eigene
@@ -808,6 +827,25 @@ aendern, und man kann eigene Karten bauen.
   neuen Karten nicht gezielt: `flaeche` nutzt nur Ecke, Sprung, Kuerzer und den Koenigs-Boost; `stark` und `sehr-stark`
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
+
+### Version 3.1 (vier Schalter, alle Standard aus)
+
+Auf Wunsch zum Ausprobieren, nichts davon aendert Version 3: ohne Schalter spielt sich alles wie vorher (Tests
+`squared_upkeep_needs_the_upkeep_switch_and_changes_nothing_by_default`, `the_delay_is_a_switch_that_is_off_by_default_and_changes_the_card_text`). Im Browser stehen sie in *Erweiterte Einstellungen* unter "Version 3.1" und als Paket
+*Neue Regelideen* im Schnellstart.
+
+| Schalter | Wirkung |
+|---|---|
+| `terr_delay` | **Verzoegerung**: *Sturmangriff* und *Doppelzug* wirken erst im **naechsten eigenen Zug**. Der Kauf legt sie "bereit" (`State::armed_charge`, `armed_extra`; der Viewer zeigt "Bereit bei A" oben im Lager). Bereitgestellt ist nur eines je Karte, solange es nicht gewirkt hat, kauft man dieselbe Karte nicht noch einmal. Der Kartentext nennt die Verzoegerung |
+| `terr_upkeep_sq` | **Unterhalt Stufe im Quadrat**: Bauer 1, Krieger 4, Ritter 9, Held 16 Flaeche je Runde (Koenig 0). Braucht `terr_upkeep`. Die Aufloesung bei Minus waehlt nach dem Unterhalt der Figur (`Piece::upkeep(squared)`) |
+| `terr_yield_lvl` | **Ertrag je Stufe**: eine Figur der Stufe n auf einem Vorkommen erntet n Stueck je Ernte statt 1 (`territory::yield_multiplier`). Braucht `terr_occupy` (die Figur steht auf dem Feld) |
+| `terr_bread=N` | **Brot als Lager**: Kat 3 wird alle N Runden geerntet (wie Eisen, nur mit eigener Figur auf dem Feld, Ertrag je Stufe zaehlt mit) und liegt im Lager der Fabrik; der 2^k-Flaechenbonus entfaellt (`Config::kat3_bonus_on`). Die Tempokarten kosten dann **Brot statt Eisen** (`Card::v3_price_bread`): Kuerzer 3 Brot (+0 Eisen, 0 Gold), Sprung 4, Durchzug 2, Sturmangriff 2 Gold + 2 Brot, Doppelzug 3 Gold + 4 Brot; die anderen Karten bleiben. `price.<karte>` schlaegt das weiterhin. Braucht `terr_cycle`; geht nicht zusammen mit `terr_trade` |
+
+Probe-Spiele: Die Schalter gehen in 4 ganzen Partien auf 4 Brettern gleichzeitig durch (Test `whole_games_with_all_new_switches_keep_every_invariant_on_every_board`). **Messung**
+(Bots, nicht Menschen): *Brot als Lager* bremst das Hochstufen deutlich (weniger Gebaeudestufen bis Runde 100), weil Brot nur mit
+einer Figur auf dem Feld und nur alle N Runden kommt. *Unterhalt Stufe²* beisst kaum, weil die Bots Flaeche horten (rund 109 / 319 /
+1361 Flaeche in Runde 20 / 50 / 80): das Problem ist die eine Aktion je Zug, nicht das Geld. Die *Verzoegerung* laesst sich mit Bots
+nicht messen, weil sie die beiden Karten nie kaufen; ob sie Doppelzug und Sturmangriff zaehmt, zeigt erst Spielen mit Menschen.
 
 ## Karten
 
