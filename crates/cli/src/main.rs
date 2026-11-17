@@ -55,6 +55,13 @@ Optionen:
                  terr_bonus (k verbundene Kat-3-Felder = 2^k Flaeche je Runde zusaetzlich),
                  terr_trade (alte Fassung: Kat 3 ernten und einmalig gegen 2^k Flaeche tauschen),
                  veins2, veins3, cells2, cells3, center_cells, center_mix (Rohstoffmenge)
+                 Karten (Version 3): terr_bend_tail (Ecke nur am Wegende, 0 = beliebig auf dem
+                 Weg), terr_cardset3 (feste Preise in Eisen/Gold/Brot und der grosse Kartenpool),
+                 price.<karte>=eisen/gold/brot (Preis aendern, leer = Standard),
+                 pool.<karte>=0|1 (Karte aus dem Pool nehmen oder wieder hinein),
+                 custom.0..7=Name|baustein*n+baustein|eisen/gold/brot (eigene Karte), z. B.
+                 custom.0=Sturmecke|bend*2+charge|2/1/0; Karten: shorten, bend, hop, pass,
+                 settle, factory_shift, charge, mining, smelter, double_move, king_boost
   --bots LISTE   pro Spieler: sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),
                  stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,

@@ -18,6 +18,8 @@
 //! Kosten und Wert: Der Ausbau einer Fabrik gibt fuer 10 Einheiten ab Kat 2 eine Stufe. Daran
 //! messen sich die Preise: eine ganze Stufe kostet auch als Karte rund 8 bis 10 Einheiten.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::board::GridKind;
 use crate::ids::ResourceId;
 use crate::map::Map;
@@ -65,7 +67,22 @@ pub enum Card {
     FactoryShift,
     /// Version 2: der Koenig bekommt einen Boost (Stufe 1 bis 3), sofort und dauerhaft.
     KingBoost,
+    /// Version 3, Figur: darf auf ihrem Weg ueber eigene Figuren hinwegziehen (Durchzug).
+    Pass,
+    /// Version 3, Figur: faerbt sofort alle freien Nachbarfelder in der eigenen Farbe (Siedler).
+    Settle,
+    /// Version 3: die Fabrik erntet Kat 1 (Eisen) dauerhaft doppelt (Schmiede).
+    Smelter,
+    /// Version 3: eine selbst gebaute Karte, Platz 0 bis `MAX_CUSTOM - 1`; ihre Teile, ihr Name
+    /// und ihr Preis stehen in `CardTweaks` (Regel `custom.<platz>`).
+    Custom(u8),
 }
+
+/// Wie viele selbst gebaute Karten es gleichzeitig geben darf.
+pub const MAX_CUSTOM: u8 = 8;
+const CUSTOM_KEYS: [&str; MAX_CUSTOM as usize] = [
+    "custom0", "custom1", "custom2", "custom3", "custom4", "custom5", "custom6", "custom7",
+];
 
 /// Worauf eine Karte wirkt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +169,10 @@ impl Card {
             Card::Hop => "hop",
             Card::FactoryShift => "factory_shift",
             Card::KingBoost => "king_boost",
+            Card::Pass => "pass",
+            Card::Settle => "settle",
+            Card::Smelter => "smelter",
+            Card::Custom(i) => CUSTOM_KEYS[usize::from(i).min(CUSTOM_KEYS.len() - 1)],
         }
     }
 
@@ -164,11 +185,55 @@ impl Card {
         Card::KingBoost,
     ];
 
+    /// Die zusaetzlichen Karten von Version 3 (Kartensatz `terr_cardset3`); dazu kommen Karten aus
+    /// Version 2 und die klassischen Doppelzug, Sturmangriff und Bergbau.
+    pub const V3_NEW: [Card; 3] = [Card::Pass, Card::Settle, Card::Smelter];
+
+    /// Der Vorrat, aus dem Version 3 den Markt zieht (dazu die selbst gebauten Karten).
+    pub const V3_POOL: [Card; 11] = [
+        Card::Shorten,
+        Card::Bend,
+        Card::Hop,
+        Card::Pass,
+        Card::Settle,
+        Card::FactoryShift,
+        Card::Charge,
+        Card::Mining,
+        Card::Smelter,
+        Card::DoubleMove,
+        Card::KingBoost,
+    ];
+
+    /// Bausteine fuer eigene Karten: was sich zu einer Karte zusammenstellen laesst.
+    pub const BUILDING_BLOCKS: [Card; 8] = [
+        Card::Shorten,
+        Card::Bend,
+        Card::Hop,
+        Card::Pass,
+        Card::Settle,
+        Card::Charge,
+        Card::Mining,
+        Card::Smelter,
+    ];
+
     pub fn from_key(key: &str) -> Option<Card> {
+        if let Some(i) = CUSTOM_KEYS.iter().position(|k| *k == key) {
+            return Some(Card::Custom(i as u8));
+        }
         Card::ALL
             .into_iter()
             .chain(Card::V2)
+            .chain(Card::V3_NEW)
             .find(|c| c.key() == key)
+    }
+
+    /// Wirkt die Karte sofort beim Kauf auf den Spieler (ohne Figur, ohne Platz neben der Fabrik)?
+    /// Nur Version 3: Sturmangriff, Bergbau, Schmiede und Doppelzug.
+    pub fn is_instant(self) -> bool {
+        matches!(
+            self,
+            Card::Charge | Card::Mining | Card::Smelter | Card::DoubleMove
+        )
     }
 
     pub fn name(self) -> &'static str {
@@ -192,6 +257,10 @@ impl Card {
             Card::Hop => "Sprung",
             Card::FactoryShift => "Fabrik rücken",
             Card::KingBoost => "Königs-Boost",
+            Card::Pass => "Durchzug",
+            Card::Settle => "Siedler",
+            Card::Smelter => "Schmiede",
+            Card::Custom(_) => "Eigene Karte",
         }
     }
 
@@ -228,6 +297,14 @@ impl Card {
             Card::KingBoost => {
                 "Dein König wird besser: Stufe 1 auch diagonal, Stufe 2 zwei Felder gerade, Stufe 3 zwei vor und eins zur Seite."
             }
+            Card::Pass => {
+                "Die nächste Figur darf auf ihrem Weg über eigene Figuren hinwegziehen (Gegner versperren den Weg weiter)."
+            }
+            Card::Settle => {
+                "Die nächste Figur färbt sofort alle freien Nachbarfelder in deiner Farbe (auch Land des Gegners)."
+            }
+            Card::Smelter => "Deine Fabrik erntet Eisen (Kat 1) dauerhaft doppelt.",
+            Card::Custom(_) => "Eine selbst gebaute Karte.",
         }
     }
 
@@ -256,9 +333,15 @@ impl Card {
             Card::Runestone => cost(0, 3, 3, 3, 1),
             Card::Starshard => cost(0, 2, 2, 2, 1),
             // Version 2 hat eigene Preise (`Card::v2_price`); diese Zahlen sind nur ein Platzhalter.
-            Card::Shorten | Card::Bend | Card::Hop | Card::FactoryShift | Card::KingBoost => {
-                cost(1, 0, 0, 0, 0)
-            }
+            Card::Shorten
+            | Card::Bend
+            | Card::Hop
+            | Card::FactoryShift
+            | Card::KingBoost
+            | Card::Pass
+            | Card::Settle
+            | Card::Smelter
+            | Card::Custom(_) => cost(1, 0, 0, 0, 0),
         }
     }
 
@@ -333,6 +416,26 @@ impl Card {
         }
     }
 
+    /// Version 3 (`terr_cardset3`): Grundpreis in Einheiten Kat 1 (Eisen), Kat 2 (Gold) und Kat 3
+    /// (Brot), ohne Kartenfaktor. Wer andere Preise will, setzt `price.<karte>=eisen/gold/brot`.
+    /// Brot gibt es mit `terr_bonus` nicht im Lager; ein Brotpreis ist dann nie bezahlbar.
+    pub fn v3_price(self) -> [u32; 3] {
+        match self {
+            Card::Shorten => [3, 0, 0],
+            Card::Bend => [2, 1, 0],
+            Card::Hop => [4, 0, 0],
+            Card::Pass => [2, 0, 0],
+            Card::Settle => [3, 2, 0],
+            Card::FactoryShift => [3, 0, 0],
+            Card::Charge => [2, 2, 0],
+            Card::Mining => [2, 3, 0],
+            Card::Smelter => [3, 2, 0],
+            Card::DoubleMove => [4, 3, 0],
+            Card::KingBoost => [0, 3, 0],
+            _ => [0, 0, 0],
+        }
+    }
+
     pub fn target(self) -> CardTarget {
         match self {
             Card::Training
@@ -344,6 +447,8 @@ impl Card {
             | Card::Shorten
             | Card::Bend
             | Card::Hop
+            | Card::Pass
+            | Card::Settle
             | Card::Runestone => CardTarget::Unit,
             _ => CardTarget::Player,
         }
@@ -397,8 +502,9 @@ pub const TERRITORY_POOL: [Card; 5] = [
     Card::Horse,
 ];
 
-/// Markt im Gebietsmodus: `size` verschiedene Karten aus `TERRITORY_POOL` (mit `v2` aus
-/// `Card::V2`), sortiert.
+/// Markt im Gebietsmodus: `size` verschiedene Karten aus dem Vorrat, sortiert. Der Vorrat ist
+/// `TERRITORY_POOL`, mit `v2` die Karten von Version 2 (`Card::V2`), mit `v3` zusaetzlich die von
+/// Version 3 samt den selbst gebauten Karten (`Card::V3_POOL`, siehe `territory_pool`).
 pub fn draw_market_territory(
     seed: u64,
     size: usize,
@@ -406,18 +512,280 @@ pub fn draw_market_territory(
     v2: bool,
     kingup: bool,
 ) -> Vec<Card> {
-    let pool: &[Card] = if v2 { &Card::V2 } else { &TERRITORY_POOL };
-    // Mit dem direkten Koenigs-Upgrade (`terr_kingup`) liegt der Boost immer aus und wird nicht gezogen.
-    let mut deck: Vec<Card> = pool
-        .iter()
-        .copied()
-        .filter(|c| c.available_on(grid) && !(kingup && *c == Card::KingBoost))
-        .collect();
+    draw_market_pool(
+        seed,
+        size,
+        territory_pool(grid, v2, false, kingup, &CardTweaks::default()),
+    )
+}
+
+/// Wie `draw_market_territory`, mit Kartensatz von Version 3 (`v3`) und den Einstellungen des
+/// Spielers (`tweaks`: Karten, die nicht gezogen werden, und selbst gebaute Karten).
+pub fn draw_market_territory_with(
+    seed: u64,
+    size: usize,
+    grid: GridKind,
+    v2: bool,
+    v3: bool,
+    kingup: bool,
+    tweaks: &CardTweaks,
+) -> Vec<Card> {
+    draw_market_pool(seed, size, territory_pool(grid, v2, v3, kingup, tweaks))
+}
+
+/// Der Vorrat, aus dem der Markt im Gebietsmodus gezogen wird. Karten mit `pool.<karte>=0` und
+/// solche, die auf diesem Gitter nichts bewirken, fehlen; mit dem Koenigs-Upgrade
+/// (`terr_kingup`) liegt der Boost immer aus und wird nicht gezogen.
+pub fn territory_pool(
+    grid: GridKind,
+    v2: bool,
+    v3: bool,
+    kingup: bool,
+    tweaks: &CardTweaks,
+) -> Vec<Card> {
+    let mut pool: Vec<Card> = if v3 {
+        Card::V3_POOL.to_vec()
+    } else if v2 {
+        Card::V2.to_vec()
+    } else {
+        TERRITORY_POOL.to_vec()
+    };
+    if v3 {
+        pool.extend(
+            (0..MAX_CUSTOM)
+                .map(Card::Custom)
+                .filter(|c| tweaks.defined(*c)),
+        );
+    }
+    pool.retain(|c| {
+        tweaks.available_on(*c, grid)
+            && !(kingup && *c == Card::KingBoost)
+            && !tweaks.off.contains(c)
+    });
+    pool
+}
+
+fn draw_market_pool(seed: u64, size: usize, mut deck: Vec<Card>) -> Vec<Card> {
     let mut rng = Rng::new(seed ^ 0x6b61_7274_656e_0002);
     rng.shuffle(&mut deck);
     deck.truncate(size);
     deck.sort();
     deck
+}
+
+/// Eine selbst gebaute Karte (Version 3, "Baukasten"): ein Name, Bausteine mit Wiederholungen
+/// (zum Beispiel `bend*2 + hop`) und ein eigener Preis in Kat 1 / 2 / 3.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CustomCard {
+    pub name: String,
+    pub parts: Vec<(Card, u8)>,
+    pub price: [u32; 3],
+}
+
+/// Was der Spieler an den Karten von Version 3 eingestellt hat: eigene Preise, Karten, die nicht
+/// gezogen werden, und selbst gebaute Karten. Kommt ueber die Regeln `price.<karte>`,
+/// `pool.<karte>` und `custom.<platz>` (siehe `CardTweaks::set`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CardTweaks {
+    pub price: BTreeMap<Card, [u32; 3]>,
+    pub off: BTreeSet<Card>,
+    pub custom: [Option<CustomCard>; MAX_CUSTOM as usize],
+}
+
+fn parse_price(text: &str) -> Result<[u32; 3], String> {
+    let mut out = [0u32; 3];
+    let parts: Vec<&str> = text.split('/').map(str::trim).collect();
+    if parts.is_empty() || parts.len() > 3 {
+        return Err(format!(
+            "'{text}': Preis ist eisen/gold/brot (hoechstens drei Zahlen)"
+        ));
+    }
+    for (i, part) in parts.iter().enumerate() {
+        out[i] = part
+            .parse::<u32>()
+            .ok()
+            .filter(|n| *n <= 99)
+            .ok_or_else(|| format!("'{text}': '{part}' ist keine Zahl von 0 bis 99"))?;
+    }
+    Ok(out)
+}
+
+impl CardTweaks {
+    /// Gehoert dieser Regelname hierher (`price.`, `pool.` oder `custom.`)?
+    pub fn handles(key: &str) -> bool {
+        key.starts_with("price.") || key.starts_with("pool.") || key.starts_with("custom.")
+    }
+
+    /// Setzt eine Regel: `price.bend=2/1/0` (Preis Eisen/Gold/Brot, leer = zurueck auf den
+    /// Standard), `pool.bend=0` (Karte wird nicht gezogen; 1 = wird gezogen) oder
+    /// `custom.0=Name|bend*2+hop|3/2/0` (eigene Karte auf Platz 0 bis 7; leer loescht sie).
+    pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
+        let value = value.trim();
+        if let Some(name) = key.strip_prefix("price.") {
+            let card = Card::from_key(name).ok_or_else(|| format!("'{key}': unbekannte Karte"))?;
+            if value.is_empty() {
+                self.price.remove(&card);
+            } else {
+                self.price.insert(card, parse_price(value)?);
+            }
+        } else if let Some(name) = key.strip_prefix("pool.") {
+            let card = Card::from_key(name).ok_or_else(|| format!("'{key}': unbekannte Karte"))?;
+            match value {
+                "0" => self.off.insert(card),
+                "1" => self.off.remove(&card),
+                _ => return Err(format!("'{key}': 0 oder 1")),
+            };
+        } else if let Some(slot) = key.strip_prefix("custom.") {
+            let slot: usize = slot
+                .parse()
+                .ok()
+                .filter(|&i| i < usize::from(MAX_CUSTOM))
+                .ok_or_else(|| format!("'{key}': Platz 0 bis {}", MAX_CUSTOM - 1))?;
+            self.custom[slot] = if value.is_empty() {
+                None
+            } else {
+                Some(parse_custom(value)?)
+            };
+        } else {
+            return Err(format!("unbekannte Regel '{key}'"));
+        }
+        Ok(())
+    }
+
+    /// Gibt es diese Karte? Alle ausser den selbst gebauten Karten ohne Eintrag.
+    pub fn defined(&self, card: Card) -> bool {
+        match card {
+            Card::Custom(i) => self.custom.get(usize::from(i)).is_some_and(|c| c.is_some()),
+            _ => true,
+        }
+    }
+
+    fn custom_of(&self, card: Card) -> Option<&CustomCard> {
+        match card {
+            Card::Custom(i) => self.custom.get(usize::from(i)).and_then(|c| c.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Die Bausteine einer Karte: eine normale Karte ist ihr eigener Baustein, eine selbst gebaute
+    /// besteht aus mehreren (mit Wiederholungen).
+    pub fn parts(&self, card: Card) -> Vec<(Card, u8)> {
+        match card {
+            Card::Custom(_) => self
+                .custom_of(card)
+                .map(|c| c.parts.clone())
+                .unwrap_or_default(),
+            _ => vec![(card, 1)],
+        }
+    }
+
+    /// Worauf die Karte wirkt: eine selbst gebaute auf eine Figur, sobald ein Baustein eine braucht.
+    pub fn target(&self, card: Card) -> CardTarget {
+        match card {
+            Card::Custom(_) => {
+                if self
+                    .parts(card)
+                    .iter()
+                    .any(|(c, _)| c.target() == CardTarget::Unit)
+                {
+                    CardTarget::Unit
+                } else {
+                    CardTarget::Player
+                }
+            }
+            _ => card.target(),
+        }
+    }
+
+    pub fn available_on(&self, card: Card, grid: GridKind) -> bool {
+        match card {
+            Card::Custom(_) => {
+                self.defined(card) && self.parts(card).iter().all(|(c, _)| c.available_on(grid))
+            }
+            _ => card.available_on(grid),
+        }
+    }
+
+    pub fn name(&self, card: Card) -> String {
+        match self.custom_of(card) {
+            Some(c) => c.name.clone(),
+            None => card.name().to_string(),
+        }
+    }
+
+    /// Text einer selbst gebauten Karte: woraus sie besteht.
+    pub fn custom_text(&self, card: Card) -> Option<String> {
+        let c = self.custom_of(card)?;
+        let parts: Vec<String> = c
+            .parts
+            .iter()
+            .map(|(p, n)| {
+                if *n > 1 {
+                    format!("{} ×{n}", p.name())
+                } else {
+                    p.name().to_string()
+                }
+            })
+            .collect();
+        Some(format!("Selbst gebaut aus: {}.", parts.join(" + ")))
+    }
+
+    /// Preis in Kat 1 / 2 / 3, wenn der Spieler ihn gesetzt hat (bei selbst gebauten Karten immer).
+    pub fn price_override(&self, card: Card) -> Option<[u32; 3]> {
+        match self.custom_of(card) {
+            Some(c) => Some(c.price),
+            None => self.price.get(&card).copied(),
+        }
+    }
+}
+
+fn parse_custom(value: &str) -> Result<CustomCard, String> {
+    let fields: Vec<&str> = value.split('|').map(str::trim).collect();
+    let [name, parts, price] = fields[..] else {
+        return Err(format!(
+            "'{value}': erwartet Name|baustein+baustein|eisen/gold/brot"
+        ));
+    };
+    if name.is_empty() || name.chars().count() > 24 || name.contains(['=', '|', ',']) {
+        return Err(format!("'{name}': Name mit 1 bis 24 Zeichen, ohne = und |"));
+    }
+    let mut out: Vec<(Card, u8)> = Vec::new();
+    for part in parts.split('+').map(str::trim).filter(|p| !p.is_empty()) {
+        let (key, times) = match part.split_once('*') {
+            Some((k, n)) => (
+                k.trim(),
+                n.trim()
+                    .parse::<u8>()
+                    .ok()
+                    .filter(|n| (1..=3).contains(n))
+                    .ok_or_else(|| format!("'{part}': Wiederholungen von 1 bis 3"))?,
+            ),
+            None => (part, 1),
+        };
+        let card = Card::from_key(key).ok_or_else(|| format!("'{key}': unbekannter Baustein"))?;
+        if !Card::BUILDING_BLOCKS.contains(&card) {
+            return Err(format!(
+                "'{key}' laesst sich nicht in eine eigene Karte einbauen (erlaubt: {})",
+                Card::BUILDING_BLOCKS
+                    .iter()
+                    .map(|c| c.key())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        match out.iter_mut().find(|(c, _)| *c == card) {
+            Some((_, n)) => *n = (*n + times).min(3),
+            None => out.push((card, times)),
+        }
+    }
+    if out.is_empty() {
+        return Err(format!("'{value}': mindestens ein Baustein"));
+    }
+    Ok(CustomCard {
+        name: name.to_string(),
+        parts: out,
+        price: parse_price(price)?,
+    })
 }
 
 /// Waehlt aus `stock` die Einheiten, mit denen `cost` bezahlt wird, oder `None`, wenn es nicht

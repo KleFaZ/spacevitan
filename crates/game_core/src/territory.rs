@@ -36,7 +36,7 @@
 use crate::action::{Action, Event, PaySource};
 use crate::cards::Card;
 use crate::game::Game;
-use crate::ids::{CellId, FactoryId, PieceId, PlayerId};
+use crate::ids::{CellId, FactoryId, PieceId, PlayerId, ResourceId};
 use crate::map::Map;
 use crate::state::{Factory, Inventory, Piece, PieceKind};
 use std::collections::VecDeque;
@@ -438,6 +438,14 @@ impl Game {
     /// Kartenpreis nach Kategorien (Kat 1, 2, 3): die alten Preise, Kat 2 und 3 mal `terr_card_mult`;
     /// mit dem Kartensatz von Version 2 deren eigene Preise (Kartenfaktor 16 = Grundpreis).
     pub fn territory_card_price(&self, card: Card) -> [u32; 3] {
+        if self.config.terr_cardset3 {
+            // Version 3: feste Preise in Eisen / Gold / Brot, vom Spieler einstellbar (`price.<karte>`).
+            return self
+                .config
+                .card_tweaks
+                .price_override(card)
+                .unwrap_or_else(|| card.v3_price());
+        }
         let m = self.config.terr_card_mult;
         if self.config.terr_cards == 1 {
             let scale = |n: u32| if n == 0 { 0 } else { (n * m / 16).max(1) };
@@ -480,6 +488,12 @@ impl Game {
     pub fn territory_card_takeable(&self, player: PlayerId, card: Card) -> bool {
         if card == Card::KingBoost {
             self.state.player_perks[player.idx()].king_boost < crate::state::MAX_KING_BOOST
+        } else if self.instant_card(card) {
+            self.config
+                .card_tweaks
+                .parts(card)
+                .iter()
+                .any(|&(part, _)| self.instant_has_room(player, part))
         } else if self.cards_go_on_pieces(card) {
             self.pieces_of(player)
                 .any(|p| self.card_fits_piece(card, p))
@@ -493,7 +507,109 @@ impl Game {
     pub fn cards_go_on_pieces(&self, card: Card) -> bool {
         self.config.territory
             && self.config.terr_cardany
-            && card.target() == crate::cards::CardTarget::Unit
+            && self.config.card_tweaks.target(card) == crate::cards::CardTarget::Unit
+    }
+
+    /// Version 3: wirkt die Karte sofort beim Kauf auf den Spieler (Sturmangriff, Bergbau, Schmiede,
+    /// Doppelzug, oder eine selbst gebaute Karte nur aus solchen Bausteinen)? Dann braucht sie weder
+    /// eine Figur noch den Kartenplatz neben der Fabrik.
+    pub fn instant_card(&self, card: Card) -> bool {
+        self.config.territory
+            && self.config.terr_cardset3
+            && match card {
+                Card::Custom(_) => {
+                    self.config.card_tweaks.defined(card)
+                        && self.config.card_tweaks.target(card) == crate::cards::CardTarget::Player
+                }
+                _ => card.is_instant(),
+            }
+    }
+
+    /// Hat der Spieler fuer diesen sofort wirkenden Baustein noch etwas zu gewinnen? Sturmangriff
+    /// nur einmal je Zug, Doppelzug nur eine zusaetzliche Aktion, Bergbau und Schmiede nur einmal.
+    fn instant_has_room(&self, player: PlayerId, card: Card) -> bool {
+        let pp = &self.state.player_perks[player.idx()];
+        match card {
+            Card::Charge => !self.state.charge,
+            Card::Mining => !pp.mining,
+            Card::Smelter => !pp.smelter,
+            Card::DoubleMove => self.state.extra_actions == 0,
+            _ => false,
+        }
+    }
+
+    /// Name der Karte in dieser Partie (selbst gebaute Karten haben ihren eigenen).
+    pub fn card_name(&self, card: Card) -> String {
+        self.config.card_tweaks.name(card)
+    }
+
+    /// Text der Karte in dieser Partie: die Ecke beschreibt mit `terr_bend_tail` die neue Regel,
+    /// eine selbst gebaute Karte nennt ihre Bausteine.
+    pub fn card_text(&self, card: Card) -> String {
+        if let Some(text) = self.config.card_tweaks.custom_text(card) {
+            return text;
+        }
+        if card == Card::Bend && self.config.terr_bend_tail {
+            return "Die nächste Figur darf mit dem letzten Feld ihres Weges um die Ecke gehen (jede weitere Karte: ein Feld mehr, also das letzte und das vorletzte und so weiter).".to_string();
+        }
+        card.text().to_string()
+    }
+
+    /// Version 3 (Siedler): die Felder, die die Karte Siedler um diese Figur faerbt: alle
+    /// Nachbarfelder ohne Figur, die nicht schon dem Besitzer gehoeren und keine gegnerische Fabrik
+    /// tragen. Nur wenn die Figur auf verbundenem Land steht (sonst faerbt sie nichts).
+    pub fn settle_cells(&self, piece: &Piece) -> Vec<CellId> {
+        if !self.piece_connected(piece) {
+            return Vec::new();
+        }
+        self.map
+            .board
+            .neighbors(piece.cell)
+            .filter(|&c| {
+                self.state.piece_at(c).is_none()
+                    && self.state.land[c.idx()] != Some(piece.owner)
+                    && self
+                        .state
+                        .factory_at(c)
+                        .is_none_or(|f| f.owner == piece.owner)
+            })
+            .collect()
+    }
+
+    /// Wirkung der Karte Siedler: faerbt die Felder von `settle_cells` und loest dabei die Folgen
+    /// eines Zuges aus (Abtrennen, Umschliessen).
+    pub(crate) fn settle_around(
+        &mut self,
+        actor: PlayerId,
+        target: Option<PieceId>,
+        events: &mut Vec<Event>,
+    ) {
+        let Some(piece) = target.and_then(|t| self.state.pieces.get(&t)).cloned() else {
+            return;
+        };
+        let path = self.settle_cells(&piece);
+        if path.is_empty() {
+            return;
+        }
+        let plan = MovePlan {
+            connected: true,
+            path,
+        };
+        self.territory_apply_move(actor, &plan, events);
+    }
+
+    /// Version 3: was die Fabrik des Spielers je Ernte mehr bekommt: Schmiede +1 Eisen (Kat 1),
+    /// Bergbau +1 Gold (Kat 2). Nur im erweiterten Kartensatz.
+    fn harvest_bonus(&self, player: PlayerId, res: ResourceId) -> u32 {
+        if !self.config.terr_cardset3 {
+            return 0;
+        }
+        let pp = &self.state.player_perks[player.idx()];
+        match self.map.category(res) {
+            1 => u32::from(pp.smelter),
+            2 => u32::from(pp.mining),
+            _ => 0,
+        }
     }
 
     /// Version 3 (`terr_cardany`): kann `card` auf diese Figur gelegt werden? Nur auf Einheiten
@@ -508,13 +624,25 @@ impl Game {
         let PieceKind::Unit { range, .. } = &piece.kind else {
             return false;
         };
+        if let Card::Custom(_) = card {
+            // Eine selbst gebaute Karte passt, wenn mindestens ein Baustein auf die Figur passt.
+            return self
+                .config
+                .card_tweaks
+                .parts(card)
+                .iter()
+                .any(|&(part, _)| part != card && self.card_fits_piece(part, piece));
+        }
         let have = match card {
             Card::Shorten => piece.perks.shorten,
             Card::Bend => piece.perks.bend,
             Card::Hop => piece.perks.hop,
+            Card::Pass => piece.perks.pass,
+            // Siedler wirkt sofort und bleibt nicht liegen: passt, solange es etwas zu faerben gibt.
+            Card::Settle => return !self.settle_cells(piece).is_empty(),
             _ => return false,
         };
-        let most = if self.config.terr_stack {
+        let most = if self.config.terr_stack && card != Card::Pass {
             range.saturating_sub(1)
         } else {
             u8::from(*range >= 2)
@@ -1013,6 +1141,7 @@ impl Game {
                 len,
                 piece.perks.bend,
                 piece.perks.hop,
+                piece.perks.pass > 0,
                 &mut path,
                 emit,
             );
@@ -1028,6 +1157,7 @@ impl Game {
         left: usize,
         bends: u8,
         hops: u8,
+        pass: bool,
         path: &mut Vec<CellId>,
         emit: &mut dyn FnMut(CellId, &[CellId]),
     ) {
@@ -1035,12 +1165,18 @@ impl Game {
             return;
         }
         let board = &self.map.board;
+        let tail = self.config.terr_bend_tail;
         for d in 0..board.dir_count() {
             let turning = match dir {
                 None => false,
                 Some(prev) if prev == d => false,
                 Some(prev) => {
-                    if bends == 0 || d == board.opposite(prev) {
+                    // Version 3: die Ecke gilt nur fuer die letzten `bends` Felder des Weges (mit
+                    // einer Karte nur das letzte, mit zwei das letzte und vorletzte, ...).
+                    if bends == 0
+                        || d == board.opposite(prev)
+                        || (tail && usize::from(bends) < left)
+                    {
                         continue;
                     }
                     true
@@ -1056,11 +1192,32 @@ impl Game {
                     emit(next, path);
                 }
             } else {
-                let bends_left = if turning { bends - 1 } else { bends };
+                // Mit der Schwanz-Regel verbraucht eine Ecke nichts: die letzten `bends` Felder duerfen alle abbiegen.
+                let bends_left = if turning && !tail { bends - 1 } else { bends };
                 match occupant {
-                    None => {
-                        self.walk_from(owner, next, Some(d), left - 1, bends_left, hops, path, emit)
-                    }
+                    None => self.walk_from(
+                        owner,
+                        next,
+                        Some(d),
+                        left - 1,
+                        bends_left,
+                        hops,
+                        pass,
+                        path,
+                        emit,
+                    ),
+                    // Durchzug: eigene Figuren versperren den Weg nicht.
+                    Some(p) if pass && p.owner == owner => self.walk_from(
+                        owner,
+                        next,
+                        Some(d),
+                        left - 1,
+                        bends_left,
+                        hops,
+                        pass,
+                        path,
+                        emit,
+                    ),
                     Some(_) if hops > 0 => self.walk_from(
                         owner,
                         next,
@@ -1068,6 +1225,7 @@ impl Game {
                         left - 1,
                         bends_left,
                         hops - 1,
+                        pass,
                         path,
                         emit,
                     ),
@@ -1563,7 +1721,7 @@ impl Game {
                     self.ripen_wait(cell, res) == 0
                 };
                 if ready {
-                    gained.add(res, yield_n);
+                    gained.add(res, yield_n + self.harvest_bonus(actor, res));
                 }
             }
         }
@@ -1765,6 +1923,13 @@ impl Game {
         let on_piece = self.cards_go_on_pieces(card);
         if card == Card::KingBoost {
             self.apply_card(actor, card, from, None, None, events);
+        } else if self.instant_card(card) {
+            // Version 3: Sturmangriff, Bergbau, Schmiede, Doppelzug wirken sofort.
+            for (part, _) in self.config.card_tweaks.parts(card) {
+                if self.instant_has_room(actor, part) {
+                    self.apply_card(actor, part, from, None, None, events);
+                }
+            }
         } else if on_piece {
             // Version 3: die Karte wirkt sofort auf die gewaehlte Einheit.
             self.apply_card(actor, card, from, target, None, events);

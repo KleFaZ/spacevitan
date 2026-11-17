@@ -179,6 +179,17 @@ pub struct Config {
     pub terr_kingup: bool,
     /// Kat 2 je zusaetzlichem Zugfeld beim Koenigs-Upgrade (Standard 1).
     pub terr_kingup_price: u32,
+    /// Version 3: die Karte Ecke gilt nur fuer die letzten Felder des Weges: mit einer Karte darf
+    /// das letzte Feld um die Ecke gehen, mit zwei Karten das letzte und das vorletzte, und so
+    /// weiter. Aus: die Ecke darf irgendwo auf dem Weg liegen (Version 2).
+    pub terr_bend_tail: bool,
+    /// Version 3: erweiterter Kartensatz (`Card::V3_POOL`: Kuerzer, Ecke, Sprung, Durchzug, Siedler,
+    /// Fabrik ruecken, Sturmangriff, Bergbau, Schmiede, Doppelzug, Koenigs-Boost) mit festen
+    /// Preisen in Eisen / Gold / Brot (`Card::v3_price`, ohne Kartenfaktor) und selbst gebauten
+    /// Karten. Braucht `terr_cards=1`.
+    pub terr_cardset3: bool,
+    /// Eigene Preise, Karten, die nicht gezogen werden, und selbst gebaute Karten (Version 3).
+    pub card_tweaks: crate::cards::CardTweaks,
     /// Brettform unabhaengig von der Spielerzahl: 0 = wie bisher nach Spielerzahl, sonst die
     /// Eckenzahl 3 (Dreieck), 4 (Quadrat) oder 5 bis 8 (Vieleck aus Sechsecken). Dann gilt
     /// `players <= board_corners`, und die Ecken der Spieler waehlt `fair_corners`.
@@ -276,6 +287,9 @@ impl Config {
             terr_upkeep: false,
             terr_kingup: false,
             terr_kingup_price: 1,
+            terr_bend_tail: false,
+            terr_cardset3: false,
+            card_tweaks: crate::cards::CardTweaks::default(),
             board_corners: 0,
         }
     }
@@ -308,6 +322,9 @@ impl Config {
         self.terr_kingup = on;
         // Karten kosten in Version 3 die Haelfte des Grundpreises (16 = voll).
         self.terr_card_mult = if on { 8 } else { 16 };
+        // Erweiterter Kartensatz mit festen Preisen; die Ecke gilt nur fuer die letzten Felder.
+        self.terr_cardset3 = on;
+        self.terr_bend_tail = on;
         if on {
             self.terr_cats = 3;
             self.terr_ripen = [3, 5, 10, 0];
@@ -423,6 +440,8 @@ impl Config {
             "terr_upkeep" => self.terr_upkeep = value != 0,
             "terr_kingup" => self.terr_kingup = value != 0,
             "terr_kingup_price" => self.terr_kingup_price = as_u32(value)?,
+            "terr_bend_tail" => self.terr_bend_tail = value != 0,
+            "terr_cardset3" => self.terr_cardset3 = value != 0,
             "board_corners" => self.board_corners = as_u32(value)?.min(255) as u8,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
@@ -440,6 +459,10 @@ impl Config {
             let (key, value) = item
                 .split_once('=')
                 .ok_or_else(|| format!("'{item}': erwartet name=wert"))?;
+            if crate::cards::CardTweaks::handles(key.trim()) {
+                self.card_tweaks.set(key.trim(), value)?;
+                continue;
+            }
             let value: i64 = value
                 .trim()
                 .parse()
@@ -606,6 +629,11 @@ impl Config {
         if self.terr_occupy && !self.terr_cycle {
             return Err(ConfigError::Invalid(
                 "terr_occupy braucht terr_cycle (den Erntezaehler)",
+            ));
+        }
+        if self.terr_cardset3 && (self.terr_cards != 1 || !self.territory) {
+            return Err(ConfigError::Invalid(
+                "terr_cardset3 braucht den Gebietsmodus und den Kartensatz von Version 2 (terr_cards=1)",
             ));
         }
         if self.terr_cardany && self.terr_cards != 1 {

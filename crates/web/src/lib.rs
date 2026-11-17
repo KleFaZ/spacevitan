@@ -104,6 +104,14 @@ pub extern "C" fn sv_api_version() -> u32 {
     API_VERSION
 }
 
+/// Der Kartenkatalog fuer den Editor der Seite: alle Karten der Version 3 mit Name, Text, Ziel und
+/// Standardpreis (Eisen / Gold / Brot) und die Bausteine, aus denen man eigene Karten baut.
+/// Antwort `{"cards":[...],"blocks":[...],"max_custom":n}`.
+#[no_mangle]
+pub extern "C" fn sv_cards() -> i32 {
+    finish(Ok(game_core::replay::catalog_json()))
+}
+
 /// Reserviert `len` Bytes im Eingabepuffer und gibt deren Adresse zurueck. JavaScript schreibt
 /// den Text dorthin (UTF-8) und ruft danach z. B. `sv_set_rules(len)` auf.
 #[no_mangle]

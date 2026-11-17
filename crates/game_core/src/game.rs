@@ -54,12 +54,14 @@ impl Game {
             &[]
         };
         state.market = if config.territory {
-            cards::draw_market_territory(
+            cards::draw_market_territory_with(
                 config.seed,
                 config.market_size as usize,
                 map.board.kind(),
                 config.terr_cards == 1,
+                config.terr_cardset3,
                 config.terr_kingup,
+                &config.card_tweaks,
             )
         } else {
             cards::draw_market_with(
@@ -1077,6 +1079,29 @@ impl Game {
             Card::Hop => {
                 let p = &mut self.target_mut(target).perks;
                 p.hop = p.hop.saturating_add(1);
+            }
+            Card::Pass => {
+                let p = &mut self.target_mut(target).perks;
+                p.pass = p.pass.saturating_add(1);
+            }
+            Card::Settle => self.settle_around(actor, target, events),
+            Card::Smelter => self.state.player_perks[actor.idx()].smelter = true,
+            Card::Custom(_) => {
+                // Eine selbst gebaute Karte wirkt wie ihre Bausteine nacheinander; ein Baustein, der
+                // auf der Figur keinen Platz mehr hat, entfaellt.
+                for (part, times) in self.config.card_tweaks.parts(card) {
+                    for _ in 0..times {
+                        if part.target() == CardTarget::Unit {
+                            let fits = target
+                                .and_then(|t| self.state.pieces.get(&t))
+                                .is_some_and(|piece| self.card_fits_piece(part, piece));
+                            if !fits {
+                                break;
+                            }
+                        }
+                        self.apply_card(actor, part, from, target, color, events);
+                    }
+                }
             }
             Card::KingBoost => {
                 let pp = &mut self.state.player_perks[actor.idx()];

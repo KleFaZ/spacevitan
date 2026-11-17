@@ -63,7 +63,12 @@ fn opt_piece(p: &Option<crate::ids::PieceId>) -> String {
 }
 
 /// Karte im Markt: Kurzname, Name, Wirkung, Kosten, Ziel.
-fn card_json(card: &Card, pawn_cost: Option<u8>, territory: Option<[u32; 3]>) -> String {
+fn card_json(game: &Game, card: &Card) -> String {
+    let pawn_cost = game.roles_pawn_cost();
+    let territory = game
+        .config
+        .territory
+        .then(|| game.territory_card_price(*card));
     let mut c = card.cost_with(1, pawn_cost);
     if let Some([k1, k2, k3]) = territory {
         // Gebietsmodus: bezahlt wird nur nach Kategorie, ohne Mindestzahl an Farben.
@@ -76,24 +81,71 @@ fn card_json(card: &Card, pawn_cost: Option<u8>, territory: Option<[u32; 3]>) ->
             k3_kinds: 0,
         };
     }
-    let target = match card.target() {
+    let target = match game.config.card_tweaks.target(*card) {
         crate::cards::CardTarget::Player => "player",
         crate::cards::CardTarget::Unit => "unit",
     };
     format!(
-        r#"{{"key":{},"name":{},"text":{},"target":{},"set":{},"per_range":{},"cost":{{"color":{},"foreign_color":{},"k2":{},"k2_kinds":{},"k3":{},"k3_kinds":{}}}}}"#,
+        r#"{{"key":{},"name":{},"text":{},"target":{},"set":{},"per_range":{},"instant":{},"cost":{{"color":{},"foreign_color":{},"k2":{},"k2_kinds":{},"k3":{},"k3_kinds":{}}}}}"#,
         esc(card.key()),
-        esc(card.name()),
-        esc(card.text()),
+        esc(&game.card_name(*card)),
+        esc(&if game.config.territory {
+            game.card_text(*card)
+        } else {
+            card.text().to_string()
+        }),
         esc(target),
         card.is_set_piece(),
         card.priced_by_range() && territory.is_none(),
+        game.instant_card(*card),
         c.color,
         c.foreign_color,
         c.k2,
         c.k2_kinds,
         c.k3,
         c.k3_kinds
+    )
+}
+
+/// Der Kartenkatalog fuer das Menue des Viewers: alle Karten des erweiterten Kartensatzes von
+/// Version 3 mit Name, Text, Ziel, Standardpreis (Eisen / Gold / Brot) und ob sie nur auf dem
+/// Quadratbrett gibt, dazu die Bausteine fuer eigene Karten.
+pub fn catalog_json() -> String {
+    let cards = list(Card::V3_POOL.iter(), |c| {
+        format!(
+            r#"{{"key":{},"name":{},"text":{},"target":{},"price":[{},{},{}],"square_only":{},"instant":{}}}"#,
+            esc(c.key()),
+            esc(c.name()),
+            esc(c.text()),
+            esc(match c.target() {
+                crate::cards::CardTarget::Player => "player",
+                crate::cards::CardTarget::Unit => "unit",
+            }),
+            c.v3_price()[0],
+            c.v3_price()[1],
+            c.v3_price()[2],
+            !c.available_on(crate::board::GridKind::Hex),
+            c.is_instant()
+        )
+    });
+    let blocks = list(Card::BUILDING_BLOCKS.iter(), |c| {
+        format!(
+            r#"{{"key":{},"name":{},"text":{},"target":{},"square_only":{}}}"#,
+            esc(c.key()),
+            esc(c.name()),
+            esc(c.text()),
+            esc(match c.target() {
+                crate::cards::CardTarget::Player => "player",
+                crate::cards::CardTarget::Unit => "unit",
+            }),
+            !c.available_on(crate::board::GridKind::Hex)
+        )
+    });
+    format!(
+        r#"{{"cards":{},"blocks":{},"max_custom":{}}}"#,
+        cards,
+        blocks,
+        crate::cards::MAX_CUSTOM
     )
 }
 
@@ -349,7 +401,7 @@ pub fn state_json(game: &Game) -> String {
     let st = &game.state;
     let perks = |pk: &crate::state::Perks| {
         format!(
-            r#""perks":{{"diagonal":{},"extra_range":{},"card_levels":{},"lance":{},"spring":{},"horse":{},"shorten":{},"bend":{},"hop":{}}}"#,
+            r#""perks":{{"diagonal":{},"extra_range":{},"card_levels":{},"lance":{},"spring":{},"horse":{},"shorten":{},"bend":{},"hop":{},"pass":{}}}"#,
             pk.diagonal,
             pk.extra_range,
             pk.card_levels,
@@ -358,7 +410,8 @@ pub fn state_json(game: &Game) -> String {
             pk.horse,
             pk.shorten,
             pk.bend,
-            pk.hop
+            pk.hop,
+            pk.pass
         )
     };
     let pieces = list(st.pieces.values(), |p| match &p.kind {
@@ -386,8 +439,8 @@ pub fn state_json(game: &Game) -> String {
     });
     let player_perks = list(st.player_perks.iter(), |pp| {
         format!(
-            r#"{{"mining":{},"farming":{},"runes":{},"shards":{},"cards_bought":{},"king_boost":{}}}"#,
-            pp.mining, pp.farming, pp.runes, pp.shards, pp.cards_bought, pp.king_boost
+            r#"{{"mining":{},"farming":{},"smelter":{},"runes":{},"shards":{},"cards_bought":{},"king_boost":{}}}"#,
+            pp.mining, pp.farming, pp.smelter, pp.runes, pp.shards, pp.cards_bought, pp.king_boost
         )
     });
     let factories = list(st.factories.values(), |f| {
@@ -503,7 +556,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{},"terr_bend_tail":{},"terr_cardset3":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -552,7 +605,9 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_stack,
         c.terr_upkeep,
         c.terr_kingup,
-        c.terr_kingup_price
+        c.terr_kingup_price,
+        c.terr_bend_tail,
+        c.terr_cardset3
     );
     // Direktes Koenigs-Upgrade (`terr_kingup`): Kat 2 je zusaetzlichem Zugfeld, je Stufe.
     let king_up = format!(
@@ -577,11 +632,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         list(m.territories.iter(), |t| t
             .map_or("-1".to_string(), |i| i.to_string())),
         list(m.player_corners.iter(), |i| i.to_string()),
-        list(game.state.market.iter(), |c| card_json(
-            c,
-            game.roles_pawn_cost(),
-            game.config.territory.then(|| game.territory_card_price(*c))
-        )),
+        list(game.state.market.iter(), |c| card_json(game, c)),
         king_up
     )
 }

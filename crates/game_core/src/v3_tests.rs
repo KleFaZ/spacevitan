@@ -98,6 +98,12 @@ fn stock(g: &mut Game, p: PlayerId, res: ResourceId, n: u32) {
     g.setup_storage(fid, res, n);
 }
 
+/// Gold (Kategorie 2) in die Heimatfabrik legen, die neuen Karten (Ecke u. a.) brauchen es.
+fn stock_gold(g: &mut Game, p: PlayerId, n: u32) {
+    let k2 = typ(g, 0, 2);
+    stock(g, p, k2, n);
+}
+
 /// Zugende fuer `p` ohne Aktion, wie nach einem Zug (nur der Ertrag).
 fn income(g: &mut Game, p: PlayerId) -> Vec<Event> {
     let mut events = Vec::new();
@@ -1346,6 +1352,7 @@ fn a_unit_card_goes_on_a_chosen_existing_unit_at_once() {
     let three = g.setup_unit(P0, c(&g, 5, 0), 3, 3);
     let k1 = typ(&g, 0, 1);
     stock(&mut g, P0, k1, 12);
+    stock_gold(&mut g, P0, 2); // reicht fuer die Ecke (1), nicht fuer die Koenigskarte (3)
     let fid = g.home_factory(P0).unwrap().id;
     let all = buys(&g);
     // Je Karte nur Einheiten ab Reichweite 2, nie der Koenig, nie der Bauer.
@@ -1376,7 +1383,8 @@ fn a_unit_card_goes_on_a_chosen_existing_unit_at_once() {
         "keine Karte neben der Fabrik"
     );
     assert_eq!(g.current_player(), P0, "Kaufen ist keine Aktion");
-    assert_eq!(storage_of(&g, P0, k1), 7, "Ecke kostet 5 Kat 1");
+    assert_eq!(storage_of(&g, P0, k1), 10, "Ecke kostet 2 Kat 1");
+    assert_eq!(storage_of(&g, P0, typ(&g, 0, 2)), 1, "und 1 Kat 2");
     assert!(events.iter().any(|e| matches!(
         e,
         Event::CardBought { card: Card::Bend, target: Some(t), .. } if *t == three
@@ -1411,6 +1419,7 @@ fn the_unit_card_changes_the_moves_of_that_unit() {
     let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
     let k1 = typ(&g, 0, 1);
     stock(&mut g, P0, k1, 5);
+    stock_gold(&mut g, P0, 8);
     let corner = c(&g, 6, 6);
     assert!(!g.piece_destinations(unit).contains(&corner));
     let fid = g.home_factory(P0).unwrap().id;
@@ -1460,6 +1469,7 @@ fn a_card_locks_the_upgraded_figure_for_the_turn_but_not_the_others() {
     let b = g.setup_unit(P0, c(&g, 7, 7), 2, 2);
     let k1 = typ(&g, 0, 1);
     stock(&mut g, P0, k1, 20);
+    stock_gold(&mut g, P0, 8);
     assert!(moves_of(&g, a) > 0 && moves_of(&g, b) > 0);
     buy(&mut g, Card::Bend, Some(a));
     assert_eq!(g.state.card_lock, Some(a));
@@ -1499,6 +1509,7 @@ fn the_card_lock_can_be_switched_off_or_cost_the_whole_turn() {
     let a = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
     let k1 = typ(&g, 0, 1);
     stock(&mut g, P0, k1, 20);
+    stock_gold(&mut g, P0, 8);
     buy(&mut g, Card::Bend, Some(a));
     assert_eq!(g.state.card_lock, None);
     assert!(moves_of(&g, a) > 0, "ohne Sperre darf sie sofort ziehen");
@@ -1507,6 +1518,7 @@ fn the_card_lock_can_be_switched_off_or_cost_the_whole_turn() {
     g.config.terr_cardlock = 2;
     let a = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
     stock(&mut g, P0, k1, 20);
+    stock_gold(&mut g, P0, 8);
     buy(&mut g, Card::Bend, Some(a));
     assert_eq!(g.current_player(), P1, "der Kauf beendet den Zug");
     assert_eq!(g.state.card_lock, None);
@@ -1515,6 +1527,7 @@ fn the_card_lock_can_be_switched_off_or_cost_the_whole_turn() {
     let mut g = card_game(&[Card::FactoryShift]);
     g.config.terr_cardlock = 2;
     stock(&mut g, P0, k1, 20);
+    stock_gold(&mut g, P0, 8);
     buy(&mut g, Card::FactoryShift, None);
     assert_eq!(g.current_player(), P0);
     g.check_invariants().unwrap();
@@ -1617,6 +1630,7 @@ fn a_second_corner_card_allows_two_turns_on_the_way() {
     let unit = g.setup_unit(P0, c(&g, 5, 5), 3, 3);
     let k1 = typ(&g, 0, 1);
     stock(&mut g, P0, k1, 60);
+    stock_gold(&mut g, P0, 8);
     // Rechts, hoch, links endet neben dem Start: dafuer braucht der Weg zwei Ecken.
     let hook = c(&g, 5, 6);
     buy(&mut g, Card::Bend, Some(unit));
@@ -1836,14 +1850,15 @@ fn only_the_factory_shift_card_still_lies_beside_the_factory() {
 }
 
 #[test]
-fn version_3_cards_cost_half_of_the_basic_price() {
+fn version_3_cards_have_fixed_prices_in_iron_and_gold() {
     use crate::cards::Card;
     let g = card_game(&[Card::Bend]);
     assert_eq!(g.territory_card_price(Card::Shorten), [3, 0, 0]);
     assert_eq!(g.territory_card_price(Card::Hop), [4, 0, 0]);
-    assert_eq!(g.territory_card_price(Card::Bend), [5, 0, 0]);
+    // Seit der siebten Aenderung: feste Preise in Eisen / Gold / Brot, die Ecke kostet 2 Eisen + 1 Gold.
+    assert_eq!(g.territory_card_price(Card::Bend), [2, 1, 0]);
     assert_eq!(g.territory_card_price(Card::FactoryShift), [3, 0, 0]);
-    assert_eq!(g.territory_card_price(Card::KingBoost), [0, 1, 0]);
+    assert_eq!(g.territory_card_price(Card::KingBoost), [0, 3, 0]);
 }
 
 #[test]
@@ -1854,6 +1869,7 @@ fn the_area_bot_puts_a_card_on_its_best_existing_unit() {
     let best = g.setup_unit(P0, c(&g, 4, 0), 3, 3);
     let k1 = typ(&g, 0, 1);
     stock(&mut g, P0, k1, 12);
+    stock_gold(&mut g, P0, 2); // reicht fuer die Ecke (1), nicht fuer die Koenigskarte (3)
     let mut bot = AreaBot::new(1);
     let a = bot.choose(&g);
     assert!(
@@ -2062,7 +2078,7 @@ fn the_old_king_boost_card_stays_when_the_upgrade_switch_is_off() {
     cfg.terr_kingup = false;
     let g = with_deposits_cfg(cfg, &[]);
     assert!(!g.king_upgrade_on());
-    assert_eq!(g.territory_card_price_for(P0, Card::KingBoost), [0, 1, 0]);
+    assert_eq!(g.territory_card_price_for(P0, Card::KingBoost), [0, 3, 0]);
     assert!(
         !g.territory_offers().contains(&Card::KingBoost)
             || g.state.market.contains(&Card::KingBoost),
@@ -2140,5 +2156,402 @@ fn bots_survive_upkeep_and_the_king_upgrade_without_breaking_the_rules() {
         let g = play(2, seed, 150, bots);
         assert!(g.state.round > 1);
         g.check_invariants().unwrap();
+    }
+}
+
+// ----- Siebte Aenderung: Ecke nur am Wegende, neue Karten, Preise und eigene Karten --------------
+
+fn set_bend(g: &mut Game, piece: PieceId, n: u8) {
+    g.state.pieces.get_mut(&piece).unwrap().perks.bend = n;
+}
+
+#[test]
+fn the_corner_card_only_bends_the_last_fields_in_version_3() {
+    let mut g = card_game(&[]);
+    // Stufe 3 auf (5,5), ein Blocker auf (5,7): "hoch, hoch, rechts" ist versperrt, "rechts, hoch, hoch"
+    // und "hoch, rechts, hoch" fuehren auf (6,7), und beide haben ihre Ecke nicht am letzten Feld.
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 3, 3);
+    g.setup_unit(P1, c(&g, 5, 7), 1, 1);
+    let target = c(&g, 6, 7);
+    assert!(g.config.terr_bend_tail, "Version 3 hat die neue Regel");
+    set_bend(&mut g, unit, 1);
+    assert!(
+        !g.piece_destinations(unit).contains(&target),
+        "mit einer Karte darf nur das letzte Feld abbiegen"
+    );
+    set_bend(&mut g, unit, 2);
+    assert!(
+        g.piece_destinations(unit).contains(&target),
+        "mit zwei Karten auch das vorletzte"
+    );
+    set_bend(&mut g, unit, 0);
+    assert!(
+        !g.piece_destinations(unit).contains(&target),
+        "ohne Karte nur gerade"
+    );
+    // Alte Regel (Version 2): eine Ecke irgendwo auf dem Weg.
+    g.config.terr_bend_tail = false;
+    set_bend(&mut g, unit, 1);
+    assert!(g.piece_destinations(unit).contains(&target));
+}
+
+#[test]
+fn one_corner_card_lets_the_last_field_turn_either_way() {
+    let mut g = card_game(&[]);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    set_bend(&mut g, unit, 1);
+    let dest = g.piece_destinations(unit);
+    // "hoch, links/rechts" und "rechts, hoch/runter" sind Ecken am letzten Feld.
+    for (x, y) in [(4, 6), (6, 6), (6, 4), (6, 6), (4, 4), (5, 7), (7, 5)] {
+        assert!(dest.contains(&c(&g, x, y)), "({x},{y})");
+    }
+    assert!(
+        !dest.contains(&c(&g, 5, 5)),
+        "zurueck auf das Startfeld nie"
+    );
+}
+
+#[test]
+fn the_corner_card_costs_two_iron_and_one_gold() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Bend]);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let k1 = typ(&g, 0, 1);
+    let k2 = typ(&g, 0, 2);
+    stock(&mut g, P0, k1, 2);
+    assert!(buys(&g).is_empty(), "ohne Gold nicht bezahlbar");
+    stock(&mut g, P0, k2, 1);
+    assert_eq!(buys(&g).len(), 1);
+    buy(&mut g, Card::Bend, Some(unit));
+    assert_eq!(storage_of(&g, P0, k1), 0);
+    assert_eq!(storage_of(&g, P0, k2), 0);
+    assert_eq!(g.state.pieces[&unit].perks.bend, 1);
+}
+
+#[test]
+fn the_pass_card_lets_a_unit_move_through_its_own_figures_only() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Pass]);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    g.setup_unit(P0, c(&g, 5, 6), 1, 1);
+    g.setup_unit(P1, c(&g, 7, 5), 1, 1);
+    let own_behind = c(&g, 5, 7);
+    let enemy_blocked = c(&g, 8, 5);
+    let on_own = c(&g, 5, 6);
+    assert!(!g.piece_destinations(unit).contains(&own_behind));
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 5);
+    buy(&mut g, Card::Pass, Some(unit));
+    assert_eq!(g.state.pieces[&unit].perks.pass, 1);
+    // Die Figur ruht in diesem Zug (terr_cardlock=1): fuer die Pruefung die Sperre loesen.
+    g.state.card_lock = None;
+    let dest = g.piece_destinations(unit);
+    assert!(dest.contains(&own_behind), "ueber die eigene Figur hinweg");
+    assert!(!dest.contains(&on_own), "nie auf ein eigenes Feld");
+    assert!(!dest.contains(&enemy_blocked), "Gegner versperren weiter");
+}
+
+#[test]
+fn the_settle_card_paints_the_free_neighbours_at_once() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Settle]);
+    strip(&mut g, P0, 3);
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    paint(&mut g, P1, &[(3, 1)]);
+    // Eine fremde Figur auf (4,0) bleibt, wie sie ist; die Nachbarn (2,0) gehoeren schon uns.
+    g.setup_unit(P1, c(&g, 4, 0), 1, 1);
+    let cells = g.settle_cells(&g.state.pieces[&unit].clone());
+    assert_eq!(
+        cells,
+        vec![c(&g, 3, 1)],
+        "nur das fremde Land, ohne Figur und ohne eigenes"
+    );
+    let k1 = typ(&g, 0, 1);
+    let k2 = typ(&g, 0, 2);
+    stock(&mut g, P0, k1, 3);
+    stock(&mut g, P0, k2, 2);
+    buy(&mut g, Card::Settle, Some(unit));
+    assert_eq!(g.state.land[c(&g, 3, 1).idx()], Some(P0));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_settle_card_does_not_destroy_a_factory_and_needs_connected_land() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Settle]);
+    strip(&mut g, P0, 2);
+    let unit = g.setup_unit(P0, c(&g, 2, 0), 2, 2);
+    let fcell = c(&g, 2, 1);
+    g.set_land(fcell, Some(P1));
+    g.state.insert_factory(P1, fcell);
+    let cells = g.settle_cells(&g.state.pieces[&unit].clone());
+    assert!(!cells.contains(&fcell), "gegnerische Fabrik bleibt");
+    // Eine Figur weitab vom eigenen Land faerbt nichts.
+    let lone = g.setup_unit(P0, c(&g, 7, 7), 2, 2);
+    assert!(g.settle_cells(&g.state.pieces[&lone].clone()).is_empty());
+    assert!(!g.card_fits_piece(Card::Settle, &g.state.pieces[&lone].clone()));
+}
+
+#[test]
+fn the_smelter_and_mining_cards_double_a_harvest_for_good() {
+    use crate::cards::Card;
+    let g0 = v3_game(&[]);
+    let (k1, k2) = (typ(&g0, 0, 1), typ(&g0, 0, 2));
+    let mut g = v3_game(&[((1, 0), k1), ((2, 0), k2)]);
+    g.state.market = vec![Card::Smelter, Card::Mining];
+    g.state.area = vec![10_000; 2];
+    g.config.terr_occupy = false;
+    strip(&mut g, P0, 2);
+    stock(&mut g, P0, k1, 3);
+    stock(&mut g, P0, k2, 5);
+    buy(&mut g, Card::Smelter, None);
+    assert!(g.state.player_perks[0].smelter);
+    // Ernte: Eisen alle 3 Runden, Gold alle 5.
+    let before = storage_of(&g, P0, k1);
+    for _ in 0..3 {
+        income(&mut g, P0);
+    }
+    assert_eq!(storage_of(&g, P0, k1) - before, 2, "Eisen doppelt");
+    assert_eq!(
+        storage_of(&g, P0, k2),
+        5 - 2,
+        "Gold noch nicht gewachsen (3 von 5 Runden)"
+    );
+    g.state.bought_this_turn = false;
+    buy(&mut g, Card::Mining, None);
+    assert!(g.state.player_perks[0].mining);
+    for _ in 0..2 {
+        income(&mut g, P0);
+    }
+    // 5 Gold - 2 (Schmiede) - 3 (Bergbau) = 0, dazu die doppelte Ernte von 2.
+    assert_eq!(storage_of(&g, P0, k2), 2, "Gold doppelt");
+    // Beide Karten liegen danach nicht mehr aus: schon vorhanden.
+    g.state.bought_this_turn = false;
+    assert!(buys(&g).is_empty());
+}
+
+#[test]
+fn the_charge_card_adds_a_field_to_every_move_for_one_turn() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::Charge]);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let k1 = typ(&g, 0, 1);
+    let k2 = typ(&g, 0, 2);
+    stock(&mut g, P0, k1, 2);
+    stock(&mut g, P0, k2, 2);
+    let far = c(&g, 5, 8);
+    assert!(!g.piece_destinations(unit).contains(&far));
+    buy(&mut g, Card::Charge, None);
+    assert!(g.state.charge);
+    assert!(g.state.card_lock.is_none(), "keine Figur gesperrt");
+    assert!(
+        g.piece_destinations(unit).contains(&far),
+        "drei statt zwei Felder"
+    );
+    let mv = g
+        .legal_actions()
+        .into_iter()
+        .find(|a| matches!(a, Action::Move { piece, .. } if *piece == king_id(&g, P0)))
+        .unwrap();
+    g.apply(mv).unwrap();
+    assert!(!g.state.charge, "nur in diesem Zug");
+}
+
+#[test]
+fn the_double_move_card_gives_a_second_action() {
+    use crate::cards::Card;
+    let mut g = card_game(&[Card::DoubleMove]);
+    let k1 = typ(&g, 0, 1);
+    let k2 = typ(&g, 0, 2);
+    stock(&mut g, P0, k1, 4);
+    stock(&mut g, P0, k2, 3);
+    buy(&mut g, Card::DoubleMove, None);
+    assert_eq!(g.state.extra_actions, 1);
+    let first = g
+        .legal_actions()
+        .into_iter()
+        .find(|a| matches!(a, Action::Move { .. }))
+        .unwrap();
+    g.apply(first).unwrap();
+    assert_eq!(g.state.current, P0, "noch einmal am Zug");
+    let second = g
+        .legal_actions()
+        .into_iter()
+        .find(|a| matches!(a, Action::Move { .. }))
+        .unwrap();
+    g.apply(second).unwrap();
+    assert_eq!(g.state.current, P1);
+}
+
+#[test]
+fn prices_pools_and_custom_cards_come_from_the_rules() {
+    use crate::cards::Card;
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all(
+        "territory=1,terr_v3=1,price.bend=5/0/1,pool.hop=0,custom.0=Doppelecke|bend*2+hop|3/2/0",
+    )
+    .unwrap();
+    assert_eq!(cfg.card_tweaks.price.get(&Card::Bend), Some(&[5, 0, 1]));
+    assert!(cfg.card_tweaks.off.contains(&Card::Hop));
+    let g = Game::new(cfg.clone()).unwrap();
+    assert_eq!(g.territory_card_price(Card::Bend), [5, 0, 1]);
+    let custom = Card::Custom(0);
+    assert_eq!(g.card_name(custom), "Doppelecke");
+    assert_eq!(g.territory_card_price(custom), [3, 2, 0]);
+    assert!(g.card_text(custom).contains("Ecke ×2"));
+    assert!(cfg.card_tweaks.target(custom) == crate::cards::CardTarget::Unit);
+    // Zurueck auf den Standardpreis, Karte wieder im Vorrat, eigene Karte loeschen.
+    cfg.set_all("price.bend=,pool.hop=1,custom.0=").unwrap();
+    assert!(cfg.card_tweaks.price.is_empty() && cfg.card_tweaks.off.is_empty());
+    assert!(!cfg.card_tweaks.defined(custom));
+}
+
+#[test]
+fn bad_card_rules_are_rejected_with_a_message() {
+    let mut cfg = Config::new(2, 1);
+    for bad in [
+        "price.nonsense=1/1/1",
+        "price.bend=a/b",
+        "price.bend=1/2/3/4",
+        "pool.bend=2",
+        "custom.9=X|bend|1/0/0",
+        "custom.0=|bend|1/0/0",
+        "custom.0=X|king_boost|1/0/0",
+        "custom.0=X|factory_shift|1/0/0",
+        "custom.0=X|bend*7|1/0/0",
+        "custom.0=X||1/0/0",
+        "custom.0=X|bend",
+    ] {
+        assert!(cfg.set_all(bad).is_err(), "{bad}");
+    }
+    assert!(cfg.card_tweaks.custom.iter().all(Option::is_none));
+}
+
+#[test]
+fn a_custom_card_applies_its_blocks_one_after_the_other() {
+    use crate::cards::Card;
+    let mut cfg = v3_config(2);
+    cfg.set_all("custom.0=Sturmecke|bend*2+charge|2/1/0")
+        .unwrap();
+    let mut g = with_deposits_cfg(cfg, &[]);
+    g.state.market = vec![Card::Custom(0)];
+    g.state.area = vec![10_000; 2];
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 3, 3);
+    let (k1, k2) = (typ(&g, 0, 1), typ(&g, 0, 2));
+    stock(&mut g, P0, k1, 2);
+    stock(&mut g, P0, k2, 1);
+    assert_eq!(buys(&g).len(), 1);
+    buy(&mut g, Card::Custom(0), Some(unit));
+    assert_eq!(g.state.pieces[&unit].perks.bend, 2, "zwei Ecken");
+    assert!(g.state.charge, "und der Sturmangriff");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn a_custom_card_of_instant_blocks_needs_no_figure() {
+    use crate::cards::Card;
+    let mut cfg = v3_config(2);
+    cfg.set_all("custom.1=Kriegskasse|mining+smelter|1/1/0")
+        .unwrap();
+    let mut g = with_deposits_cfg(cfg, &[]);
+    g.state.market = vec![Card::Custom(1)];
+    let (k1, k2) = (typ(&g, 0, 1), typ(&g, 0, 2));
+    stock(&mut g, P0, k1, 1);
+    stock(&mut g, P0, k2, 1);
+    let actions = buys(&g);
+    assert_eq!(actions.len(), 1);
+    assert!(matches!(actions[0], Action::BuyCard { target: None, .. }));
+    buy(&mut g, Card::Custom(1), None);
+    assert!(g.state.player_perks[0].mining && g.state.player_perks[0].smelter);
+}
+
+#[test]
+fn the_version_3_market_is_drawn_at_random_from_a_big_pool() {
+    use crate::cards::Card;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut markets = std::collections::BTreeSet::new();
+    for seed in 0..60 {
+        let mut cfg = Config::new(2, seed);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        cfg.market_size = 5;
+        let g = Game::new(cfg).unwrap();
+        assert_eq!(g.state.market.len(), 5);
+        assert!(
+            !g.state.market.contains(&Card::KingBoost),
+            "liegt immer aus, wird nicht gezogen"
+        );
+        seen.extend(g.state.market.iter().copied());
+        markets.insert(g.state.market.clone());
+    }
+    assert!(
+        markets.len() > 20,
+        "viele verschiedene Maerkte: {}",
+        markets.len()
+    );
+    for card in [
+        Card::Shorten,
+        Card::Bend,
+        Card::Hop,
+        Card::Pass,
+        Card::Settle,
+        Card::Charge,
+        Card::Mining,
+        Card::Smelter,
+        Card::DoubleMove,
+        Card::FactoryShift,
+    ] {
+        assert!(seen.contains(&card), "{card:?} wird gezogen");
+    }
+}
+
+#[test]
+fn cards_that_do_nothing_on_the_hex_board_are_not_drawn_there() {
+    use crate::cards::Card;
+    for seed in 0..30 {
+        let mut cfg = Config::new(2, seed);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        cfg.board_corners = 6;
+        cfg.market_size = 11;
+        let g = Game::new(cfg).unwrap();
+        assert!(!g.state.market.contains(&Card::FactoryShift));
+    }
+}
+
+#[test]
+fn whole_games_with_every_card_on_offer_keep_every_invariant() {
+    use crate::cards::Card;
+    for (players, seed) in [(2u8, 11u64), (2, 12), (3, 13), (4, 14)] {
+        let mut cfg = Config::new(players, seed);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        cfg.max_rounds = 50;
+        cfg.score_after = 50;
+        cfg.market_size = 11;
+        cfg.set_all("custom.0=Mix|bend+hop+pass|3/2/0,custom.1=Kasse|mining+smelter|2/2/0")
+            .unwrap();
+        let mut g = Game::new(cfg).unwrap();
+        assert!(g.state.market.contains(&Card::Settle));
+        let mut bots: Vec<Box<dyn Bot>> = (0..players)
+            .map(|i| match i % 2 {
+                0 => Box::new(RandomBot::new(seed + u64::from(i))) as Box<dyn Bot>,
+                _ => Box::new(GreedyBot::new(seed + u64::from(i))) as Box<dyn Bot>,
+            })
+            .collect();
+        let mut steps = 0;
+        let mut bought = std::collections::BTreeSet::new();
+        while g.outcome().is_none() {
+            let me = g.current_player().idx();
+            let a = bots[me].choose(&g);
+            if let Action::BuyCard { card, .. } = a {
+                bought.insert(card);
+            }
+            g.apply(a).unwrap();
+            g.check_invariants()
+                .unwrap_or_else(|e| panic!("{players}p seed {seed} Zug {steps}: {e}"));
+            steps += 1;
+            assert!(steps < 30_000);
+        }
     }
 }

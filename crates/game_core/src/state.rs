@@ -98,6 +98,8 @@ pub struct Perks {
     /// Version 2: wie oft die Karte Sprung auf der Figur liegt: darf auf dem Weg so oft ueber
     /// eine Figur springen. Ohne `terr_stack` hoechstens 1.
     pub hop: u8,
+    /// Version 3: Karte Durchzug (0 oder 1): darf auf dem Weg ueber eigene Figuren hinwegziehen.
+    pub pass: u8,
 }
 
 impl Perks {
@@ -122,6 +124,8 @@ pub struct PlayerPerks {
     pub mining: bool,
     /// Ackerbau: Fabriken ernten Kat 3 doppelt.
     pub farming: bool,
+    /// Version 3, Schmiede: die Fabrik erntet Kat 1 (Eisen) doppelt.
+    pub smelter: bool,
     /// Gekaufte Runensteine seit dem letzten vollen Set.
     pub runes: u8,
     /// Gekaufte Sternsplitter seit dem letzten vollen Set.
