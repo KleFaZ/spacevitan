@@ -37,8 +37,8 @@ body {
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.45;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-left: var(--gutl, 16px);
+  padding-right: var(--gutr, 16px);
   padding-block: 12px 28px;
 }
 h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
@@ -87,7 +87,8 @@ canvas { display: block; width: 100%; height: auto; touch-action: manipulation; 
 .faccard { position: absolute; z-index: 3; width: min(252px, calc(100% - 12px)); max-height: calc(100% - 12px); overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgb(0 0 0 / 0.2); font-size: 0.8rem; line-height: 1.3; }
 .faccard[hidden] { display: none; }
 .faccard.open { width: min(330px, calc(100% - 12px)); box-shadow: 0 10px 28px rgb(0 0 0 / 0.32); }
-.faccard .fc-head { display: flex; align-items: center; gap: 8px; padding: 7px 9px; cursor: pointer; }
+.faccard .fc-head { display: flex; align-items: center; gap: 8px; padding: 7px 9px; }
+.faccard .fc-head[data-act] { cursor: pointer; }
 .faccard .fc-dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: var(--muted); }
 .faccard.ready .fc-dot { background: #2f9e55; box-shadow: 0 0 0 3px rgb(47 158 85 / 0.25); }
 .faccard.blocked .fc-dot { background: #d99a1c; }
@@ -307,6 +308,48 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .actions:empty { display: none; }
 .actions button { text-align: left; }
 .error { color: #b3261e; font-size: 0.85rem; }
+/* Kartenoptionen (Gebietsmodus): nur anzeigen, gekauft wird im Menue der Fabrik */
+.market li.copt { display: flex; flex-direction: column; gap: 3px; }
+.market .copt .ct { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.market .copt .st { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-align: right; }
+.market .copt.can .st { color: #2b7a3f; }
+.market .copt .cp { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.market .copt .tx { color: var(--muted); font-size: 0.72rem; line-height: 1.3; }
+.market li.copt.note { border-style: dashed; }
+.resbar .rs small.u { font-size: 0.66rem; }
+:root { --gutl: max(16px, env(safe-area-inset-left, 0px)); --gutr: max(16px, env(safe-area-inset-right, 0px)); }
+/* Handy, 2D: Ressourcen oben, das Brett ueber die ganze Breite, darunter die Kartenoptionen */
+@media (max-width: 700px) {
+  html.v2d body { margin: 0; }
+  html.v2d .layout { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+  html.v2d .layout > .stage, html.v2d .layout > aside { display: contents; }
+  html.v2d #playError, html.v2d #error { order: 0; }
+  html.v2d #stockBox { order: 1; gap: 4px; }
+  html.v2d .board-wrap { order: 2; margin: 0 calc(-1 * var(--gutr)) 0 calc(-1 * var(--gutl)); }
+  html.v2d #facDock { order: 3; }
+  html.v2d #marketBox { order: 4; gap: 4px; }
+  html.v2d #turnBox { order: 5; margin-top: 0; }
+  html.v2d .controls { order: 6; margin-top: 0; }
+  html.v2d .status { order: 7; margin: 0 2px; }
+  html.v2d #more { order: 8; }
+  html.v2d canvas { border-radius: 0; }
+  html.v2d #stockTitle { display: none; }
+  html.v2d #stock.terr > :not(.resbar):not(.netline):not(.warn) { display: none; }
+  html.v2d #stock.terr .resbar { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  html.v2d #stock.terr .resbar .rs { flex-direction: column; justify-content: flex-start; gap: 1px; padding: 4px 2px 3px; text-align: center; }
+  html.v2d #stock.terr .resbar .rs b { font-size: 1.05rem; line-height: 1.1; }
+  html.v2d #stock.terr .netline { font-size: 0.72rem; }
+  html.v2d #marketBox > h2 { margin-bottom: 0; }
+  html.v2d #marketLegend { display: none; }
+  html.v2d #market { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  html.v2d #market li { padding: 5px 7px; }
+  html.v2d .market .copt .ct { flex-direction: column; gap: 0; }
+  html.v2d .market .copt .st { text-align: left; }
+  html.v2d .market .copt .tx { display: none; }
+  html.v2d .faccard.docked { margin-top: 0; max-width: none; }
+  html.v2d.facopen #marketBox { display: none; }
+  html.v2d .faccard.docked .fc-sum small { display: none; }
+}
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 
@@ -417,7 +460,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <div class="stock" id="stock"></div>
     </div>
     <div id="marketBox" class="panel" hidden>
-      <h2>Kartenmarkt</h2>
+      <h2 id="marketTitle">Kartenmarkt</h2>
       <details class="explain"><summary>So funktioniert der Kauf</summary><p class="note" id="marketNote"></p></details>
       <div class="legend" id="marketLegend"></div>
       <ul class="market" id="market"></ul>
@@ -815,8 +858,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const cssW = Math.max(240, wrap.clientWidth);
     const square = R.board.kind === "square";
     const flat = !view3d;
+    const rot = flat && !square ? flatRotation() : 0;
     // Projektion bei Massstab 1: Quadrat isometrisch (Raute), sonst schraeg von oben; 2D: flach von oben.
-    const proj1 = flat ? (x, y) => flatXY(x, y, square, R.side)
+    const proj1 = flat ? (x, y) => flatXY(x, y, square, R.side, rot)
       : square ? (x, y) => [(x - y) / 2, (x + y) / 4] : (x, y) => [x, y * TILT];
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const shape of R.board.shapes) {
@@ -827,7 +871,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
     }
     // Rand fuer Beschriftung (in Feldbreiten); 2D: Koordinaten stehen im Brett, aber Lagerleisten ragen hinaus
-    const pad = flat ? 1 : square ? 2.2 : 0.6;
+    const pad = flat ? (cssW <= 700 ? 0.25 : 1) : square ? 2.2 : 0.6;
     const U = Math.min(flat ? 72 : square ? 84 : 72, cssW / (maxX - minX + pad));
     const W = U * (square ? 1 : R.board.kind === "hex" ? 0.9 : 0.72); // Figurengroesse
     const thick = flat ? 0 : W * 0.12;
@@ -839,17 +883,31 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     canvas.style.height = cssH + "px";
-    geo = { U, W, thick, ox, oy, cssW, cssH, dpr, square, flat, side: R.side };
+    geo = { U, W, thick, ox, oy, cssW, cssH, dpr, square, flat, side: R.side, rot };
     canvas.setAttribute("aria-label", flat ? "Spielbrett von oben" : "Isometrisches Spielbrett");
     if (typeof renderFactoryCard === "function" && live) renderFactoryCard();
   }
+  /**
+   * 2D bei Sechseck-Bretten (4 bis 8 Ecken ausser Quadrat/Dreieck): um 90 Grad drehen, wenn das Brett dadurch
+   * schmaler wird. Beim Sechseck laufen dann zwei Seiten parallel zum linken und rechten Rand (statt dass die Ecken
+   * dort stehen), und auf dem Handy werden die Felder groesser. 0 = unverdreht, 1 = gedreht.
+   */
+  function flatRotation() {
+    if (R.board.kind !== "hex") return 0;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const shape of R.board.shapes) {
+      for (const [x, y] of shape) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    }
+    return y1 - y0 < x1 - x0 - 1e-6 ? 1 : 0;
+  }
   /** 2D: Zellmitte in Feldeinheiten; beim Quadrat steht Reihe 1 unten (wie bei lichess), A links unten. */
-  function flatXY(x, y, square, side) {
-    return square ? [x, side - 1 - y] : [x, y];
+  function flatXY(x, y, square, side, rot) {
+    if (square) return [x, side - 1 - y];
+    return rot ? [y, -x] : [x, y];
   }
   function iso(x, y) {
     if (geo.flat) {
-      const [fx, fy] = flatXY(x, y, geo.square, geo.side);
+      const [fx, fy] = flatXY(x, y, geo.square, geo.side, geo.rot);
       return [geo.ox + fx * geo.U, geo.oy + fy * geo.U];
     }
     return geo.square
@@ -2356,7 +2414,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     tiles.push(rsHtml(symSvg("gold", 24, null, false, "Gold"), stock(2), growthHtml(inc[2], "Gold im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Gold (Kat 2)"));
     if (bonusOn()) {
       const tip = `Brot (Kat 3) wird nicht gelagert: ${inc.k3} verbundene${inc.k3 === 1 ? "s Feld" : " Felder"} bringen dir je Runde ${inc.bonus} Fläche (2^${inc.k3}); das nächste brächte ${bonusArea(inc.k3 + 1)}.`;
-      tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), inc.k3, `<small>Felder</small>`, tip));
+      tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), inc.k3, growthHtml(inc.bonus, tip) + `<small class="u">Fläche je Runde</small>`, tip));
     } else {
       tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), stock(3), growthHtml(inc[3], "Brot im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Brot (Kat 3)"));
     }
@@ -2425,6 +2483,21 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const m = cardFactor(c, p), k = c.cost;
     return [k.color ? `${k.color * m}× Eisen` : "", k.k2 ? `${k.k2 * m}× Gold` : "", k.k3 ? `${k.k3 * m}× Brot` : ""].filter(Boolean).join(" + ");
   };
+  /**
+   * Eine Karte des Marktes aus Sicht von Spieler p: Preis, ob sie jetzt kaufbar ist und was sonst fehlt.
+   * Gemeinsam fuer das Fabrik-Menue (kaufen) und die Kartenoptionen unter dem Brett (nur anzeigen).
+   */
+  function cardOption(c, f, p, acting, store, stockCards) {
+    const m = cardFactor(c, p), k = c.cost;
+    const needs = [[1, k.color * m], [2, k.k2 * m], [3, k.k3 * m]].filter(([, n]) => n > 0);
+    const miss = needs.filter(([kind, n]) => catUnits(store, kind) < n).map(([kind, n]) => `${n - catUnits(store, kind)}× ${KAT_NAME[kind]}`).join(", ");
+    const opts = cardBuys(c.key), can = opts.length > 0, needPiece = can && buyNeedsPiece(opts);
+    const go = can ? (needPiece ? "Figur wählen" : "Kaufen") : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft"
+      : miss ? `fehlt: ${miss}`
+      : cardAnyOn() && c.target === "unit" ? "keine passende Figur"
+      : stockCards && c.key !== "king_boost" ? "Kartenplatz belegt" : "nicht möglich";
+    return { c, needs, opts, can, needPiece, go, miss };
+  }
   function factoryInfo(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
     if (!fac) return null;
@@ -2461,6 +2534,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function renderFactoryCard() {
     const card = $("facCard");
     facState = null;
+    document.documentElement.classList.remove("facopen");
     const f = R && R.frames[fi];
     if (!f || !geo || !isTerr() || mode !== "play" || !live || R !== liveR || live.watch || live.outcome || fi !== R.frames.length - 1) {
       card.hidden = true;
@@ -2509,7 +2583,6 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         `<button type="button" class="fc-act${cls ? " " + cls : ""}" ${attrs} title="${escapeHtml(tip || "")}">${sym}` +
         `<span class="lb"><b>${escapeHtml(name)}</b>${small ? `<small>${escapeHtml(small)}</small>` : ""}</span>` +
         `<span class="go">${escapeHtml(go)}</span><span class="need">${needs}</span></button>`;
-      const missText = (needs) => needs.filter(([kind, n]) => catUnits(store, kind) < n).map(([kind, n]) => `${n - catUnits(store, kind)}× ${KAT_NAME[kind]}`).join(", ");
       // Figuren: alle vier, grau bis bezahlbar
       const figs = levels.map((st) => {
         const never = !st.ok && !Number.isFinite(st.rounds);
@@ -2536,15 +2609,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
       // Karten des Marktes
       const cards = (R.market || []).map((c) => {
-        const m = cardFactor(c, info.p), k = c.cost;
-        const needs = [[1, k.color * m], [2, k.k2 * m], [3, k.k3 * m]].filter(([, n]) => n > 0);
-        const opts = cardBuys(c.key), can = opts.length > 0, needPiece = can && buyNeedsPiece(opts);
-        const go = can ? (needPiece ? "Figur wählen" : "Kaufen") : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft"
-          : missText(needs) ? `fehlt: ${missText(needs)}`
-          : cardAnyOn() && c.target === "unit" ? "keine passende Figur"
-          : stockCards && c.key !== "king_boost" ? "Kartenplatz belegt" : "nicht möglich";
-        return act((can ? "ok " : "") + "one", can ? (needPiece ? `data-pick="${c.key}"` : `data-buy="${opts[0][1]}"`) : "disabled", symSvg("card", 24, null, !can, c.name),
-          c.name, "", go, needs.map(([kind, n]) => reqHtml(kind, catUnits(store, kind), n, color)).join(""), cardText(c).replace(/ Preis je Reichweite der Figur\./, ""));
+        const o = cardOption(c, f, info.p, acting, store, stockCards);
+        return act((o.can ? "ok " : "") + "one", o.can ? (o.needPiece ? `data-pick="${c.key}"` : `data-buy="${o.opts[0][1]}"`) : "disabled", symSvg("card", 24, null, !o.can, c.name),
+          c.name, "", o.go, o.needs.map(([kind, n]) => reqHtml(kind, catUnits(store, kind), n, color)).join(""), cardText(c).replace(/ Preis je Reichweite der Figur\./, ""));
       });
       let cardsNote = "";
       if (!(R.market || []).length && !ku) cardsNote = "In dieser Partie gibt es keine Karten.";
@@ -2563,10 +2630,19 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         (shiftStuck ? `<p class="muted">Fabrik rücken: kein Zielfeld. Ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett).</p>` : "") + `</div>`;
     }
     card.className = `faccard ${cls}${open ? " open" : ""}`;
-    card.innerHTML = `<div class="fc-head" data-act="toggle" role="button" tabindex="0" aria-expanded="${open}"><span class="fc-dot"></span>` +
-      `<span class="fc-sum"><b>${escapeHtml(title)}</b><small>${escapeHtml(sub)}</small></span><span class="fc-tog">${open ? "▾" : "▸"}</span></div>${body}`;
+    document.documentElement.classList.toggle("facopen", open);
+    card.innerHTML = headHtml(open, title, sub, info) + body;
     card.hidden = false;
     placeFactoryCard(card, info);
+  }
+  /**
+   * Kopfzeile der Fabrik-Karte. Zu (unter dem Brett): nur Status, nichts zum Anklicken; das Menue mit Bauen und
+   * Karten oeffnet allein der Klick auf die Fabrik auf dem Brett (und dafuer muss sie frei sein). Offen: der Kopf schliesst.
+   */
+  function headHtml(open, title, sub, info) {
+    const hint = open || info.fac.building > 0 ? "" : info.free ? " · Fabrik antippen: Bauen und Karten" : /ziehen/.test(sub) ? "" : " · Figur von der Fabrik ziehen, dann antippen";
+    return `<div class="fc-head"${open ? ` data-act="toggle" role="button" tabindex="0" aria-expanded="true"` : ""}><span class="fc-dot"></span>` +
+      `<span class="fc-sum"><b>${escapeHtml(title)}</b><small>${escapeHtml(sub + hint)}</small></span>${open ? `<span class="fc-tog">▾</span>` : ""}</div>`;
   }
   /**
    * Version 3: wie weit der Umzug der Fabrik ist (null: nicht anwendbar). `ok`: der Koenig steht richtig und das
@@ -2632,16 +2708,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ? `<div class="fc-body"><p>Bis sie steht: kein Einkommen, die Erntezähler stehen still, nichts zu bauen oder zu kaufen. Das Land ist nicht verbunden: alle deine Figuren sind wehrlos (sie färben nichts und schlagen nicht). Der König darf sich nicht bewegen. Wer auf den Bauplatz zieht, zerstört die Fabrik.</p></div>`
       : "";
     card.className = "faccard blocked";
-    card.innerHTML = `<div class="fc-head" data-act="toggle" role="button" tabindex="0" aria-expanded="${open}"><span class="fc-dot"></span>` +
-      `<span class="fc-sum"><b>Fabrik im Bau</b><small>noch ${b} Runde${b === 1 ? "" : "n"} · wehrlos, König gesperrt</small></span><span class="fc-tog">${open ? "▾" : "▸"}</span></div>${body}`;
+    card.innerHTML = headHtml(open, "Fabrik im Bau", `noch ${b} Runde${b === 1 ? "" : "n"} · wehrlos, König gesperrt`, info) + body;
     card.hidden = false;
     placeFactoryCard(card, info);
   }
   /** Platz neben der Fabrik waehlen, an dem die Karte moeglichst wenig verdeckt (Figuren, Felder). */
   function placeFactoryCard(card, info) {
-    // 2D: die geschlossene Leiste liegt in der Seite direkt unter dem Brett, nicht ueber den Feldern; das offene
-    // Menue ploppt in beiden Ansichten neben der Fabrik auf.
-    const floating = view3d || facOpen;
+    // Die geschlossene Leiste (nur Status) liegt in beiden Ansichten direkt unter dem Brett, nicht ueber den Feldern;
+    // das offene Menue ploppt neben der Fabrik auf.
+    // Auf dem Handy bleibt auch das offene Menue unter dem Brett (das Brett bleibt ganz sichtbar, nichts wird verdeckt).
+    const floating = facOpen && !window.matchMedia("(max-width: 700px)").matches;
     const target = floating ? canvas.parentElement : $("facDock");
     if (card.parentElement !== target) target.appendChild(card);
     card.classList.toggle("docked", !floating);
@@ -2699,7 +2775,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (i >= 0) { facOpen = false; humanAct(i); }
       return;
     }
-    if (t.dataset.act === "toggle") { facOpen = !facOpen; renderFactoryCard(); }
+    if (t.dataset.act === "toggle") facClose();
   });
   /** Ein Klick (oder Esc) aufs Brett klappt das Menue wieder zu, damit es keine Felder verdeckt. */
   let facClosedAt = 0;
@@ -2712,6 +2788,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     box.hidden = false;
     const me = mode === "play" && live && R === liveR && live.seats[p] === "mensch";
     $("stockTitle").textContent = `Übersicht · Spieler ${playerName(p)}${me ? " (du)" : ""}`;
+    $("stock").classList.toggle("terr", isTerr());
     if (isTerr()) { $("stock").innerHTML = renderTerritoryStock(f, p).join(""); return; }
     const rows = [];
     const carried = (f.carried || [])[p] || [];
@@ -2824,7 +2901,50 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     return best;
   }
+  /**
+   * Gebietsmodus: die Kartenoptionen (Markt und Koenigs-Upgrade) mit Preis und Stand; nur zum Anschauen.
+   * Gekauft wird im Menue der Fabrik (Klick auf die Fabrik).
+   */
+  function renderCardOptions(f) {
+    const market = R.market || [];
+    const p = focusPlayer(f);
+    const ku = p === null || p === undefined ? null : kingUpInfo(f, p);
+    $("marketBox").hidden = market.length === 0 && !ku;
+    if (market.length === 0 && !ku) return;
+    $("marketTitle").textContent = "Karten";
+    const acting = canAct();
+    const fac = p === null || p === undefined || !f.alive[p] ? null : f.factories.find((x) => x.owner === p);
+    const store = fac ? fac.storage : [];
+    const color = p === null || p === undefined ? "#888" : PLAYER[p].color;
+    const stockCards = p === null || p === undefined ? null : (f.stored_card || [])[p];
+    $("marketNote").textContent = "Eine Karte je Zug, bezahlt aus dem Lager der Fabrik. Gekauft wird im Menü der Fabrik: tippe die Fabrik an (steht eine Figur darauf, zieh sie erst weg)." +
+      (cardLockMode() === 1 ? " Die verbesserte Figur ruht danach in diesem Zug." : cardLockMode() === 2 ? " Eine Verbesserung ist dein ganzer Zug." : "");
+    $("marketLegend").innerHTML = "";
+    const ul = $("market");
+    ul.innerHTML = "";
+    const row = (name, text, needs, status, can) => {
+      const li = document.createElement("li");
+      li.className = "copt" + (can ? " can" : "");
+      li.innerHTML = `<div class="ct"><b>${escapeHtml(name)}</b><span class="st">${escapeHtml(status)}</span></div>` +
+        `<div class="cp">${needs.map(([kind, n]) => reqHtml(kind, catUnits(store, kind), n, color)).join("")}</div>` +
+        (text ? `<small class="tx">${escapeHtml(text)}</small>` : "");
+      ul.appendChild(li);
+    };
+    if (ku && !ku.done) {
+      const o = fac && acting && live.legal.findIndex((a) => a.type === "buy" && a.card === "king_boost") >= 0;
+      const have = catUnits(store, 2);
+      row(`König: Stufe ${ku.level} von 3`, `Der König zieht ${ku.extra} Felder mehr (auf freiem Brett).`, [[2, ku.gold]],
+        o ? "kaufbar" : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft" : have < ku.gold ? `fehlt: ${ku.gold - have}× Gold` : "nicht möglich", o);
+    }
+    for (const c of market) {
+      const o = cardOption(c, f, p, acting, store, stockCards);
+      row(c.name, cardText(c).replace(/ Preis je Reichweite der Figur\./, ""), o.needs, o.can ? "kaufbar" : o.go, o.can);
+    }
+    if (stockCards) ul.insertAdjacentHTML("beforeend", `<li class="copt note"><small class="tx">Liegt neben der Fabrik bereit: ${escapeHtml(CARD(stockCards).name)}</small></li>`);
+  }
   function renderMarket(f) {
+    if (isTerr()) { renderCardOptions(f); return; }
+    $("marketTitle").textContent = "Kartenmarkt";
     const market = R.market || [];
     $("marketBox").hidden = market.length === 0;
     if (!market.length) return;
@@ -4297,6 +4417,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
       live.legal.forEach((a, i) => {
         if (a.type === "move" || a.type === "buy") return;
+        if (a.type === "build_unit" && isTerr()) return; // Figuren baut man im Menue der Fabrik (Klick auf die Fabrik)
         const b = document.createElement("button");
         b.type = "button";
         b.className = "btn";
@@ -4315,7 +4436,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if ((R.market || []).length) {
         const note = document.createElement("p");
         note.className = "note";
-        note.textContent = buys
+        note.textContent = isTerr()
+          ? (buys ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"}. Tippe dafür die Fabrik an (steht eine Figur darauf, erst wegziehen).` : "Karten: unter dem Brett steht, was dir zum Kaufen noch fehlt.")
+          : buys
           ? `Karten kaufen: ${buys} ${buys === 1 ? "Möglichkeit" : "Möglichkeiten"} im Kartenmarkt der Übersicht (zusätzlich zum Zug).`
           : "Karten: im Kartenmarkt der Übersicht steht, was dir zum Kaufen noch fehlt.";
         actions.appendChild(note);
@@ -4325,6 +4448,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Ansicht umschalten: "3d" (schraeg, 3D-Figuren) oder "2d" (flach von oben wie bei lichess). */
   function setView(v) {
     view3d = v !== "2d";
+    document.documentElement.classList.toggle("v2d", !view3d);
     try { localStorage.setItem("spacevitan.view", view3d ? "3d" : "2d"); } catch (e) { /* ohne Speicher geht es trotzdem */ }
     $("view3d").setAttribute("aria-pressed", String(view3d));
     $("view2d").setAttribute("aria-pressed", String(!view3d));
@@ -4559,6 +4683,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   legend();
   $("view3d").setAttribute("aria-pressed", String(view3d));
   $("view2d").setAttribute("aria-pressed", String(!view3d));
+  document.documentElement.classList.toggle("v2d", !view3d);
   buildMenu();
   fillPlayerOptions(2);
   loadMenu();
