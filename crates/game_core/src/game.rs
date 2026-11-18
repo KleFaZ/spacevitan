@@ -1578,6 +1578,14 @@ impl Game {
         if st.occupant.len() != board_len || st.factory_at.len() != board_len {
             return Err("Indexlisten haben falsche Laenge".into());
         }
+        if st.area_rest.iter().any(|&r| r >= 4)
+            || (!self.config.terr_terrain && st.area_rest.iter().any(|&r| r != 0))
+        {
+            return Err("Flaechenrest (Gelaende) ausserhalb von 0 bis 3 oder ohne Schalter".into());
+        }
+        if self.map.terrain.len() != board_len {
+            return Err("Gelaendeliste hat falsche Laenge".into());
+        }
         let occupied = st.occupant.iter().flatten().count();
         if occupied != st.pieces.len() {
             return Err(format!(

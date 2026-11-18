@@ -1624,6 +1624,7 @@ impl Game {
         self.state.ledger.vanished += factory.storage.total();
         self.state.stored_card[factory.owner.idx()] = None;
         self.state.area[factory.owner.idx()] = 0;
+        self.state.area_rest[factory.owner.idx()] = 0;
         self.state.lost_factory[factory.owner.idx()] = Some(factory.cell);
         events.push(Event::FactoryDestroyed {
             factory: factory.id,
@@ -1674,6 +1675,7 @@ impl Game {
             }
         }
         self.state.area[player.idx()] = 0;
+        self.state.area_rest[player.idx()] = 0;
         self.state.stored_card[player.idx()] = None;
     }
 
@@ -1775,12 +1777,19 @@ impl Game {
         let worked_cells = self.config.terr_occupy.then(|| self.worked_cells(actor));
         let mut gained = Inventory::new();
         let mut area = 0u32;
+        // Mit Gelaende zaehlt jedes Feld nach seinem Flaechenwert in Vierteln (Feld 4, Wald 2, Moor 1).
+        let terrain_on = self.config.terr_terrain;
+        let mut quarters = 0u32;
         let mut kat3 = 0u32;
         for cell in self.map.board.cells() {
             if !connected[cell.idx()] {
                 continue;
             }
-            area += 1;
+            if terrain_on {
+                quarters += self.map.terrain_at(cell).quarters();
+            } else {
+                area += 1;
+            }
             let worked = worked_cells.as_ref().is_none_or(|w| w[cell.idx()]);
             if cycle && worked {
                 self.state.age[cell.idx()] += 1;
@@ -1801,6 +1810,11 @@ impl Game {
                     gained.add(res, yield_n * mult + self.harvest_bonus(actor, res));
                 }
             }
+        }
+        if terrain_on {
+            let total = quarters + u32::from(self.state.area_rest[actor.idx()]);
+            area = total / 4;
+            self.state.area_rest[actor.idx()] = (total % 4) as u8;
         }
         let bonus = Game::kat3_bonus(kat3);
         self.state.area[actor.idx()] += area + bonus;

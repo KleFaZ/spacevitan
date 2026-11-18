@@ -13,6 +13,7 @@ use crate::board::{Board, BoardError};
 use crate::config::{Config, ConfigError};
 use crate::ids::{CellId, PlayerId, ResourceId};
 use crate::rng::Rng;
+use crate::terrain::{make_terrain, Terrain};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResourceType {
@@ -68,6 +69,8 @@ pub struct Map {
     pub deposits: Vec<Vec<ResourceId>>,
     /// Gebiet je Feld (Index der Ecke), `None` = neutrale Mitte.
     pub territories: Vec<Option<usize>>,
+    /// Gelaende je Feld (Version 3.4, `terr_terrain`); ohne Schalter ist alles Feld.
+    pub terrain: Vec<Terrain>,
     /// Ecke jedes Spielers (Index = Spieler).
     pub player_corners: Vec<usize>,
     /// Wie viele Generator-Versuche gebraucht wurden (fuer Statistik und Tests).
@@ -135,6 +138,7 @@ impl Map {
                 resource_types: resource_types.clone(),
                 deposits,
                 territories: territories.clone(),
+                terrain: make_terrain(config, &board, &territories),
                 player_corners: config.player_corners(),
                 attempts_used: attempt,
             };
@@ -182,6 +186,11 @@ impl Map {
 
     pub fn category(&self, id: ResourceId) -> u8 {
         self.resource_type(id).category
+    }
+
+    /// Gelaende des Feldes.
+    pub fn terrain_at(&self, cell: CellId) -> Terrain {
+        self.terrain[cell.idx()]
     }
 
     pub fn deposits_at(&self, cell: CellId) -> &[ResourceId] {
@@ -1370,6 +1379,7 @@ mod tests {
                             resource_types: types.clone(),
                             deposits,
                             territories: territories.clone(),
+                            terrain: vec![Terrain::Field; board.len()],
                             player_corners: c.player_corners(),
                             attempts_used: 0,
                         };

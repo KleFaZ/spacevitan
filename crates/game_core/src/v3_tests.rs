@@ -3420,3 +3420,183 @@ fn an_enemy_that_captures_on_the_fort_destroys_it_and_the_game_reports_it() {
         .any(|e| matches!(e, Event::FortLost { player, .. } if *player == P0)));
     g.check_invariants().unwrap();
 }
+
+// ----- Version 3.4: Gelaende (`terr_terrain`) -------------------------------------------------------
+
+use crate::terrain::Terrain;
+
+/// Version 3 mit Gelaende auf der leeren Testkarte; das Gelaende setzt der Test selbst.
+fn terrain_game() -> Game {
+    let mut cfg = v3_config(2);
+    cfg.set_all("terr_terrain=1").unwrap();
+    let mut g = with_deposits_cfg(cfg, &[]);
+    let n = g.map.board.len();
+    std::sync::Arc::make_mut(&mut g.map).terrain = vec![Terrain::Field; n];
+    g
+}
+
+fn set_terrain(g: &mut Game, cells: &[((i32, i32), Terrain)]) {
+    for &((x, y), t) in cells {
+        let cell = c(g, x, y);
+        std::sync::Arc::make_mut(&mut g.map).terrain[cell.idx()] = t;
+    }
+}
+
+#[test]
+fn terrain_is_a_switch_that_is_off_by_default_and_changes_no_income() {
+    let mut g = v3_game(&[]);
+    assert!(!g.config.terr_terrain);
+    assert!(g.map.terrain.iter().all(|&t| t == Terrain::Field));
+    strip(&mut g, P0, 6);
+    let before = g.state.area[0];
+    income(&mut g, P0);
+    assert_eq!(
+        g.state.area[0] - before,
+        7,
+        "sieben Felder, je eine Flaeche"
+    );
+    assert_eq!(g.state.area_rest[0], 0);
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("terr_terrain=1").unwrap();
+    assert!(cfg.validate().is_err(), "Gelaende braucht den Gebietsmodus");
+    cfg.set_all("territory=1").unwrap();
+    assert!(cfg.validate().is_ok());
+}
+
+#[test]
+fn terrain_does_not_move_a_single_deposit() {
+    let mut plain = v3_config(3);
+    plain.seed = 17;
+    let mut with = plain.clone();
+    with.set_all("terr_terrain=1").unwrap();
+    let a = Map::generate(&plain).unwrap();
+    let b = Map::generate(&with).unwrap();
+    assert_eq!(
+        a.deposits, b.deposits,
+        "gleiche Rohstoffe mit und ohne Gelaende"
+    );
+    assert!(b.terrain.contains(&Terrain::Forest));
+    assert!(b.terrain.contains(&Terrain::Bog));
+}
+
+#[test]
+fn forest_counts_half_and_bog_a_quarter_in_the_income() {
+    let mut g = terrain_game();
+    // Fabrikfeld und drei Felder daneben: Feld 4 + Wald 2 + Moor 1 + Moor 1 = 8 Viertel = 2 Flaeche
+    strip(&mut g, P0, 3);
+    set_terrain(
+        &mut g,
+        &[
+            ((1, 0), Terrain::Forest),
+            ((2, 0), Terrain::Bog),
+            ((3, 0), Terrain::Bog),
+        ],
+    );
+    let before = g.state.area[0];
+    income(&mut g, P0);
+    assert_eq!(g.state.area[0] - before, 2);
+    assert_eq!(g.state.area_rest[0], 0);
+}
+
+#[test]
+fn a_remainder_below_one_area_is_carried_into_the_next_round() {
+    let mut g = terrain_game();
+    // 4 + 2 + 1 + 2 = 9 Viertel je Runde: 2 Flaeche und 1 Viertel Rest, dann 10, 11, 12 ...
+    strip(&mut g, P0, 3);
+    set_terrain(
+        &mut g,
+        &[
+            ((1, 0), Terrain::Forest),
+            ((2, 0), Terrain::Bog),
+            ((3, 0), Terrain::Forest),
+        ],
+    );
+    let start = g.state.area[0];
+    let mut gains = Vec::new();
+    let mut rests = Vec::new();
+    for _ in 0..4 {
+        let before = g.state.area[0];
+        income(&mut g, P0);
+        gains.push(g.state.area[0] - before);
+        rests.push(g.state.area_rest[0]);
+    }
+    assert_eq!(gains, vec![2, 2, 2, 3]);
+    assert_eq!(rests, vec![1, 2, 3, 0]);
+    // Nichts geht verloren: vier Runden zu 9 Vierteln sind genau 9 Flaeche.
+    assert_eq!(g.state.area[0] - start, 9);
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn only_connected_land_counts_by_its_terrain_value() {
+    let mut g = terrain_game();
+    strip(&mut g, P0, 1);
+    // ein abgetrenntes Moorfeld und ein abgetrenntes Feld zaehlen nicht
+    paint(&mut g, P0, &[(5, 5), (6, 5)]);
+    set_terrain(&mut g, &[((5, 5), Terrain::Field), ((6, 5), Terrain::Bog)]);
+    let before = g.state.area[0];
+    income(&mut g, P0);
+    assert_eq!(
+        g.state.area[0] - before,
+        2,
+        "nur (0,0) und (1,0) hangen an der Fabrik"
+    );
+}
+
+#[test]
+fn losing_the_factory_clears_the_remainder() {
+    let mut g = terrain_game();
+    strip(&mut g, P0, 0);
+    set_terrain(&mut g, &[((0, 0), Terrain::Forest)]);
+    income(&mut g, P0); // 2 Viertel: Rest 2
+    assert_eq!(g.state.area_rest[0], 2);
+    g.territory_forget(P0);
+    assert_eq!(g.state.area[0], 0);
+    assert_eq!(g.state.area_rest[0], 0);
+}
+
+#[test]
+fn the_header_lists_the_terrain_only_when_the_switch_is_on() {
+    use crate::replay::ReplayWriter;
+    let mut cfg = v3_config(2);
+    cfg.set_all("terr_terrain=1").unwrap();
+    let g = Game::new(cfg).unwrap();
+    let json = ReplayWriter::new(&g, &["a".into(), "b".into()]).finish(&g);
+    assert!(json.contains("\"terr_terrain\":true"));
+    assert!(json.contains("\"terrain\":["));
+    let off = Game::new(v3_config(2)).unwrap();
+    let json = ReplayWriter::new(&off, &["a".into(), "b".into()]).finish(&off);
+    assert!(json.contains("\"terr_terrain\":false"));
+    assert!(!json.contains("\"terrain\":["));
+}
+
+#[test]
+fn whole_games_with_terrain_keep_every_invariant_on_every_board() {
+    for (players, corners, seed) in [(2u8, 4u8, 31u64), (3, 3, 32), (2, 6, 33), (4, 4, 34)] {
+        let mut cfg = Config::new(players, seed);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        cfg.board_corners = corners;
+        cfg.max_rounds = 60;
+        cfg.score_after = 60;
+        cfg.set_all("terr_terrain=1").unwrap();
+        let mut g = Game::new(cfg).unwrap_or_else(|e| panic!("{players}p {corners}e: {e:?}"));
+        let mut bots: Vec<Box<dyn Bot>> = (0..players)
+            .map(|i| match i % 3 {
+                0 => Box::new(RandomBot::new(seed + u64::from(i))) as Box<dyn Bot>,
+                1 => Box::new(GreedyBot::new(seed + u64::from(i))) as Box<dyn Bot>,
+                _ => Box::new(AreaBot::new(seed + u64::from(i))) as Box<dyn Bot>,
+            })
+            .collect();
+        let mut steps = 0;
+        while g.outcome().is_none() {
+            let me = g.current_player().idx();
+            let a = bots[me].choose(&g);
+            g.apply(a).unwrap();
+            g.check_invariants()
+                .unwrap_or_else(|e| panic!("{players}p {corners}e seed {seed} Zug {steps}: {e}"));
+            steps += 1;
+            assert!(steps < 30_000);
+        }
+    }
+}

@@ -17,6 +17,7 @@ pub mod render;
 pub mod replay;
 pub mod rng;
 pub mod state;
+pub mod terrain;
 mod territory;
 pub use territory::WeakPoint;
 

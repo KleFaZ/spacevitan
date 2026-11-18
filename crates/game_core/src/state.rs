@@ -256,6 +256,9 @@ pub struct State {
     pub land: Vec<Option<PlayerId>>,
     /// Gebietsmodus: gesammelte Flaeche je Spieler (wird fuer Figuren ausgegeben).
     pub area: Vec<u32>,
+    /// Version 3.4 (`terr_terrain`): Rest des Flaechenwerts in Vierteln (0 bis 3), der in die naechste
+    /// Runde uebertragen wird, weil Wald und Moor weniger als eine ganze Flaeche zaehlen.
+    pub area_rest: Vec<u8>,
     /// Gebietsmodus: die Karte neben der Fabrik, die auf die naechste Figur wirkt.
     pub stored_card: Vec<Option<Card>>,
     /// Gebietsmodus: seit welcher Runde das Feld dem jetzigen Besitzer gehoert (Reifezeit der
@@ -299,6 +302,7 @@ impl State {
             extra_deposits: BTreeMap::new(),
             land: vec![None; cells],
             area: vec![0; players],
+            area_rest: vec![0; players],
             stored_card: vec![None; players],
             owned_since: vec![1; cells],
             age: vec![0; cells],

@@ -214,6 +214,9 @@ pub struct Config {
     /// eigenen Figur; eine eigene Figur (nie der Koenig) auf dem Fort zieht `n` oder `n + 1` Felder.
     /// Braucht `terr_cardset3` und `terr_cardany`. Standard aus.
     pub terr_fort: bool,
+    /// Version 3.4: Gelaende. Jedes Feld ist Feld (Flaechenwert 1), Wald (1/2) oder Moor (1/4); das
+    /// zaehlt im Einkommen an Flaeche (siehe `terrain`). Standard aus.
+    pub terr_terrain: bool,
     /// Eigene Preise, Karten, die nicht gezogen werden, und selbst gebaute Karten (Version 3).
     pub card_tweaks: crate::cards::CardTweaks,
     /// Brettform unabhaengig von der Spielerzahl: 0 = wie bisher nach Spielerzahl, sonst die
@@ -326,6 +329,7 @@ impl Config {
             terr_yield_lvl: false,
             terr_bread: 0,
             terr_fort: false,
+            terr_terrain: false,
             card_tweaks: crate::cards::CardTweaks::standard(),
             board_corners: 0,
         }
@@ -488,6 +492,7 @@ impl Config {
             "terr_yield_lvl" => self.terr_yield_lvl = value != 0,
             "terr_bread" => self.terr_bread = as_u32(value)?,
             "terr_fort" => self.terr_fort = value != 0,
+            "terr_terrain" => self.terr_terrain = value != 0,
             "board_corners" => self.board_corners = as_u32(value)?.min(255) as u8,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
@@ -667,6 +672,11 @@ impl Config {
         if self.terr_fort && !(self.territory && self.terr_cardset3 && self.terr_cardany) {
             return Err(ConfigError::Invalid(
                 "terr_fort braucht den Kartensatz von Version 3 (terr_cardset3) und Karten auf Figuren (terr_cardany)",
+            ));
+        }
+        if self.terr_terrain && !self.territory {
+            return Err(ConfigError::Invalid(
+                "terr_terrain braucht den Gebietsmodus (territory)",
             ));
         }
         if self.terr_upkeep_sq && !self.terr_upkeep {
