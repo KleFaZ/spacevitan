@@ -2941,7 +2941,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (upkeepOn() && inc.upkeep > 0 && area + inc.area + inc.bonus < inc.upkeep) {
       rows.push(`<div class="warn">Die Fläche reicht am Zugende nicht für den Unterhalt: eine Figur löst sich auf.</div>`);
     }
-    rows.push(explain(`Am Ende deines Zugs sammelt die Fabrik alle Felder, die an ihr hängen (je 1 Fläche), dazu das Eisen, Gold und Brot auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.` +
+    rows.push(explain(`Am Ende deines Zugs sammelt die Fabrik alle Felder, die an ihr hängen (${terrainOn() ? "Feld 1, Wald ½, Moor ¼ Fläche" : "je 1 Fläche"}), dazu das Eisen, Gold und Brot auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.` +
       (upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ${upkeepSqOn() ? "ihre Stufe im Quadrat (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16)" : "ihre Stufe"} in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
     // --- Figuren: grau, solange nicht bezahlbar; Farbe, wenn bereit
     rows.push(`<p class="sec">Figuren bauen</p>`);
