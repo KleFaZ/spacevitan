@@ -84,21 +84,27 @@ pub fn make_terrain(config: &Config, board: &Board, territories: &[Option<usize>
         .map(|&c| board.distances_from(c))
         .collect();
     let radius = config.effective_fairness_radius().max(4);
-    let player_corners = config.player_corners();
+    // Alles, was nicht vom Zufall abhaengt, einmal berechnen (nicht in jedem der Versuche).
+    let layout = Layout::new(board, territories, &dist);
+    let around_start: Vec<Vec<usize>> = config
+        .player_corners()
+        .iter()
+        .map(|&k| {
+            board
+                .cells()
+                .filter(|c| dist[k][c.idx()] <= radius)
+                .map(|c| c.idx())
+                .collect()
+        })
+        .collect();
     let mut best: Option<(u32, Vec<Terrain>)> = None;
     for attempt in 1..=ATTEMPTS {
         let mut rng = base.fork(attempt);
-        let terrain = one_attempt(board, territories, &dist, &mut rng);
+        let terrain = one_attempt(board, &layout, &mut rng);
         // Unterschied im Flaechenwert rund um die Startecken der Spieler
-        let sums: Vec<u32> = player_corners
+        let sums: Vec<u32> = around_start
             .iter()
-            .map(|&k| {
-                board
-                    .cells()
-                    .filter(|c| dist[k][c.idx()] <= radius)
-                    .map(|c| terrain[c.idx()].quarters())
-                    .sum()
-            })
+            .map(|cells| cells.iter().map(|&i| terrain[i].quarters()).sum())
             .collect();
         let spread = sums.iter().max().unwrap_or(&0) - sums.iter().min().unwrap_or(&0);
         if best.as_ref().is_none_or(|(s, _)| spread < *s) {
@@ -181,44 +187,73 @@ pub(crate) fn corner_air_distance(board: &Board) -> Vec<u64> {
         .collect()
 }
 
-fn one_attempt(
-    board: &Board,
-    territories: &[Option<usize>],
-    dist: &[Vec<u32>],
-    rng: &mut Rng,
-) -> Vec<Terrain> {
-    let n = board.len();
-    let corners = board.corners().len();
-    let mut terrain = vec![Terrain::Field; n];
-    let rank = noise_ranks(board, rng);
-    let nearest = nearest_corner(board, dist);
-    let air = corner_air_distance(board);
-    let far = air.iter().copied().max().unwrap_or(1).max(1);
-    // Gruppen: je Ecke das Gebiet, dazu die Felder genau zwischen zwei Gebieten (Index `corners`).
-    let mut groups: Vec<Vec<CellId>> = vec![Vec::new(); corners + 1];
-    for cell in board.cells() {
-        groups[territories[cell.idx()].unwrap_or(corners)].push(cell);
-    }
-    // Gleich viele je Ecke: das kleinste Gebiet gibt die Zahl vor, groessere behalten ihre
-    // mittleren Felder als Feld.
-    let smallest = groups[..corners].iter().map(Vec::len).min().unwrap_or(0);
-    for (g, cells) in groups.iter().enumerate() {
-        let size = if g < corners { smallest } else { cells.len() };
-        let bog = share(size, BOG_PERMILLE);
-        let earth = share(size, EARTH_PERMILLE);
-        // Die Umgebung des Starts bleibt Feld. Der Rest wird nach Lage sortiert: nah an der Ecke
-        // zuerst (Moor), dann der Zwischenbereich (Erde), der Rest (Feld) liegt in der Mitte.
-        let mut open: Vec<CellId> = cells
+/// Der feste Teil der Verteilung (ohne Zufall), einmal je Karte berechnet.
+struct Layout {
+    /// Je Ecke das Gebiet, zuletzt die Felder genau zwischen zwei Gebieten.
+    groups: Vec<Group>,
+    /// Grundwert der Lage je Feld: Luftlinie zur naechsten Startecke (0..1000, mal 100).
+    position: Vec<u64>,
+}
+
+struct Group {
+    /// Anzahl Moor- und Erdfelder dieser Gruppe.
+    bog: usize,
+    earth: usize,
+    /// Felder der Gruppe ausser der Startumgebung (die bleibt Feld).
+    open: Vec<CellId>,
+}
+
+impl Layout {
+    fn new(board: &Board, territories: &[Option<usize>], dist: &[Vec<u32>]) -> Layout {
+        let corners = board.corners().len();
+        let nearest = nearest_corner(board, dist);
+        let air = corner_air_distance(board);
+        let far = air.iter().copied().max().unwrap_or(1).max(1);
+        let position: Vec<u64> = air.iter().map(|a| (a * 1000 / far) * 100).collect();
+        // Gruppen: je Ecke das Gebiet, dazu die Felder genau zwischen zwei Gebieten (Index
+        // `corners`).
+        let mut cells_of: Vec<Vec<CellId>> = vec![Vec::new(); corners + 1];
+        for cell in board.cells() {
+            cells_of[territories[cell.idx()].unwrap_or(corners)].push(cell);
+        }
+        // Gleich viele je Ecke: das kleinste Gebiet gibt die Zahl vor, groessere behalten ihre
+        // mittleren Felder als Feld.
+        let smallest = cells_of[..corners].iter().map(Vec::len).min().unwrap_or(0);
+        let groups = cells_of
             .iter()
-            .copied()
-            .filter(|c| nearest[c.idx()] > START_CLEAR)
+            .enumerate()
+            .map(|(g, cells)| {
+                let size = if g < corners { smallest } else { cells.len() };
+                Group {
+                    bog: share(size, BOG_PERMILLE),
+                    earth: share(size, EARTH_PERMILLE),
+                    open: cells
+                        .iter()
+                        .copied()
+                        .filter(|c| nearest[c.idx()] > START_CLEAR)
+                        .collect(),
+                }
+            })
             .collect();
-        let key = |c: &CellId| (air[c.idx()] * 1000 / far) * 100 + rank[c.idx()] * NOISE_WEIGHT;
+        Layout { groups, position }
+    }
+}
+
+fn one_attempt(board: &Board, layout: &Layout, rng: &mut Rng) -> Vec<Terrain> {
+    let mut terrain = vec![Terrain::Field; board.len()];
+    let rank = noise_ranks(board, rng);
+    let key = |c: &CellId| layout.position[c.idx()] + rank[c.idx()] * NOISE_WEIGHT;
+    let mut open: Vec<CellId> = Vec::new();
+    for group in &layout.groups {
+        // Nach Lage sortiert: nah an der Ecke zuerst (Moor), dann der Zwischenbereich (Erde),
+        // der Rest (Feld) liegt in der Mitte.
+        open.clear();
+        open.extend_from_slice(&group.open);
         open.sort_by_key(|c| (key(c), c.idx()));
         for (i, c) in open.iter().enumerate() {
-            terrain[c.idx()] = if i < bog {
+            terrain[c.idx()] = if i < group.bog {
                 Terrain::Bog
-            } else if i < bog + earth {
+            } else if i < group.bog + group.earth {
                 Terrain::Earth
             } else {
                 Terrain::Field
@@ -244,6 +279,26 @@ mod tests {
         let territories = board.territories();
         let t = make_terrain(c, &board, &territories);
         (board, territories, t)
+    }
+
+    #[test]
+    fn the_map_carries_exactly_the_terrain_made_once_for_its_board() {
+        // Das Gelaende haengt nicht von den Vorkommen ab; wie oft der Generator die Vorkommen
+        // neu wuerfelt (attempts_used), aendert es nicht. Auch Karten mit mehreren Versuchen.
+        let mut retried = false;
+        for players in 2..=8u8 {
+            for seed in 1..=12u64 {
+                let c = config(players, seed, true);
+                let (_, _, direct) = terrain_of(&c);
+                let map = crate::map::Map::generate(&c).unwrap();
+                retried |= map.attempts_used > 1;
+                assert_eq!(map.terrain, direct, "{players} Spieler, Seed {seed}");
+            }
+        }
+        assert!(
+            retried,
+            "der Test soll auch Karten mit Wiederholungen sehen"
+        );
     }
 
     #[test]

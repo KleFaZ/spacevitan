@@ -126,6 +126,9 @@ impl Map {
             config.category_count(),
             effective_center_colors(config, &board),
         );
+        // Das Gelaende haengt nicht von den Vorkommen ab: einmal berechnen, nicht bei jedem
+        // (verworfenen) Versuch der Verteilung neu.
+        let terrain = make_terrain(config, &board, &territories);
         let mut base = Rng::new(config.seed);
         for attempt in 1..=config.max_generator_attempts {
             let mut rng = base.fork(attempt as u64);
@@ -138,7 +141,7 @@ impl Map {
                 resource_types: resource_types.clone(),
                 deposits,
                 territories: territories.clone(),
-                terrain: make_terrain(config, &board, &territories),
+                terrain: terrain.clone(),
                 player_corners: config.player_corners(),
                 attempts_used: attempt,
             };
