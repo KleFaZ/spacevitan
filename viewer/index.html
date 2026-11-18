@@ -3350,7 +3350,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       : !acting ? "Umzug: du bist nicht am Zug" : "Fabrik hierher umziehen (noch nicht möglich)";
     const steps = `So geht der Umzug: 1) Zieh den König auf ein Feld deines mit der Fabrik verbundenen Landes (nicht auf die Fabrik); dort steht danach die neue Fabrik. ` +
       `2) ${relocCostText() === "nichts" ? "Der Umzug kostet nichts." : `Im Lager der Fabrik müssen ${relocCostText()} liegen.`} 3) Klick auf diesen Knopf; das ist dein Zug. ` +
-      `Dauer = halbe Entfernung zur alten Fabrik, aufgerundet (mindestens 1 Runde); der Tooltip auf deinen Feldern nennt sie vorab. ` +
+      `Dauer = halbe Entfernung zur alten Fabrik, aufgerundet (mindestens 1 Runde); der Knopf nennt sie vorab. ` +
       `Bis die Fabrik steht: kein Ertrag, alle Figuren wehrlos, König gesperrt.`;
     const slim = compactUi();
     return `<div class="fc-sec"><p class="fc-h">${slim ? "Fabrik umziehen" : "Fabrik umziehen · der König baut sie auf seinem Feld"}</p>` +
@@ -4035,6 +4035,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
 
   // ----- Tooltip -----------------------------------------------------------------------------
+  // Das Info-Fenster zu einem Feld gibt es nur am PC und nur, solange die linke Maustaste gedrueckt ist (nicht beim
+  // blossen Darueberfahren). Am Handy (Finger oder Stift) erscheint es nie.
   function showTip(cell, mx, my) {
     const tip = $("tip");
     if (cell === null) { tip.hidden = true; return; }
@@ -4128,7 +4130,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const cell = cellAt(mx, my);
     modifiersChanged(ev.shiftKey, ev.ctrlKey || ev.metaKey);
     if (cell !== hoverCell) { hoverCell = cell; refreshHoverReach(); requestAnimationFrame(draw); }
-    showTip(cell, mx, my);
+    if (ev.pointerType === "mouse" && (ev.buttons & 1)) showTip(cell, mx, my);
+    else $("tip").hidden = true;
   }
   canvas.addEventListener("pointermove", pointer);
   let downAt = null;

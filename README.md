@@ -889,7 +889,7 @@ fest, nicht den Wert: Die Werte bleiben 1, 1/2 und 1/4, aber **Moor ist ein Vier
   Hintergrund ist nach Wert **schraffiert**, seit dem 18.11. (Wunsch am Nachmittag) **umgekehrt**: Feld gar nicht, Erde einfach (eine
   Richtung, dazu ein grauer Hauch), Moor am staerksten (gekreuzt), und beide mit **halb so vielen Linien** wie vorher (doppelter
   Linienabstand). Rohstoff-Abzeichen (Figur steht auf dem Vorkommen) ruecken dafuer rechts neben den Kreis. Die Legende hat
-  eine Zeile dazu, die Feldinfo (Maus oder Antippen) nennt Art und Wert. Das Gelaende steht im Replay-Kopf als `terrain`
+  eine Zeile dazu, die Feldinfo (Info-Fenster, siehe unten) nennt Art und Wert. Das Gelaende steht im Replay-Kopf als `terrain`
   (0 Feld, 1 Erde, 2 Moor je Feld).
 - **Bots** werten Land nach seinem Flaechenwert (`Game::land_quarters` in `area_bot.rs` und `ai.rs`); ohne Schalter ist alles wie vorher.
 - **Messung** (2 Bots `flaeche`, 80 Partien, Seeds 1 bis 80, Version 3). Ohne Gelaende: erste Figur Stufe 2 in Runde 34,7, Stufe 3
@@ -985,6 +985,10 @@ fest, nicht den Wert: Die Werte bleiben 1, 1/2 und 1/4, aber **Moor ist ein Vier
   **Hierher ziehen** (`factoryGoto`/`facGoto`): ein direkt erlaubter Zug wird gespielt, sonst startet der Weg (ein schon angetippter
   Weg wird bis zur Fabrik verlaengert). Eine andere eigene Figur antippen wechselt die Auswahl und verwirft den angetippten Weg.
   Das gilt in der 2D-Ansicht mit Fingerbedienung (`touchUi`); am PC und in 3D zieht der Klick auf ein erreichbares Feld wie bisher.
+- **Info-Fenster zu einem Feld (Wunsch 18.11.: "nervt, muss weg")**: Am **Handy** (Finger oder Stift) erscheint es nie mehr, auch nicht
+  beim Halten. Am **PC** erscheint es nicht mehr beim blossen Darueberfahren, sondern nur, solange die **linke Maustaste gedrueckt** ist
+  (`pointer()` prueft `pointerType === "mouse"` und `buttons & 1`). Die Hervorhebung des Feldes und die Ziehfelder unter der Maus
+  bleiben. Der Hinweis auf den Tooltip im Umzugstext wurde zu "der Knopf nennt die Dauer vorab".
 - **Koenig antippen**: die Blase zeigt **Fabrik hier bauen** (Neubau nach Zerstoerung oder Umzug auf das Feld des Koenigs, mit Dauer
   und Kosten) und, wenn moeglich, **Koenig verbessern**.
 
