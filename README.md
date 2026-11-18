@@ -880,23 +880,29 @@ aendern, und man kann eigene Karten bauen.
   Stufen (Figur verbessern), weniger Brot-Felder je Ecke, hoehere Brotpreise.
 - **Viewer-Korrektur nebenbei**: Der Kaufdialog schrieb bei *Bergbau*, *Schmiede*, *Sturmangriff* und *Doppelzug* faelschlich "Die Figur
   darf danach in diesem Zug nicht ziehen". Diese Sofort-Karten sperren keine Figur (die Engine tat das nie), der Satz ist weg.
-- **Offen: Fort-Karte** (Idee vom 18.11., *nicht* gebaut, wartet auf ein OK). Die Figur auf dem Fort zaehlt als ihre echte Stufe +1,
-  solange sie dort steht. Einschaetzung:
-  - *Was dafuer spricht*: ein Brettobjekt neben Fabrik und Koenig, sichtbar fuer beide, also Gegenspiel moeglich (wie beim Schach ein
-    vorgeschobener Posten). Es macht den Unterschied zwischen "Karte auf eine Figur" und "Karte auf ein Feld".
-  - *Problem 1, die Regel `terr_exact`*: eine Figur der Stufe n zieht **genau** n Felder geradeaus. "Stufe +1" waere deshalb kein
-    reiner Gewinn: ein Bauer auf dem Fort muesste genau 2 Felder ziehen und koennte keinen Nachbarn mehr schlagen. Vorschlag: auf dem
-    Fort darf die Figur **n oder n+1** Felder ziehen (spiegelbildlich zu *Kuerzer*, das n oder n-1 erlaubt).
-  - *Problem 2, "Stufe" kommt mehrfach vor*: Ertrag je Stufe (`terr_yield_lvl`), Unterhalt (Stufe oder Stufe^2), Verbesserungspreis und
-    die Wertung nach Runde 100 (Summe der Figurenstufen). Das Fort darf **nur die Zugweite** aendern; sonst waere "Fort auf ein
-    Brot-Feld" eine Gratis-Ernte mit +1 und die Wertung liesse sich mit Forts hochschrauben.
-  - *Problem 3, Stufe 4*: der Held bekaeme 5 Felder, mehr als jede andere Figur; Deckel bei 5 oder nur bis Stufe 3.
-  - *Problem 4, Gegenspiel*: Fort gilt nur fuer den Besitzer. Eine gegnerische Figur, die es betritt oder deren Land es kippt,
-    zerstoert es; auf nicht verbundenem Land (wehrlos) wirkt es nicht. Ohne diese Regel baut jeder ein Fort an der gegnerischen Grenze,
-    und der Koenig steht ploetzlich in Reichweite 5.
-  - *Vorschlag*: Schalter `terr_fort` (Standard aus), ein Fort je Spieler (neu kaufen = versetzen), Preis in Eisen (Bauten), z. B.
-    3 Eisen + 1 Brot, Platz: freies eigenes, verbundenes Feld ohne Figur, nie auf einem Vorkommen. Die Suchbots sehen die Wirkung ueber
-    `piece_destinations` von selbst, planen das Fort aber nicht; gemessen werden kann es erst mit eigener Bot-Logik oder `--gift`.
+- **Fort-Karte** (`terr_fort=1`, Standard aus; Idee vom 18.11., Einschaetzung und Entscheidungen siehe unten). Die Karte *Fort* liegt dann
+  **immer** im Markt (wie der Koenigs-Boost, nicht im Zufallspool; `Card::Fort`, Preis 3 Eisen + 1 Brot, mit `terr_bread=0` 4 Eisen).
+  - **Kauf**: sie wirkt wie die anderen Figurenkarten (`terr_cardany`): man waehlt eine eigene Figur, das Fort entsteht **auf deren Feld**
+    (`State::forts`, ein Fort je Spieler; ein neues versetzt das alte). Die Figur ruht in diesem Zug (`terr_cardlock`). Ort: eigenes
+    Land, mit der stehenden Fabrik verbunden, kein Fabrikfeld, dort noch kein Fort; nie auf dem Koenig (`Game::fort_fits`).
+  - **Wirkung**: jede eigene Figur auf dem Fort (nie der Koenig) zieht **n oder n+1 Felder** (`Game::fort_bonus`, in `exact_walk` die
+    laengste Weglaenge, gespiegelt zu *Kuerzer*; ohne `terr_exact` Reichweite +1). Das Fort bleibt stehen, wenn die Figur wegzieht; die
+    naechste Figur darauf profitiert wieder. **Nur die Zugweite** aendert sich: Ertrag je Stufe, Unterhalt, Preise und Wertung rechnen mit
+    der echten Stufe.
+  - **Zerstoerung**: sobald das Feld nicht mehr dem Besitzer gehoert (`set_land`: ein Gegner schlaegt oder faerbt es, Land wird abgetrennt
+    und neutral oder faellt an den Gegner). `Event::FortLost` meldet es; eine Invariante prueft, dass jedes Fort auf Land des Besitzers
+    steht. Auf nicht verbundenem Land bleibt das Fort stehen (die Figuren sind dort wehrlos).
+  - **Viewer**: Zinnenrand und kleiner Turm auf dem Feld, Karte mit Turm-Symbol; Schalter im Menue ("Fort-Karte") und im Paket *Neue Regelideen*.
+  - **Tests**: Schalter und Pflichtregeln, Kauf unter einer Figur (Sperre, Preis, nie der Koenig), n oder n+1 fuer Stufe 1 und 2, Fort bleibt
+    stehen und dient der naechsten Figur, ein Fort je Spieler, Zerstoerung durch Faerben und durch Schlagen (mit `FortLost`), ganze Partien mit
+    Zufallsbots und Invarianten (`whole_games_with_all_new_switches_keep_every_invariant_on_every_board`).
+  - **Entscheidungen, die ich fuer dich getroffen habe** (der Satz "Es soll zerstoert werden wenn." brach ab): zerstoert wird, wenn das Feld dem
+    Besitzer nicht mehr gehoert; das Fort entsteht unter einer eigenen Figur statt auf einem leeren Feld (so braucht es keine neue
+    Aktion und keine Feldauswahl).
+  - **Offen**: Preis ist geschaetzt (`price.fort=eisen/gold/brot`, im Karten-Editor noch nicht einstellbar); die Bots (`stark` kauft es
+    manchmal, `flaeche` nie) planen es nicht, eine Messung steht aus. Ob der Held auf dem Fort 5 Felder ziehen darf, ist nicht gedeckelt.
+- **Koenig antippen** (Viewer): ein Klick waehlt den Koenig nur (Ziehfelder), erst der **zweite Klick hintereinander** oeffnet die Blase
+  *Fabrik hier bauen / Koenig verbessern*, ein dritter schliesst sie.
 
 ### Version 3.2 (Wuensche vom 17.11.2026)
 
