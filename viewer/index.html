@@ -358,6 +358,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .actions:empty { display: none; }
 .actions button { text-align: left; }
 .error { color: #b3261e; font-size: 0.85rem; }
+/* Rote Leiste fuer unerwartete Fehler im Viewer: so bleibt nichts still stehen, ohne dass man es sieht */
+.fatal { position: sticky; top: 0; z-index: 50; margin: 0; padding: 8px 12px; background: #8f1d16; color: #fff; font-size: 0.82rem; line-height: 1.35; cursor: pointer; overflow-wrap: anywhere; }
+.fatal small { display: block; opacity: 0.85; }
 /* Kartenoptionen (Gebietsmodus): nur anzeigen, gekauft wird im Menue der Fabrik */
 .market li.copt { display: flex; flex-direction: column; gap: 3px; }
 .market .copt .ct { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -493,6 +496,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   </div>
 </header>
 <p class="notice" id="notice" hidden></p>
+<p class="fatal" id="fatal" role="alert" hidden title="Antippen zum Ausblenden"></p>
 
 <section class="menu" id="menu" hidden aria-label="Neue Partie einrichten">
   <form id="setup" novalidate>
@@ -700,6 +704,31 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const HOSTILE = "#d23c34"; // Zielfeld mit einer gegnerischen Figur oder Fabrik
   const BARREL = "#9a6a3c";
   const COLS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+  // ----- Unerwartete Fehler sichtbar machen ------------------------------------------------------
+  // Ein Fehler beim Zeichnen oder Anzeigen soll weder still bleiben noch die Bots anhalten: er erscheint
+  // als rote Leiste oben (Antippen blendet sie aus), das Spiel laeuft weiter.
+  const problems = [];
+  function reportProblem(where, err) {
+    const msg = String((err && err.message) || err || "unbekannt").slice(0, 160);
+    const line = err && err.stack ? (String(err.stack).match(/:(\d+):\d+\)?\s*$/m) || [])[1] : "";
+    const text = `${where}: ${msg}${line ? ` (Zeile ${line})` : ""}`;
+    if (!problems.includes(text)) problems.push(text);
+    const el = document.getElementById("fatal");
+    if (!el) return;
+    el.innerHTML = "";
+    const head = document.createElement("span");
+    head.textContent = "Fehler im Viewer – bitte Screenshot schicken: " + problems.slice(-3).join(" | ");
+    el.appendChild(head);
+    el.hidden = false;
+  }
+  window.addEventListener("error", (e) => reportProblem("Fehler", e.error || e.message));
+  window.addEventListener("unhandledrejection", (e) => reportProblem("Versprechen", e.reason));
+  document.getElementById("fatal").addEventListener("click", () => { document.getElementById("fatal").hidden = true; });
+  /** Fuehrt `fn` aus; ein Fehler wird gemeldet und bricht den Rest nicht ab. */
+  function safely(where, fn) {
+    try { return fn(); } catch (err) { reportProblem(where, err); return undefined; }
+  }
 
   const $ = (id) => document.getElementById(id);
   const canvas = $("board");
@@ -4299,11 +4328,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   function botOnce() {
     if (!live || live.outcome || live.humanToMove) return;
+    let out;
     try {
-      pushStep(callWasm("sv_bot_step"));
+      out = callWasm("sv_bot_step");
     } catch (err) {
       showPlayError(err.message);
+      return;
     }
+    safely("Bot-Zug anzeigen", () => pushStep(out));
   }
   function canInspect() {
     return mode === "play" && !!live && R === liveR && fi === R.frames.length - 1;
@@ -5401,9 +5433,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     routes = []; ctrlPath = null; routeNote = ""; clearTimeout(premoveTimer);
     shiftMode = false;
     showPlayError("");
-    layout();
-    legend();
-    renderPanel();
+    safely("Brett einrichten", layout);
+    safely("Legende", legend);
+    safely("Anzeige", renderPanel);
     requestAnimationFrame(draw);
     scheduleBots();
   }
@@ -5426,14 +5458,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     cardMode = null;
     inspect = null;
     routeNote = "";
+    let out;
     try {
-      const out = callWasm("sv_apply", i);
-      selected = null;
-      pushStep(out);
-      scheduleBots();
+      out = callWasm("sv_apply", i);
     } catch (err) {
       showPlayError(err.message);
+      return;
     }
+    selected = null;
+    safely("Zug anzeigen", () => pushStep(out));
+    scheduleBots();
   }
   function botDelay() {
     const speed = Number($("speed").value);
@@ -5441,18 +5475,21 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   function scheduleBots() {
     clearTimeout(botTimer);
-    renderTurnBox();
-    schedulePremove();
+    safely("Zuganzeige", renderTurnBox);
+    safely("Vorab-Zug", schedulePremove);
     if (mode !== "play" || !live || live.outcome || live.humanToMove) return;
     if (live.watch && (!playing || R !== liveR)) return;
     botTimer = setTimeout(() => {
       if (mode !== "play" || !live) return;
+      let out;
       try {
-        pushStep(callWasm("sv_bot_step"));
+        out = callWasm("sv_bot_step");
       } catch (err) {
         showPlayError(err.message);
         return;
       }
+      // Der Zug ist im Spielkern schon gespielt: scheitert nur die Anzeige, laufen die Bots weiter.
+      safely("Bot-Zug anzeigen", () => pushStep(out));
       scheduleBots();
     }, botDelay());
   }

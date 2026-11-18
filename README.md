@@ -898,6 +898,14 @@ fest, nicht den Wert: Die Werte bleiben 1, 1/2 und 1/4, aber **Moor ist ein Vier
   Landanteil aendern sich kaum (Siege 39 / 61 % statt 40 / 60 %), die Partie wird nur langsamer. Stellschrauben, falls es zu
   langsam ist: weniger Moor und Erde, billigere Stufen (zum Beispiel Stufenpreise um etwa ein Drittel senken) oder ein Einkommen,
   das die Verluste ausgleicht.
+- **Kartenerzeugung (Korrektur 18.11., nach Meldung "Bots ziehen nicht, Start klappt teils nicht")**: `Map::generate` rechnete das Gelaende
+  in der Versuchsschleife der Vorkommen-Fairness, also bei jedem verworfenen Versuch neu (bis zu 200 Gelaende-Verteilungen je Aufruf).
+  Das Gelaende haengt nicht von den Vorkommen ab, es wird jetzt einmal je Karte berechnet; Gruppen, Luftlinien und Umkreise werden vorab
+  berechnet (`Layout`). Die Karte je Seed ist unveraendert (Test `the_map_carries_exactly_the_terrain_made_once_for_its_board`).
+  Gemessen (nativ, Release): schlechtester Fall 5 Spieler 82 auf 4 ms, 8 Spieler 21 auf 12 ms. Ob das die gemeldete Stoerung war, ist
+  **nicht bewiesen**; nachgestellt werden konnte sie weder im Browser noch nativ.
+- **Fehlerleiste im Viewer**: Unerwartete Fehler (Zeichnen, Anzeige, Bot-Zug anzeigen) erscheinen als rote Leiste oben (Antippen blendet
+  sie aus) und halten die Bots nicht mehr an: der Zug ist im Spielkern schon gespielt, scheitert nur die Anzeige, laeuft die Partie weiter.
 - **Offen**: eine eigene Gelaende-Wirkung auf Bewegung (Moor bremst) wurde nicht gebaut, das waere eine zweite Idee. Die Anteile und das
   Rauschen sind Konstanten in `terrain.rs`, noch kein Menuefeld.
 
