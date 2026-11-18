@@ -461,8 +461,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   html.v2d #stock.terr .resbar .rs small.u { display: none; }
   html.v2d .armed { margin: 4px 0 0; padding: 4px 8px; font-size: 0.74rem; }
   html.v2d #marketBox > h2, html.v2d #marketBox > details, html.v2d #marketLegend { display: none; }
-  html.v2d #market { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  html.v2d #market { display: grid; grid-template-columns: repeat(var(--mcols, 4), minmax(0, 1fr)); gap: 5px; }
   html.v2d #market li.pcard.king { display: none; }
+  html.v2d #market.c5 li.pcard { aspect-ratio: 5 / 9.2; }
+  html.v2d #market.c5 .pc-name { font-size: 0.72em; }
+  html.v2d #market.c5 .pc-fx { font-size: 0.62em; }
+  html.v2d #market.c5 .pc-price { font-size: 0.64em; gap: 0 3px; }
   html.v2d #market li.copt.note { grid-column: 1 / -1; }
   html.v2d .faccard.docked { margin-top: 0; max-width: none; }
   html.v2d .faccard.docked.quiet { display: none; }
@@ -1356,20 +1360,25 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.fill(); ctx.stroke();
     ctx.restore();
   }
+  /** Zielpunkte der flachen Ansicht werden erst nach den Vorkommen und Figuren gemalt, sonst verdeckt das Vorkommen den Punkt. */
+  let lateMarks = null;
+  function paintFlatMark(cell, color) {
+    // wie bei lichess: Punkt auf leeren Zielfeldern, Ring auf Feldern mit Gegner
+    const [x, y] = R.board.cells[cell], [cx, cy] = iso(x, y);
+    ctx.beginPath();
+    if (color === HOSTILE) {
+      ctx.arc(cx, cy, geo.U * 0.43, 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(3, geo.U * 0.09); ctx.strokeStyle = color; ctx.globalAlpha = 0.85; ctx.stroke();
+    } else {
+      ctx.arc(cx, cy, geo.U * 0.17, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.8; ctx.fillStyle = color; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
   function markCell(cell, color) {
     if (geo.flat && geo.square) {
-      // wie bei lichess: Punkt auf leeren Zielfeldern, Ring auf Feldern mit Gegner
-      const [x, y] = R.board.cells[cell], [cx, cy] = iso(x, y);
-      ctx.beginPath();
-      if (color === HOSTILE) {
-        ctx.arc(cx, cy, geo.U * 0.43, 0, Math.PI * 2);
-        ctx.lineWidth = Math.max(3, geo.U * 0.09); ctx.strokeStyle = color; ctx.globalAlpha = 0.85; ctx.stroke();
-      } else {
-        ctx.arc(cx, cy, geo.U * 0.17, 0, Math.PI * 2);
-        ctx.globalAlpha = 0.8; ctx.fillStyle = color; ctx.fill();
-        ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
+      if (lateMarks) lateMarks.push([cell, color]); else paintFlatMark(cell, color);
       return;
     }
     cellPath(cell, 0.42);
@@ -2180,6 +2189,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     drawResourceRims(f);
     drawLabels();
 
+    lateMarks = [];
     // Letzter Zug hervorheben
     const moved = f.events.find((e) => e.type === "moved");
     if (moved && f.player !== null) {
@@ -2332,6 +2342,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ob.fn();
     }
     ctx.globalAlpha = 1;
+    for (const [c, col] of lateMarks) paintFlatMark(c, col);
+    lateMarks = null;
     drawResourceBadges(f, new Set([...occupied, ...built]));
     if (pills) { for (const job of pills) job(); pills = null; }
     canvas.dataset.pieces = String(f.pieces.length);
@@ -3545,6 +3557,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       li.innerHTML = pcardInner(o);
       ul.appendChild(li);
     }
+    // Handy: fuenf Karten (mit Fort) in einer Reihe, sechs in zwei Reihen zu drei, sonst vier je Reihe
+    const shown = keys.filter((k) => k !== "king_boost").length;
+    ul.style.setProperty("--mcols", String(shown === 5 ? 5 : shown === 6 ? 3 : 4));
+    ul.classList.toggle("c5", shown === 5);
     const sc = p === null || p === undefined ? null : (f.stored_card || [])[p];
     if (sc) ul.insertAdjacentHTML("beforeend", `<li class="copt note"><small class="tx">Liegt neben der Fabrik bereit: ${escapeHtml(CARD(sc).name)}</small></li>`);
     renderCardPop();
@@ -4250,7 +4266,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Kartentext; mit Karten auf gebaute Figuren gilt "die naechste Figur" nicht mehr. */
   function cardText(c) {
-    if (c.key === "pawn_diagonal") return c.text; // nur Bauern, nur einmal: der Satz zum Stapeln gilt hier nicht
+    if (c.key === "pawn_diagonal" || c.key === "fort") return c.text; // nur einmal je Figur: der Satz zum Stapeln gilt hier nicht
     if (!(cardAnyOn() && c.target === "unit")) return c.text;
     const base = c.text.replace(/^Die nächste Figur/, "Eine Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2)");
     return stackOn() ? `${base} Auch mehrmals auf dieselbe Figur: Stufe n höchstens n−1 mal.` : base;

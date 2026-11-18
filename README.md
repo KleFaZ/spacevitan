@@ -880,6 +880,9 @@ aendern, und man kann eigene Karten bauen.
   Stufen (Figur verbessern), weniger Brot-Felder je Ecke, hoehere Brotpreise.
 - **Viewer-Korrektur nebenbei**: Der Kaufdialog schrieb bei *Bergbau*, *Schmiede*, *Sturmangriff* und *Doppelzug* faelschlich "Die Figur
   darf danach in diesem Zug nicht ziehen". Diese Sofort-Karten sperren keine Figur (die Engine tat das nie), der Satz ist weg.
+- **Viewer-Korrekturen zum Fort** (18.11.): In der flachen Ansicht verdeckte das Rohstoff-Symbol den Zielpunkt auf Feldern mit Vorkommen;
+  die Zielpunkte werden jetzt nach Vorkommen und Figuren gemalt. Der Kartentext des Forts nennt das Stapeln nicht mehr (ein Fort je Spieler).
+  Auf dem Handy liegen fuenf Karten (vier und das Fort) in einer Reihe, sechs in zwei Reihen zu drei, sonst vier je Reihe.
 - **Fort-Karte** (`terr_fort=1`, Standard aus; Idee vom 18.11., Einschaetzung und Entscheidungen siehe unten). Die Karte *Fort* liegt dann
   **immer** im Markt (wie der Koenigs-Boost, nicht im Zufallspool; `Card::Fort`, Preis 3 Eisen + 1 Brot, mit `terr_bread=0` 4 Eisen).
   - **Kauf**: sie wirkt wie die anderen Figurenkarten (`terr_cardany`): man waehlt eine eigene Figur, das Fort entsteht **auf deren Feld**
