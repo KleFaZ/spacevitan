@@ -206,7 +206,9 @@ pub struct Config {
     /// Version 3.1: Brot als Lager. Mit `n >= 1` wird Kat 3 (Brot) nicht mehr als Flaechenbonus
     /// gezaehlt, sondern wie Eisen und Gold alle `n` Runden geerntet (nur mit eigener Figur auf dem
     /// Feld) und liegt im Lager der Fabrik. Karten koennen dann in Brot bezahlt werden, die
-    /// Standardpreise der Tempokarten sind dann in Brot (`Card::v3_price_bread`). 0 = aus.
+    /// Standardpreise sind dann ueber Eisen, Gold und Brot verteilt (`Card::v3_price_bread`).
+    /// Ab Version 3.3 ist das mit `n = 3` (gleicher Takt wie Eisen) der Standard von `set_v3`;
+    /// 0 = aus (Kat 3 zaehlt wieder als Flaechenbonus `2^k`).
     pub terr_bread: u32,
     /// Eigene Preise, Karten, die nicht gezogen werden, und selbst gebaute Karten (Version 3).
     pub card_tweaks: crate::cards::CardTweaks,
@@ -338,6 +340,9 @@ impl Config {
         self.terr_rebuild = if on { 3 } else { 0 };
         self.terr_trade = false;
         self.terr_bonus = on;
+        // Brot ist ein Lager mit Erntezaehler wie Eisen (alle 3 Runden, Figur muss draufstehen);
+        // `terr_bread=0` bringt den alten 2^k-Flaechenbonus zurueck.
+        self.terr_bread = if on { 3 } else { 0 };
         self.terr_occupy = on;
         self.terr_cardany = on;
         // Figuren ab Stufe 2 doppelt so teuer (50 / 200 / 400 / 800 Flaeche); eine Karte sperrt die

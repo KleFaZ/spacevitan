@@ -535,6 +535,10 @@ einzeln ueberschreiben, `terr_v3=0` schaltet sie aus. Die Browser-Seite schickt 
 `territory=1,terr_v3=1` voraus; im Menue waehlt das Feld "Regelstufe" 3, 2 oder 1 (Version 1 und 2 sind also weiter
 spielbar).
 
+> **Seit 3.3** ist Brot (Kat 3) in Version 3 standardmaessig ein **Lager mit Erntezaehler** (`terr_bread=3`, siehe
+> "Version 3.3"). Alles unten zu Kat 3 als Flaechenbonus `2^k` (`terr_bonus`) und zu den Eisen/Gold-Preisen gilt jetzt nur noch
+> mit `terr_bread=0` (im Browser: Paket *Alter Brot-Bonus*).
+
 | Schalter | Version 3 | Wirkung |
 |---|---|---|
 | `terr_cycle` | 1 | **Erntezaehler**: jedes Vorkommen hat einen Zaehler (`State::age`, Erntetakte seit dem letzten Besitzerwechsel). Ist er abgelaufen, wird es einmal geerntet, dann beginnt er von vorn. Periode je Kategorie `terr_ripen` = 3 / 5 (Kat 1 / 2; Kat 3 wird nicht geerntet). Der Zaehler laeuft nur, wenn eine **stehende** Fabrik das Feld ueber verbundenes Land erreicht, sonst steht er still und es wird nichts geerntet. Ein Umfaerben des Feldes setzt ihn zurueck. Periode 0 = jede Runde |
@@ -807,19 +811,22 @@ aendern, und man kann eigene Karten bauen.
 - **Neuer Kartensatz** (`terr_cardset3=1`, in Version 3 an; braucht `terr_cards=1`): feste Preise in Eisen / Gold / Brot
   statt Bruchteilen des Grundpreises. Der Pool (ohne den Koenigs-Boost, der immer ausliegt):
 
-  | Karte | Wirkung | Preis (Eisen / Gold / Brot) |
-  |---|---|---|
-  | Kuerzer | Figur darf einen Schritt weniger ziehen | 3 / 0 / 0 |
-  | Ecke | Figur darf am Wegende abbiegen | 2 / 1 / 0 |
-  | Sprung | Figur darf ueber eine Figur springen | 4 / 0 / 0 |
-  | Durchzug | Figur darf ueber **eigene** Figuren hinwegziehen (Gegner versperren weiter) | 2 / 0 / 0 |
-  | Siedler | Figur faerbt sofort alle freien Nachbarfelder (auch Gegnerland, nie Felder mit Figur oder gegnerische Fabrik; nur auf verbundenem Land) | 3 / 2 / 0 |
-  | Fabrik ruecken | Fabrik rueckt ein Feld diagonal (nur Quadrat) | 3 / 0 / 0 |
-  | Sturmangriff | sofort: in diesem Zug alle Figuren Reichweite +1 | 2 / 2 / 0 |
-  | Bergbau | sofort und dauerhaft: +1 Gold je Ernte | 2 / 3 / 0 |
-  | Schmiede | sofort und dauerhaft: +1 Eisen je Ernte | 3 / 2 / 0 |
-  | Doppelzug | sofort: eine zweite Aktion in diesem Zug | 4 / 3 / 0 |
-  | Diagonalzug (3.2) | **nur auf einen Bauern (Stufe 1)**: er darf zusaetzlich ein Feld diagonal ziehen und schlagen (nur Quadrat) | 3 / 1 / 0 |
+  | Karte | Wirkung | Preis (Eisen / Gold / Brot), ab 3.3 | bis 3.2 / mit `terr_bread=0` |
+  |---|---|---|---|
+  | Kuerzer | Figur darf einen Schritt weniger ziehen | 0 / 0 / 3 | 3 / 0 / 0 |
+  | Ecke | Figur darf am Wegende abbiegen | 0 / 1 / 2 | 2 / 1 / 0 |
+  | Sprung | Figur darf ueber eine Figur springen | 1 / 0 / 3 | 4 / 0 / 0 |
+  | Durchzug | Figur darf ueber **eigene** Figuren hinwegziehen (Gegner versperren weiter) | 1 / 0 / 1 | 2 / 0 / 0 |
+  | Siedler | Figur faerbt sofort alle freien Nachbarfelder (auch Gegnerland, nie Felder mit Figur oder gegnerische Fabrik; nur auf verbundenem Land) | 1 / 2 / 2 | 3 / 2 / 0 |
+  | Fabrik ruecken | Fabrik rueckt ein Feld diagonal (nur Quadrat) | 3 / 0 / 0 | 3 / 0 / 0 |
+  | Sturmangriff | sofort: in diesem Zug alle Figuren Reichweite +1 | 3 / 1 / 0 | 2 / 2 / 0 |
+  | Bergbau | sofort und dauerhaft: +1 Gold je Ernte | 2 / 3 / 0 | 2 / 3 / 0 |
+  | Schmiede | sofort und dauerhaft: +1 Eisen je Ernte | 4 / 1 / 0 | 3 / 2 / 0 |
+  | Doppelzug | sofort: eine zweite Aktion in diesem Zug | 1 / 2 / 4 | 4 / 3 / 0 |
+  | Diagonalzug (3.2) | **nur auf einen Bauern (Stufe 1)**: er darf zusaetzlich ein Feld diagonal ziehen und schlagen (nur Quadrat) | 3 / 1 / 0 | 3 / 1 / 0 |
+  | Koenigs-Boost | immer im Markt, Preis mal die Stufe, die der Koenig bekaeme | 0 / 3 / 0 | 0 / 3 / 0 |
+
+  (Die Tabelle ist die von 3.3; die erste Preisspalte steht in `Card::v3_price_bread`, die zweite in `Card::v3_price`.)
 
   *Sofort*-Karten brauchen keine Figur und keinen Platz. Die uebrigen wirken auf eine gewaehlte eigene Figur (ab Stufe 2,
   nie der Koenig) und lassen sich stapeln wie bisher (`terr_stack`). Karten, die auf einem Brett nichts bewirken (Fabrik
@@ -845,6 +852,49 @@ aendern, und man kann eigene Karten bauen.
   neuen Karten nicht gezielt: `flaeche` nutzt nur Ecke, Sprung, Kuerzer und den Koenigs-Boost; `stark` und `sehr-stark`
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
+
+### Version 3.3 (Wuensche vom 18.11.2026)
+
+- **Brot ist ein Lager mit Erntezaehler wie Eisen und muss besetzt sein** (`terr_bread=3` in `Config::set_v3`; vorher nur ein
+  Schalter im Paket *Neue Regelideen*). Eine eigene Figur muss auf dem Brot-Feld stehen, sonst laeuft der Zaehler nicht
+  (`terr_occupy`); alle 3 Runden (Takt von Eisen, `terr_ripen1`) kommt ein Stueck ins Lager der Fabrik. Der `2^k`-Flaechenbonus fuer
+  verbundene Brot-Felder entfaellt. Zurueck zum alten Stand: `terr_bread=0` (Viewer: Paket *Alter Brot-Bonus*). Der Takt ist eine
+  Zahl, keine Kopplung: wer `terr_ripen1` aendert, muss `terr_bread` mit aendern.
+- **Kartenpreise ueber Eisen, Gold und Brot verteilt** (Tabelle bei "Neuer Kartensatz", `Card::v3_price_bread`). Leitidee: *Eisen*
+  fuer Kampf und Bauten (Diagonalzug, Sturmangriff, Fabrik ruecken, Schmiede), *Brot* fuer Bewegung und Nachschub (Kuerzer, Ecke,
+  Sprung, Durchzug, Siedeln, Doppelzug), *Gold* fuer Dauerhaftes und den Koenig (Bergbau, Koenigs-Boost). Die Gesamtsumme je Karte
+  bleibt auf +-1 wie vorher (Test `the_bread_prices_spread_over_all_three_resources`). `price.<karte>=eisen/gold/brot` aendert jeden Preis.
+- **Messung** (`flaeche` gegen `flaeche`, 40 Partien, Seeds ab 100, `--rule territory=1,terr_v3=1`, ohne und mit `terr_bread=0`):
+
+  | | neu (Brot-Lager) | alt (`terr_bread=0`) |
+  |---|---|---|
+  | Figuren erzeugt je Partie | 7,0 | 8,8 |
+  | geschlagen je Partie | 0,5 | 3,8 |
+  | Stufe 2 / 3 / 4 erreicht (Runde) | 33 / 60 / 84 (Stufe 4 in 33 von 40) | 25 / 41 / 57 (39 von 40) |
+  | Sieg erst nach der Wertung | 38 von 40 | 27 von 40 |
+  | Ernte je Partie Kat 1 / 2 / 3 | 38 / 16 / 97 | 56 / 30 / 0 |
+
+  Ehrlich gelesen: ohne den Flaechenbonus waechst die Flaeche deutlich langsamer, die Partien werden friedlicher und fast nie vor der
+  Wertung entschieden. Brot wird von den Bots reichlich geerntet (zwei Brot-Felder je Ecke gegen ein Eisen-Feld), aber nur zu einem
+  Teil ausgegeben; es ist heute eher Ueberschuss als Engpass. Naheliegende Stellschrauben, nicht gebaut: Brot zahlt einen Teil der
+  Stufen (Figur verbessern), weniger Brot-Felder je Ecke, hoehere Brotpreise.
+- **Offen: Fort-Karte** (Idee vom 18.11., *nicht* gebaut, wartet auf ein OK). Die Figur auf dem Fort zaehlt als ihre echte Stufe +1,
+  solange sie dort steht. Einschaetzung:
+  - *Was dafuer spricht*: ein Brettobjekt neben Fabrik und Koenig, sichtbar fuer beide, also Gegenspiel moeglich (wie beim Schach ein
+    vorgeschobener Posten). Es macht den Unterschied zwischen "Karte auf eine Figur" und "Karte auf ein Feld".
+  - *Problem 1, die Regel `terr_exact`*: eine Figur der Stufe n zieht **genau** n Felder geradeaus. "Stufe +1" waere deshalb kein
+    reiner Gewinn: ein Bauer auf dem Fort muesste genau 2 Felder ziehen und koennte keinen Nachbarn mehr schlagen. Vorschlag: auf dem
+    Fort darf die Figur **n oder n+1** Felder ziehen (spiegelbildlich zu *Kuerzer*, das n oder n-1 erlaubt).
+  - *Problem 2, "Stufe" kommt mehrfach vor*: Ertrag je Stufe (`terr_yield_lvl`), Unterhalt (Stufe oder Stufe^2), Verbesserungspreis und
+    die Wertung nach Runde 100 (Summe der Figurenstufen). Das Fort darf **nur die Zugweite** aendern; sonst waere "Fort auf ein
+    Brot-Feld" eine Gratis-Ernte mit +1 und die Wertung liesse sich mit Forts hochschrauben.
+  - *Problem 3, Stufe 4*: der Held bekaeme 5 Felder, mehr als jede andere Figur; Deckel bei 5 oder nur bis Stufe 3.
+  - *Problem 4, Gegenspiel*: Fort gilt nur fuer den Besitzer. Eine gegnerische Figur, die es betritt oder deren Land es kippt,
+    zerstoert es; auf nicht verbundenem Land (wehrlos) wirkt es nicht. Ohne diese Regel baut jeder ein Fort an der gegnerischen Grenze,
+    und der Koenig steht ploetzlich in Reichweite 5.
+  - *Vorschlag*: Schalter `terr_fort` (Standard aus), ein Fort je Spieler (neu kaufen = versetzen), Preis in Eisen (Bauten), z. B.
+    3 Eisen + 1 Brot, Platz: freies eigenes, verbundenes Feld ohne Figur, nie auf einem Vorkommen. Die Suchbots sehen die Wirkung ueber
+    `piece_destinations` von selbst, planen das Fort aber nicht; gemessen werden kann es erst mit eigener Bot-Logik oder `--gift`.
 
 ### Version 3.2 (Wuensche vom 17.11.2026)
 
@@ -883,7 +933,7 @@ Auf Wunsch zum Ausprobieren, nichts davon aendert Version 3: ohne Schalter spiel
 | `terr_delay` | **Verzoegerung**: *Sturmangriff* und *Doppelzug* wirken erst im **naechsten eigenen Zug**. Der Kauf legt sie "bereit" (`State::armed_charge`, `armed_extra`; der Viewer zeigt "Bereit bei A" oben im Lager). Bereitgestellt ist nur eines je Karte, solange es nicht gewirkt hat, kauft man dieselbe Karte nicht noch einmal. Der Kartentext nennt die Verzoegerung |
 | `terr_upkeep_sq` | **Unterhalt Stufe im Quadrat**: Bauer 1, Krieger 4, Ritter 9, Held 16 Flaeche je Runde (Koenig 0). Braucht `terr_upkeep`. Die Aufloesung bei Minus waehlt nach dem Unterhalt der Figur (`Piece::upkeep(squared)`) |
 | `terr_yield_lvl` | **Ertrag je Stufe**: eine Figur der Stufe n auf einem Vorkommen erntet n Stueck je Ernte statt 1 (`territory::yield_multiplier`). Braucht `terr_occupy` (die Figur steht auf dem Feld) |
-| `terr_bread=N` | **Brot als Lager**: Kat 3 wird alle N Runden geerntet (wie Eisen, nur mit eigener Figur auf dem Feld, Ertrag je Stufe zaehlt mit) und liegt im Lager der Fabrik; der 2^k-Flaechenbonus entfaellt (`Config::kat3_bonus_on`). Die Tempokarten kosten dann **Brot statt Eisen** (`Card::v3_price_bread`): Kuerzer 3 Brot (+0 Eisen, 0 Gold), Sprung 4, Durchzug 2, Sturmangriff 2 Gold + 2 Brot, Doppelzug 3 Gold + 4 Brot; die anderen Karten bleiben. `price.<karte>` schlaegt das weiterhin. Braucht `terr_cycle`; geht nicht zusammen mit `terr_trade` |
+| `terr_bread=N` | **Brot als Lager**: Kat 3 wird alle N Runden geerntet (wie Eisen, nur mit eigener Figur auf dem Feld, Ertrag je Stufe zaehlt mit) und liegt im Lager der Fabrik; der 2^k-Flaechenbonus entfaellt (`Config::kat3_bonus_on`). **Seit 3.3 Standard in Version 3 mit N = 3** (gleicher Takt wie Eisen, `set_v3`); `terr_bread=0` bringt den alten Stand. Die Kartenpreise sind dann ueber Eisen, Gold und Brot verteilt (`Card::v3_price_bread`, Tabelle oben); `price.<karte>` schlaegt das weiterhin. Braucht `terr_cycle`; geht nicht zusammen mit `terr_trade` |
 
 Probe-Spiele: Die Schalter gehen in 4 ganzen Partien auf 4 Brettern gleichzeitig durch (Test `whole_games_with_all_new_switches_keep_every_invariant_on_every_board`). **Messung**
 (Bots, nicht Menschen): *Brot als Lager* bremst das Hochstufen deutlich (weniger Gebaeudestufen bis Runde 100), weil Brot nur mit

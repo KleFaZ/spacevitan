@@ -516,6 +516,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         <div class="seg" id="qPreset" role="radiogroup" aria-labelledby="qPresetLabel">
           <button type="button" role="radio" aria-checked="false" data-preset="standard">Standard</button>
           <button type="button" role="radio" aria-checked="false" data-preset="ideas">Neue Regelideen</button>
+          <button type="button" role="radio" aria-checked="false" data-preset="oldbread">Alter Brot-Bonus</button>
           <button type="button" role="radio" aria-checked="false" data-preset="fast">Schnelle Partie</button>
           <button type="button" role="radio" aria-checked="false" data-preset="cards">Viele Karten</button>
         </div>
@@ -3644,7 +3645,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           `Figuren nur aus Fläche: ${[1, 2, 3, 4].map((l) => c.terr_pawn * Math.pow(c.terr_grow || 2, l - 1) * (l >= 2 ? c.terr_up_mult || 1 : 1)).join(" / ")}`,
           c.terr_bonus && !(c.terr_bread > 0) ? `Ernte alle ${(c.terr_ripen || []).slice(0, 2).map((n) => n || "jede").join(" / ")} Runden (Eisen / Gold)` : `Ernte alle ${per} Runden (Eisen / Gold / Brot)`,
           c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Eisen + ${c.terr_move_k2} Gold, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${rebuildDistOn() ? "ebenso nach Entfernung" : `${c.terr_rebuild} Runden`}` : "kein Fabrik-Umzug",
-          c.terr_bonus && !(c.terr_bread > 0) ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_bread > 0 ? `Brot im Lager: alle ${c.terr_bread} Runden geerntet, bezahlt die Tempokarten` : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
+          c.terr_bonus && !(c.terr_bread > 0) ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_bread > 0 ? `Brot im Lager: alle ${c.terr_bread} Runden geerntet (Figur muss draufstehen), bezahlt Tempo-Karten und Nachschub` : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
           c.terr_occupy ? (c.terr_control ? "Erntezähler läuft mit eigener Figur auf dem Feld oder in ihrem Einflussbereich" : "Erntezähler läuft nur mit eigener Figur auf dem Feld") : "Erntezähler läuft ohne Figur",
           c.terr_upkeep ? `Unterhalt: jede Figur kostet je Runde ${c.terr_upkeep_sq ? "ihre Stufe im Quadrat" : "ihre Stufe"} in Fläche (bei Minus löst sich eine Figur auf)` : "",
           c.terr_yield_lvl ? "Ertrag je Stufe: eine Figur der Stufe n erntet n Stück je Ernte" : "",
@@ -4021,14 +4022,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         pill: bonusOn()
           ? "Lager an der Fabrik: Eisen und Gold als Symbol mit Zahl (Brot wird nicht gelagert)."
           : breadOn()
-            ? "Lager an der Fabrik: Eisen, Gold und Brot als Symbol mit Zahl. Brot bezahlt die Tempokarten (Kürzer, Sprung, Durchzug, Sturmangriff, Doppelzug)."
+            ? "Lager an der Fabrik: Eisen, Gold und Brot als Symbol mit Zahl. Brot bezahlt vor allem Tempo und Nachschub (Kürzer, Ecke, Sprung, Durchzug, Siedeln, Doppelzug), Eisen Kampf und Bauten, Gold Dauerhaftes und den König."
             : "Lager an der Fabrik: Eisen, Gold, Brot als Symbol mit Zahl. Brot lässt sich in der Fabrik gegen Fläche tauschen: k Stück ergeben 2^k.",
         crystal: `Eisen (Kat 1), Hauptrohstoff. Die Zahl zählt herunter (alle ${pr[0] || 3} Runden): bei 0 erntet die Fabrik es einmal, dann beginnt der Zähler von vorn. Ohne stehende Fabrik oder ohne Anbindung steht der Zähler still; ein Umfärben setzt ihn zurück.${R.config.terr_occupy ? " Er läuft nur, solange am Ende deines Zugs eine eigene Figur auf dem Feld steht (Zahl grau mit Pausenbalken = er steht still)." : ""}`,
         ingot: `Gold (Kat 2, Goldbarren): wie Eisen, Erntezeit ${pr[1] || 10} Runden. Gold verbessert den König direkt (je zusätzlichem Zugfeld ${(R.king_up && R.king_up.price) || 1} Gold) und bezahlt Karten und den Fabrik-Umzug, wenn er etwas kosten soll.`,
         grain: bonusOn()
           ? "Brot (Kat 3, Laib): wird nicht geerntet. Jedes Brot-Feld auf deinem mit der Fabrik verbundenen Land zählt: k Felder bringen dir am Ende jedes Zugs zusätzlich 2^k Fläche (2, 4, 8, 16 …), ohne Zähler. Umfärben nimmt es dir."
           : breadOn()
-            ? `Brot (Kat 3, Laib): wie Eisen, aber alle ${R.config.terr_bread} Runden geerntet, solange eine eigene Figur auf dem Feld steht. Es liegt im Lager und bezahlt die Tempokarten (Kürzer, Sprung, Durchzug, Sturmangriff, Doppelzug).`
+            ? `Brot (Kat 3, Laib): wie Eisen, aber alle ${R.config.terr_bread} Runden geerntet, solange eine eigene Figur auf dem Feld steht. Es liegt im Lager und bezahlt vor allem Tempo und Nachschub (Kürzer, Ecke, Sprung, Durchzug, Siedeln, Doppelzug).`
           : `Brot (Kat 3, Laib): wie Eisen, Erntezeit ${pr[2] || 10} Runden. Das Lager tauscht es gegen Fläche: k Stück ergeben 2^k Fläche.`,
         helpless: "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an einer stehenden Fabrik hängt (zum Beispiel, solange die Fabrik im Bau ist): sie färbt nichts und kann nicht schlagen.",
       };
@@ -4598,7 +4599,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ] },
     { title: "Karten-Editor (Version 3)", wide: true, editor: true, note: "Jede Partie zieht die Karten des Marktes zufällig aus dem Kartenpool, deshalb ist jede Partie anders. Hier änderst du die Preise (leer = Standard), nimmst Karten aus dem Pool oder baust eigene Karten aus Bausteinen. Bausteine einer Karte wirken zusammen: „Ecke ×2“ ist doppelte Ecke (die letzten beiden Felder dürfen abbiegen). Der Königs-Boost liegt immer aus; seinen Preis stellst du unten bei „Gold je zusätzlichem Zugfeld“ ein.", fields: [] },
     { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400; in Version 3 ab Stufe 2 noch einmal doppelt: 200 / 400 / 800). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Die Rohstoffe heißen Eisen (Kat 1), Gold (Kat 2) und Brot (Kat 3); die Kachel trägt einen Rand in der Farbe des Vorkommens.", fields: [
-      { key: "terr_ver", label: "Regelstufe (3, 2 oder 1)", ph: () => "3", hint: () => "3 = Version 3 (Erntezähler, Fabrik-Umzug, Kat 3 als Flächenbonus); 2 = Version 2; 1 = Version 1 (Referenz: Zugweite bis n, Preise mit Rohstoffen, sofortiger Ertrag)." },
+      { key: "terr_ver", label: "Regelstufe (3, 2 oder 1)", ph: () => "3", hint: () => "3 = Version 3 (Erntezähler, Fabrik-Umzug, Brot als Lager); 2 = Version 2; 1 = Version 1 (Referenz: Zugweite bis n, Preise mit Rohstoffen, sofortiger Ertrag)." },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
       { key: "terr_grow", label: "Preisfaktor je Stufe", ph: () => "2", hint: () => "Stufe n kostet Bauer mal Faktor hoch (n−1): 50 / 100 / 200 / 400 (Version 3: ab Stufe 2 dazu der Faktor „Figurenpreis ab Stufe 2 mal“). 0 = Preise der Version 1 (nur mit Version 1 sinnvoll)." },
       { key: "terr_exact", label: "Genau n Felder ziehen", ph: () => "1", hint: () => "1 = Stufe n zieht genau n Felder geradeaus; 0 = bis n Felder frei um Ecken." },
@@ -4621,7 +4622,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_move_k2", label: "Umzug: Kat 2", ph: () => "0" },
       { key: "terr_rebuild", label: "Neubau nach Zerstörung (Runden)", ph: () => "3", hint: () => "Feste Bauzeit nach einer Zerstörung, wenn die Entfernungsregel unten aus ist (oder der alte Platz unbekannt ist)." },
       { key: "terr_rebuild_dist", label: "Neubau nach Entfernung", ph: () => "1", hint: () => "1 = auch nach einer Zerstörung zählt die Entfernung: halbe Strecke vom alten Platz der Fabrik bis zum König, aufgerundet, mindestens 1 Runde (wie beim Umzug). 0 = fest „Neubau nach Zerstörung“ Runden." },
-      { key: "terr_bonus", label: "Kat 3: 2^k Fläche je Runde", ph: () => "1", hint: () => "1 = k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich, Kat 3 wird nicht geerntet; 0 = Kat 3 wird wie Kat 1 geerntet." },
+      { key: "terr_bonus", label: "Kat 3: 2^k Fläche je Runde", ph: () => "1", hint: () => "1 = k verbundene Kat-3-Felder bringen je Runde 2^k Fläche zusätzlich, Kat 3 wird nicht geerntet. Wirkt nur, wenn „Brot im Lager“ auf 0 steht (seit 3.3 ist Brot ein Lager); 0 = Kat 3 wird wie Kat 1 geerntet." },
       { key: "terr_occupy", label: "Zähler nur mit eigener Figur", ph: () => "1", hint: () => "1 = der Erntezähler eines Feldes läuft nur, wenn am Ende deines Zugs eine eigene Figur (auch der König) darauf steht, sonst pausiert er (ohne Rückstellung); 0 = er läuft immer. Nur mit Erntezähler." },
       { key: "terr_cardany", label: "Karten auf jede eigene Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung wirken sofort auf eine eigene Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2, nicht auf den König); 0 = sie liegen neben der Fabrik und wirken auf die nächste gebaute Figur." },
       { key: "terr_stack", label: "Karten mehrfach auf eine Figur", ph: () => "1", hint: () => "1 = Kürzer, Ecke und Sprung dürfen mehrmals auf dieselbe Figur gelegt werden, so oft es Sinn hat (Stufe n höchstens n−1 mal: Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld); 0 = jede Karte nur einmal je Figur. Braucht „Karten auf jede eigene Figur“." },
@@ -4646,7 +4647,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_delay", label: "Verzögerung: Sturmangriff und Doppelzug", ph: () => "0", hint: () => "1 = beide Karten wirken erst in deinem nächsten Zug. Der Gegner sieht sie bereitliegen und kann reagieren. 0 = sie wirken sofort." },
       { key: "terr_upkeep_sq", label: "Unterhalt: Stufe im Quadrat", ph: () => "0", hint: () => "1 = eine Figur der Stufe n kostet je Runde n×n Fläche (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16). Braucht den Unterhalt." },
       { key: "terr_yield_lvl", label: "Ertrag je Stufe", ph: () => "0", hint: () => "1 = eine Figur der Stufe n erntet n Stück je Ernte (Takt bleibt gleich; Schmiede und Bergbau addieren danach ihr +1). Der König erntet einfach. Braucht „Zähler nur mit eigener Figur“." },
-      { key: "terr_bread", label: "Brot im Lager: Erntetakt (Runden)", ph: () => "0", hint: () => "0 = aus (Brot gibt 2^k Fläche). Eine Zahl N = Brot wird alle N Runden geerntet, solange eine eigene Figur darauf steht, und bezahlt die Tempokarten (Kürzer, Sprung, Durchzug, Sturmangriff, Doppelzug). Ohne den Brot-Bonus wächst die Fläche langsamer: Stufe 4 kommt in Bot-Partien um Runde 85 statt 57. Gut zum Start: 2." },
+      { key: "terr_bread", label: "Brot im Lager: Erntetakt (Runden)", ph: () => (menuVer() === 3 ? "3" : "0"), hint: () => "Standard in Version 3: 3 = Brot wird alle 3 Runden geerntet (gleicher Takt wie Eisen), solange eine eigene Figur darauf steht, und liegt im Lager. Die Karten kosten dann Eisen, Gold und Brot (Tempo und Nachschub vor allem Brot, Kampf und Bauten Eisen, der König Gold). 0 = aus: Brot bringt k verbundene Felder 2^k Fläche je Runde, die Karten kosten nur Eisen und Gold. Ohne den Brot-Bonus wächst die Fläche langsamer: Stufe 4 kommt in Bot-Partien um Runde 84 statt 57." },
     ] },
   ];
   // ----- Karten-Editor (Menue) -------------------------------------------------------------------
@@ -4659,8 +4660,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const PRICE_LABEL = ["Eisen", "Gold", "Brot"];
   const poolCards = () => (catalog ? catalog.cards.filter((c) => c.key !== "king_boost") : []);
   const cedBase = (key) => (catalog && catalog.cards.find((c) => c.key === key)) || null;
-  /** Mit Brot-Lager (Regel terr_bread) gelten die Brot-Standardpreise (Tempokarten kosten Brot statt Eisen). */
-  const breadRuleOn = () => { const el = $("rule_terr_bread"); return !!el && Number(el.value) > 0; };
+  /** Mit Brot-Lager (Regel terr_bread, Standard seit 3.3) gelten die auf Eisen, Gold und Brot verteilten Preise. */
+  const breadRuleOn = () => {
+    const el = $("rule_terr_bread");
+    if (!el) return false;
+    // leer = Standard der Regelstufe (ab Version 3.3 Brot im Lager); eine Zahl gilt immer
+    return el.value.trim() === "" ? menuVer() === 3 : Number(el.value) > 0;
+  };
   const cedPrice = (c) => (breadRuleOn() && c.price_bread ? c.price_bread : c.price);
   const priceText = (v) => v.map((n, i) => (n ? `${n}× ${PRICE_LABEL[i]}` : "")).filter(Boolean).join(" + ") || "gratis";
   /** Richtwert einer eigenen Karte: Summe der Preise ihrer Bausteine. */
@@ -4912,7 +4918,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     return { price, off, on, custom: customCards.map((c) => ({ name: c.name, parts: c.parts.map((p) => p.slice()), price: c.price.slice() })) };
   }
-  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), der Markt wird jede Partie zufällig aus einem großen Kartenpool gezogen (Preise in Eisen / Gold / Brot, im Karten-Editor änderbar, eigene Karten baubar; die Ecke darf nur am Ende des Wegs abbiegen), Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik kostenlos umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und k verbundene Brot-Felder (Kat 3) bringen jede Runde zusätzlich 2^k Fläche. Jede Figur kostet je Runde ihre Stufe an Unterhalt (bei Minus löst sich eine Figur auf), und der König wird direkt mit Gold verbessert.";
+  const MENU_NOTE = "Version 3 (Versuch, Version 1 und 2 sind über „Regelstufe“ im Menü weiter spielbar): Gebietsmodus wie Version 2, dazu Erntezähler je Rohstoff (Kat 1: 3, Kat 2: 5 Runden, einmal ernten, dann von vorn; er läuft nur mit einer eigenen Figur auf dem Feld), Karten wirken auf jede eigene Figur, auch mehrfach (die verbesserte Figur ruht in diesem Zug), der Markt wird jede Partie zufällig aus einem großen Kartenpool gezogen (Preise in Eisen / Gold / Brot, im Karten-Editor änderbar, eigene Karten baubar; die Ecke darf nur am Ende des Wegs abbiegen), Figuren ab Stufe 2 kosten doppelt, Kat 2 wird alle 5 Runden geerntet, weniger Rohstoffe plus einzeln und gleichmäßig verteiltes Kat 3, der König kann die Fabrik kostenlos umsetzen (Dauer = halbe Entfernung aufgerundet, währenddessen kein Ertrag und alles wehrlos) und Brot (Kat 3) ist ein Lager wie Eisen (alle 3 Runden geerntet, wenn eine eigene Figur auf dem Feld steht); die Kartenpreise sind auf Eisen, Gold und Brot verteilt. Jede Figur kostet je Runde ihre Stufe an Unterhalt (bei Minus löst sich eine Figur auf), und der König wird direkt mit Gold verbessert.";
   const MENU_KEY = "spacevitan-menu-v4";
   let menuOpen = false;
   const ruleInputs = () => [...document.querySelectorAll("#menu [data-rule]")];
@@ -5129,10 +5135,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const QUICK_BOTS = [0, 4, 3, 5];
   /** Regelpakete: nur belegte Felder; alles andere bleibt auf dem Standard der Version 3. */
   const QUICK_PRESETS = {
-    standard: { note: "Version 3 ohne Zusatzregeln, der am besten getestete Stand.", rules: {} },
+    standard: { note: "Version 3.3: Brot ist ein Lager wie Eisen (Zähler 3, Figur muss draufstehen), die Kartenpreise sind auf Eisen, Gold und Brot verteilt.", rules: {} },
     ideas: {
-      note: "Standard plus die vier neuen Schalter: Doppelzug und Sturmangriff wirken erst eine Runde nach dem Kauf, der Unterhalt wächst mit der Stufe zum Quadrat, der Ertrag eines Feldes wächst mit der Stufe der Figur darauf, und Brot ist ein Lager (alle 3 Runden geerntet), mit dem man die Tempokarten bezahlt. Brot macht das Hochstufen deutlich langsamer.",
-      rules: { terr_delay: 1, terr_upkeep_sq: 1, terr_yield_lvl: 1, terr_bread: 3 },
+      note: "Standard plus drei neue Schalter: Doppelzug und Sturmangriff wirken erst eine Runde nach dem Kauf, der Unterhalt wächst mit der Stufe zum Quadrat, und der Ertrag eines Feldes wächst mit der Stufe der Figur darauf (Brot ist seit 3.3 schon im Standard ein Lager).",
+      rules: { terr_delay: 1, terr_upkeep_sq: 1, terr_yield_lvl: 1 },
+    },
+    oldbread: {
+      note: "Der alte Stand bis 3.2: Brot ist kein Lager, sondern k verbundene Brot-Felder bringen 2^k Fläche je Runde. Die Karten kosten nur Eisen und Gold, die Fläche wächst schneller.",
+      rules: { terr_bread: 0 },
     },
     fast: { note: "Kleineres Brett (8 Felder je Kante) und Wertung schon nach Runde 40: kurze Partien zum Ausprobieren.", rules: { side: 8, score_after: 40 } },
     cards: { note: "12 Karten im Markt statt 2 je Spieler: viele Möglichkeiten, jede Partie wird stark von den Karten bestimmt.", rules: { market_size: 12 } },

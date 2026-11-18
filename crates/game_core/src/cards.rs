@@ -476,16 +476,26 @@ impl Card {
         }
     }
 
-    /// Preise mit Brot-Lager (`terr_bread`): die Tempokarten (Kuerzer, Sprung, Durchzug,
-    /// Sturmangriff, Doppelzug) kosten statt Eisen so viel Brot, alle anderen bleiben wie in
-    /// `v3_price`. Eisen ist dann fuer Raum und Dauer da, Gold fuer Dauerhaftes, Brot fuer Tempo.
+    /// Preise mit Brot-Lager (`terr_bread`, ab Version 3.3 der Standard), in Eisen / Gold / Brot.
+    /// Die drei Rohstoffe haben je eine Aufgabe: **Eisen** fuer Kampf und Bauten (Bauerndiagonale,
+    /// Sturmangriff, Fabrik ruecken, Schmelze), **Brot** fuer Bewegung und Nachschub (Kuerzer, Ecke,
+    /// Sprung, Durchzug, Doppelzug, Siedeln), **Gold** fuer Dauerhaftes und den Koenig (Bergbau,
+    /// Koenigs-Boost). Wer andere Preise will, setzt `price.<karte>=eisen/gold/brot`.
     pub fn v3_price_bread(self) -> [u32; 3] {
-        let [iron, gold, bread] = self.v3_price();
         match self {
-            Card::Shorten | Card::Hop | Card::Pass | Card::Charge | Card::DoubleMove => {
-                [0, gold, bread + iron]
-            }
-            _ => [iron, gold, bread],
+            Card::Shorten => [0, 0, 3],
+            Card::Bend => [0, 1, 2],
+            Card::Hop => [1, 0, 3],
+            Card::Pass => [1, 0, 1],
+            Card::PawnDiagonal => [3, 1, 0],
+            Card::Settle => [1, 2, 2],
+            Card::FactoryShift => [3, 0, 0],
+            Card::Charge => [3, 1, 0],
+            Card::Mining => [2, 3, 0],
+            Card::Smelter => [4, 1, 0],
+            Card::DoubleMove => [1, 2, 4],
+            Card::KingBoost => [0, 3, 0],
+            _ => [0, 0, 0],
         }
     }
 

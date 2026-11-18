@@ -22,9 +22,18 @@ fn v3_config(players: u8) -> Config {
     c
 }
 
+/// Version 3 ohne Besetzungsregel und mit dem alten Kat-3-Flaechenbonus `2^k` (`terr_bread=0`);
+/// seit Version 3.3 ist Brot standardmaessig ein Lager mit Erntezaehler.
+fn bonus_config() -> Config {
+    let mut c = open_config();
+    c.terr_bread = 0;
+    c
+}
+
 /// Alte Fassung: Kat 3 wird geerntet und gegen `2^k` Flaeche getauscht (statt Rundenbonus).
 fn v3_trade_config() -> Config {
     let mut c = open_config();
+    c.terr_bread = 0;
     c.terr_bonus = false;
     c.terr_trade = true;
     c
@@ -104,6 +113,12 @@ fn stock_gold(g: &mut Game, p: PlayerId, n: u32) {
     stock(g, p, k2, n);
 }
 
+/// Brot (Kategorie 3) in die Heimatfabrik legen (ab Version 3.3 bezahlen die Tempokarten damit).
+fn stock_bread(g: &mut Game, p: PlayerId, n: u32) {
+    let k3 = typ(g, 0, 3);
+    stock(g, p, k3, n);
+}
+
 /// Zugende fuer `p` ohne Aktion, wie nach einem Zug (nur der Ertrag).
 fn income(g: &mut Game, p: PlayerId) -> Vec<Event> {
     let mut events = Vec::new();
@@ -120,10 +135,10 @@ fn the_v3_switch_builds_on_v2_and_can_be_undone() {
     let mut cfg = Config::new(2, 1);
     cfg.set_all("territory=1,terr_v3=1").unwrap();
     assert!(cfg.terr_exact && cfg.terr_cards == 1 && cfg.terr_cycle);
-    assert!(
-        cfg.terr_bonus && !cfg.terr_trade,
-        "Kat 3 ist Rundenbonus, kein Tausch"
-    );
+    assert!(cfg.terr_bonus && !cfg.terr_trade, "Kat 3 ist kein Tausch");
+    assert_eq!(cfg.terr_bread, 3, "Brot ist ein Lager, Takt wie Eisen");
+    assert!(!cfg.kat3_bonus_on(), "und kein 2^k-Flaechenbonus mehr");
+    assert_eq!(cfg.terr_bread, cfg.terr_ripen[0], "Takt von Eisen");
     assert_eq!(cfg.terr_grow, 2);
     assert_eq!(
         cfg.terr_ripen,
@@ -167,8 +182,19 @@ fn the_v3_switch_builds_on_v2_and_can_be_undone() {
         both.validate().is_err(),
         "Bonus und Tausch schliessen sich aus"
     );
-    cfg.set_all("terr_bonus=0,terr_trade=1").unwrap();
+    let mut with_bread = cfg.clone();
+    with_bread.set_all("terr_bonus=0,terr_trade=1").unwrap();
+    assert!(
+        with_bread.validate().is_err(),
+        "Brot-Lager und Tausch schliessen sich aus"
+    );
+    cfg.set_all("terr_bread=0,terr_bonus=0,terr_trade=1")
+        .unwrap();
     assert!(cfg.validate().is_ok());
+    // Der Weg zurueck zum alten Flaechenbonus ist `terr_bread=0`.
+    let mut old = Config::new(2, 1);
+    old.set_all("territory=1,terr_v3=1,terr_bread=0").unwrap();
+    assert!(old.kat3_bonus_on() && old.validate().is_ok());
 }
 
 #[test]
@@ -739,7 +765,10 @@ fn connected_kat_three_fields_add_two_to_the_k_area_every_round() {
     let g0 = blank();
     let k3 = typ(&g0, 0, 3);
     let k1 = typ(&g0, 0, 1);
-    let mut g = with_deposits(&[((1, 0), k3), ((2, 0), k3), ((3, 0), k3), ((2, 0), k1)]);
+    let mut g = with_deposits_cfg(
+        bonus_config(),
+        &[((1, 0), k3), ((2, 0), k3), ((3, 0), k3), ((2, 0), k1)],
+    );
     strip(&mut g, P0, 3);
     assert_eq!(g.connected_kat3(P0), 3);
     let before = g.state.area[P0.idx()];
@@ -767,7 +796,7 @@ fn connected_kat_three_fields_add_two_to_the_k_area_every_round() {
 fn the_bonus_needs_connected_land_a_standing_factory_and_ownership() {
     let g0 = blank();
     let k3 = typ(&g0, 0, 3);
-    let mut g = with_deposits(&[((1, 0), k3), ((8, 8), k3), ((5, 5), k3)]);
+    let mut g = with_deposits_cfg(bonus_config(), &[((1, 0), k3), ((8, 8), k3), ((5, 5), k3)]);
     strip(&mut g, P0, 2);
     // Abgetrennt: gehoert A, haengt aber nicht an der Fabrik.
     paint(&mut g, P0, &[(8, 8)]);
@@ -796,7 +825,7 @@ fn bonus_and_trade_are_alternatives() {
     // Mit Bonus kommt kein Kat 3 ins Lager, also gibt es nichts zu tauschen.
     let g0 = blank();
     let k3 = typ(&g0, 0, 3);
-    let mut g = with_deposits(&[((1, 0), k3)]);
+    let mut g = with_deposits_cfg(bonus_config(), &[((1, 0), k3)]);
     strip(&mut g, P0, 2);
     for _ in 0..12 {
         income(&mut g, P0);
@@ -1412,11 +1441,20 @@ fn recolouring_still_starts_the_count_over_with_the_rule_on() {
 
 // ----- Karten auf jede eigene Einheit, auch auf schon gebaute -----------------------------------
 
-fn card_game(cards: &[crate::cards::Card]) -> Game {
+/// Wie `card_game`, aber ohne Brot im Lager: die Tests legen alles selbst hinein.
+fn card_game_no_bread(cards: &[crate::cards::Card]) -> Game {
     let mut g = v3_game(&[]);
     g.state.market = cards.to_vec();
     // Viel Flaeche, damit der Unterhalt der Testfiguren keine aufloest.
     g.state.area = vec![10_000; 2];
+    g
+}
+
+fn card_game(cards: &[crate::cards::Card]) -> Game {
+    let mut g = card_game_no_bread(cards);
+    // Brot gibt es reichlich; die Preise in Eisen und Gold legen die Tests selbst fest.
+    stock_bread(&mut g, P0, 40);
+    stock_bread(&mut g, P1, 40);
     g
 }
 
@@ -1467,8 +1505,9 @@ fn a_unit_card_goes_on_a_chosen_existing_unit_at_once() {
         "keine Karte neben der Fabrik"
     );
     assert_eq!(g.current_player(), P0, "Kaufen ist keine Aktion");
-    assert_eq!(storage_of(&g, P0, k1), 10, "Ecke kostet 2 Kat 1");
-    assert_eq!(storage_of(&g, P0, typ(&g, 0, 2)), 1, "und 1 Kat 2");
+    assert_eq!(storage_of(&g, P0, k1), 12, "Ecke kostet kein Eisen");
+    assert_eq!(storage_of(&g, P0, typ(&g, 0, 2)), 1, "sondern 1 Kat 2");
+    assert_eq!(storage_of(&g, P0, typ(&g, 0, 3)), 38, "und 2 Brot");
     assert!(events.iter().any(|e| matches!(
         e,
         Event::CardBought { card: Card::Bend, target: Some(t), .. } if *t == three
@@ -1934,15 +1973,71 @@ fn only_the_factory_shift_card_still_lies_beside_the_factory() {
 }
 
 #[test]
-fn version_3_cards_have_fixed_prices_in_iron_and_gold() {
+fn version_3_cards_have_fixed_prices_in_iron_gold_and_bread() {
     use crate::cards::Card;
     let g = card_game(&[Card::Bend]);
-    assert_eq!(g.territory_card_price(Card::Shorten), [3, 0, 0]);
-    assert_eq!(g.territory_card_price(Card::Hop), [4, 0, 0]);
-    // Seit der siebten Aenderung: feste Preise in Eisen / Gold / Brot, die Ecke kostet 2 Eisen + 1 Gold.
-    assert_eq!(g.territory_card_price(Card::Bend), [2, 1, 0]);
+    // Brot ist Standard: Tempo und Nachschub kosten Brot, Kampf und Bauten Eisen, Dauerhaftes Gold.
+    assert_eq!(g.territory_card_price(Card::Shorten), [0, 0, 3]);
+    assert_eq!(g.territory_card_price(Card::Bend), [0, 1, 2]);
+    assert_eq!(g.territory_card_price(Card::Hop), [1, 0, 3]);
+    assert_eq!(g.territory_card_price(Card::Pass), [1, 0, 1]);
+    assert_eq!(g.territory_card_price(Card::PawnDiagonal), [3, 1, 0]);
+    assert_eq!(g.territory_card_price(Card::Settle), [1, 2, 2]);
     assert_eq!(g.territory_card_price(Card::FactoryShift), [3, 0, 0]);
+    assert_eq!(g.territory_card_price(Card::Charge), [3, 1, 0]);
+    assert_eq!(g.territory_card_price(Card::Mining), [2, 3, 0]);
+    assert_eq!(g.territory_card_price(Card::Smelter), [4, 1, 0]);
+    assert_eq!(g.territory_card_price(Card::DoubleMove), [1, 2, 4]);
     assert_eq!(g.territory_card_price(Card::KingBoost), [0, 3, 0]);
+    // Mit `terr_bread=0` gibt es kein Brot im Lager: die alten Preise in Eisen und Gold gelten.
+    let mut old = g.config.clone();
+    old.set_all("terr_bread=0").unwrap();
+    let h = with_deposits_cfg(old, &[]);
+    assert_eq!(h.territory_card_price(Card::Shorten), [3, 0, 0]);
+    assert_eq!(h.territory_card_price(Card::Hop), [4, 0, 0]);
+    assert_eq!(h.territory_card_price(Card::Bend), [2, 1, 0]);
+    assert_eq!(h.territory_card_price(Card::FactoryShift), [3, 0, 0]);
+    assert_eq!(h.territory_card_price(Card::KingBoost), [0, 3, 0]);
+}
+
+#[test]
+fn the_bread_prices_spread_over_all_three_resources() {
+    use crate::cards::Card;
+    let cards = [
+        Card::Shorten,
+        Card::Bend,
+        Card::Hop,
+        Card::Pass,
+        Card::PawnDiagonal,
+        Card::Settle,
+        Card::FactoryShift,
+        Card::Charge,
+        Card::Mining,
+        Card::Smelter,
+        Card::DoubleMove,
+        Card::KingBoost,
+    ];
+    let uses = |i: usize| cards.iter().filter(|c| c.v3_price_bread()[i] > 0).count();
+    // Jeder Rohstoff wird von mehreren Karten gebraucht; keiner ist ueberfluessig.
+    assert!(uses(0) >= 6, "Eisen: {}", uses(0));
+    assert!(uses(1) >= 6, "Gold: {}", uses(1));
+    assert!(uses(2) >= 5, "Brot: {}", uses(2));
+    // Es gibt Karten, die vor allem Brot brauchen, und welche, die vor allem Eisen brauchen.
+    assert!(cards
+        .iter()
+        .any(|c| c.v3_price_bread()[2] > c.v3_price_bread()[0]));
+    assert!(cards
+        .iter()
+        .any(|c| c.v3_price_bread()[0] > c.v3_price_bread()[2]));
+    // Jede Karte hat einen Preis, und er blieb ungefaehr so hoch wie vor der Verteilung.
+    for c in cards {
+        let total: u32 = c.v3_price_bread().iter().sum();
+        let old: u32 = c.v3_price().iter().sum();
+        assert!(
+            total > 0 && total.abs_diff(old) <= 1,
+            "{c:?}: {total} vs {old}"
+        );
+    }
 }
 
 #[test]
@@ -2296,19 +2391,25 @@ fn one_corner_card_lets_the_last_field_turn_either_way() {
 }
 
 #[test]
-fn the_corner_card_costs_two_iron_and_one_gold() {
+fn the_corner_card_costs_one_gold_and_two_bread() {
     use crate::cards::Card;
-    let mut g = card_game(&[Card::Bend]);
+    let mut g = card_game_no_bread(&[Card::Bend]);
     let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
-    let k1 = typ(&g, 0, 1);
-    let k2 = typ(&g, 0, 2);
-    stock(&mut g, P0, k1, 2);
-    assert!(buys(&g).is_empty(), "ohne Gold nicht bezahlbar");
+    let (k1, k2, k3) = (typ(&g, 0, 1), typ(&g, 0, 2), typ(&g, 0, 3));
+    stock(&mut g, P0, k3, 1);
     stock(&mut g, P0, k2, 1);
-    assert_eq!(buys(&g).len(), 1);
+    assert!(buys(&g).is_empty(), "mit einem Brot nicht bezahlbar");
+    stock(&mut g, P0, k3, 1);
+    assert_eq!(buys(&g).len(), 1, "1 Gold und 2 Brot reichen");
+    let mut no_gold = card_game_no_bread(&[Card::Bend]);
+    no_gold.setup_unit(P0, c(&no_gold, 5, 5), 2, 2);
+    stock(&mut no_gold, P0, k3, 5);
+    assert!(buys(&no_gold).is_empty(), "ohne Gold nicht bezahlbar");
+    stock(&mut g, P0, k1, 5);
     buy(&mut g, Card::Bend, Some(unit));
-    assert_eq!(storage_of(&g, P0, k1), 0);
+    assert_eq!(storage_of(&g, P0, k1), 5, "Eisen bleibt unberuehrt");
     assert_eq!(storage_of(&g, P0, k2), 0);
+    assert_eq!(storage_of(&g, P0, k3), 0);
     assert_eq!(g.state.pieces[&unit].perks.bend, 1);
 }
 
@@ -2386,7 +2487,8 @@ fn the_smelter_and_mining_cards_double_a_harvest_for_good() {
     g.state.area = vec![10_000; 2];
     g.config.terr_occupy = false;
     strip(&mut g, P0, 2);
-    stock(&mut g, P0, k1, 3);
+    // Schmelze 4 Eisen + 1 Gold, Bergbau 2 Eisen + 3 Gold.
+    stock(&mut g, P0, k1, 6);
     stock(&mut g, P0, k2, 5);
     buy(&mut g, Card::Smelter, None);
     assert!(g.state.player_perks[0].smelter);
@@ -2398,7 +2500,7 @@ fn the_smelter_and_mining_cards_double_a_harvest_for_good() {
     assert_eq!(storage_of(&g, P0, k1) - before, 2, "Eisen doppelt");
     assert_eq!(
         storage_of(&g, P0, k2),
-        5 - 2,
+        5 - 1,
         "Gold noch nicht gewachsen (3 von 5 Runden)"
     );
     g.state.bought_this_turn = false;
@@ -2407,8 +2509,8 @@ fn the_smelter_and_mining_cards_double_a_harvest_for_good() {
     for _ in 0..2 {
         income(&mut g, P0);
     }
-    // 5 Gold - 2 (Schmiede) - 3 (Bergbau) = 0, dazu die doppelte Ernte von 2.
-    assert_eq!(storage_of(&g, P0, k2), 2, "Gold doppelt");
+    // 5 Gold - 1 (Schmelze) - 3 (Bergbau) = 1, dazu die doppelte Ernte von 2.
+    assert_eq!(storage_of(&g, P0, k2), 3, "Gold doppelt");
     // Beide Karten liegen danach nicht mehr aus: schon vorhanden.
     g.state.bought_this_turn = false;
     assert!(buys(&g).is_empty());
@@ -2421,8 +2523,9 @@ fn the_charge_card_adds_a_field_to_every_move_for_one_turn() {
     let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
     let k1 = typ(&g, 0, 1);
     let k2 = typ(&g, 0, 2);
-    stock(&mut g, P0, k1, 2);
-    stock(&mut g, P0, k2, 2);
+    // Sturmangriff: 3 Eisen + 1 Gold.
+    stock(&mut g, P0, k1, 3);
+    stock(&mut g, P0, k2, 1);
     let far = c(&g, 5, 8);
     assert!(!g.piece_destinations(unit).contains(&far));
     buy(&mut g, Card::Charge, None);
@@ -2757,8 +2860,8 @@ fn a_delayed_charge_works_only_in_the_next_own_turn() {
     g.config.terr_delay = true;
     let unit = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
     let (k1, k2) = (typ(&g, 0, 1), typ(&g, 0, 2));
-    stock(&mut g, P0, k1, 2);
-    stock(&mut g, P0, k2, 2);
+    stock(&mut g, P0, k1, 3);
+    stock(&mut g, P0, k2, 1);
     let far = c(&g, 5, 8);
     buy(&mut g, Card::Charge, None);
     assert!(!g.state.charge, "noch nicht im selben Zug");
@@ -2829,7 +2932,7 @@ fn the_delay_is_a_switch_that_is_off_by_default_and_changes_the_card_text() {
     use crate::cards::Card;
     let mut cfg = Config::new(2, 1);
     cfg.set_all("territory=1,terr_v3=1").unwrap();
-    assert!(!cfg.terr_delay && !cfg.terr_upkeep_sq && !cfg.terr_yield_lvl && cfg.terr_bread == 0);
+    assert!(!cfg.terr_delay && !cfg.terr_upkeep_sq && !cfg.terr_yield_lvl && cfg.terr_bread == 3);
     cfg.set_all("terr_delay=1").unwrap();
     assert!(cfg.terr_delay);
     let g = with_deposits_cfg(cfg, &[]);
@@ -2966,11 +3069,11 @@ fn with_the_bread_stock_kat3_is_harvested_into_the_factory_and_pays_cards() {
         "kein 2^k-Bonus mehr"
     );
     assert_eq!(g.connected_kat3(P0), 0);
-    // Die Tempokarten kosten jetzt Brot, die anderen weiter Eisen.
+    // Brot bezahlt Tempo und Nachschub, Eisen Kampf und Bauten.
     assert_eq!(g.territory_card_price(Card::Shorten), [0, 0, 3]);
-    assert_eq!(g.territory_card_price(Card::Pass), [0, 0, 2]);
-    assert_eq!(g.territory_card_price(Card::DoubleMove), [0, 3, 4]);
-    assert_eq!(g.territory_card_price(Card::Bend), [2, 1, 0]);
+    assert_eq!(g.territory_card_price(Card::Pass), [1, 0, 1]);
+    assert_eq!(g.territory_card_price(Card::DoubleMove), [1, 2, 4]);
+    assert_eq!(g.territory_card_price(Card::Bend), [0, 1, 2]);
     // Ein eigener Preis hat Vorrang.
     let mut cfg = g.config.clone();
     cfg.set_all("price.shorten=1/0/1").unwrap();
@@ -2979,9 +3082,51 @@ fn with_the_bread_stock_kat3_is_harvested_into_the_factory_and_pays_cards() {
 }
 
 #[test]
+fn bread_is_a_store_by_default_with_the_counter_of_iron_and_needs_a_piece_on_the_field() {
+    let g0 = v3_game(&[]);
+    let (k1, k3) = (typ(&g0, 0, 1), typ(&g0, 0, 3));
+    // Eisen und Brot liegen auf je einem eigenen Feld neben der Fabrik, beide Regeln wie geliefert.
+    let mut g = v3_game(&[((1, 0), k1), ((2, 0), k3)]);
+    assert_eq!(g.config.terr_bread, g.config.terr_ripen[0], "gleicher Takt");
+    strip(&mut g, P0, 2);
+    give_area(&mut g, P0, 10_000);
+    // Ohne Figur auf den Feldern laeuft kein Zaehler, weder bei Eisen noch bei Brot.
+    for _ in 0..6 {
+        income(&mut g, P0);
+    }
+    assert_eq!(storage_of(&g, P0, k1), 0);
+    assert_eq!(storage_of(&g, P0, k3), 0, "Brot muss besetzt sein");
+    // Mit je einer Figur drauf: nach 3 Runden je ein Stueck, gleichzeitig.
+    g.setup_unit(P0, c(&g, 1, 0), 1, 1);
+    g.setup_unit(P0, c(&g, 2, 0), 1, 1);
+    for _ in 0..2 {
+        income(&mut g, P0);
+    }
+    assert_eq!(storage_of(&g, P0, k1), 0);
+    assert_eq!(storage_of(&g, P0, k3), 0);
+    income(&mut g, P0);
+    assert_eq!(storage_of(&g, P0, k1), 1, "Eisen nach 3 Runden");
+    assert_eq!(storage_of(&g, P0, k3), 1, "Brot nach 3 Runden");
+    // Es gibt keinen 2^k-Flaechenbonus fuer Brot.
+    assert_eq!(g.connected_kat3(P0), 0);
+}
+
+#[test]
+fn the_default_price_table_can_still_be_overridden_per_card_in_all_three_resources() {
+    use crate::cards::Card;
+    let mut cfg = v3_config(2);
+    cfg.set_all("price.shorten=2/1/4,price.king_boost=1/2/0")
+        .unwrap();
+    let g = with_deposits_cfg(cfg, &[]);
+    assert_eq!(g.territory_card_price(Card::Shorten), [2, 1, 4]);
+    assert_eq!(g.territory_card_price(Card::KingBoost), [1, 2, 0]);
+    assert_eq!(g.territory_card_price(Card::Hop), [1, 0, 3], "Rest bleibt");
+}
+
+#[test]
 fn bread_cards_can_only_be_bought_with_bread_in_the_store() {
     use crate::cards::Card;
-    let mut g = card_game(&[Card::Shorten]);
+    let mut g = card_game_no_bread(&[Card::Shorten]);
     g.config.terr_bread = 2;
     let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
     let (k1, k3) = (typ(&g, 0, 1), typ(&g, 0, 3));

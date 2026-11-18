@@ -65,10 +65,12 @@ Optionen:
                  settle, factory_shift, charge, mining, smelter, double_move, king_boost,
                  pawn_diagonal (nur Bauer); charge und double_move liegen standardmaessig
                  nicht im Markt (pool.charge=1 legt sie zurueck)
-                 Version 3.1 (alle Standard aus): terr_delay (Sturmangriff und Doppelzug wirken
+                 Version 3.1 (Standard aus): terr_delay (Sturmangriff und Doppelzug wirken
                  erst im naechsten eigenen Zug), terr_upkeep_sq (Unterhalt = Stufe im Quadrat),
-                 terr_yield_lvl (Figur der Stufe n erntet n Stueck), terr_bread=N (Brot wird alle
-                 N Runden geerntet und liegt im Lager; Tempokarten kosten dann Brot)
+                 terr_yield_lvl (Figur der Stufe n erntet n Stueck)
+                 Version 3.3: terr_bread=N (Standard 3 = wie Eisen: Brot wird alle N Runden mit
+                 einer Figur auf dem Feld geerntet und liegt im Lager; die Karten kosten Eisen,
+                 Gold und Brot); terr_bread=0 = der alte 2^k-Flaechenbonus
   --bots LISTE   pro Spieler: sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),
                  stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,
