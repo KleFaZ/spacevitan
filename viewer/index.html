@@ -711,6 +711,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const problems = [];
   function reportProblem(where, err) {
     const msg = String((err && err.message) || err || "unbekannt").slice(0, 160);
+    // Harmlose Browser-Warnung ("Groesse hat sich waehrend der Anzeige nochmal geaendert"), kein Fehler.
+    if (/ResizeObserver loop/i.test(msg)) return;
     const line = err && err.stack ? (String(err.stack).match(/:(\d+):\d+\)?\s*$/m) || [])[1] : "";
     const text = `${where}: ${msg}${line ? ` (Zeile ${line})` : ""}`;
     if (!problems.includes(text)) problems.push(text);
@@ -5915,7 +5917,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     else if (e.key === "Home") { setPlaying(false); goTo(0, false); }
     else if (e.key === "End") { setPlaying(false); goTo(R.frames.length - 1, false); }
   });
-  new ResizeObserver(() => { if (R) { layout(); requestAnimationFrame(draw); } }).observe(canvas.parentElement);
+  // Die Groesse erst im naechsten Bild neu rechnen: `layout()` aendert die Zeichenflaeche und damit wieder die
+  // Groesse des Elternelements; im selben Bild ausgefuehrt meldet der Browser "ResizeObserver loop completed".
+  let resizeQueued = false;
+  new ResizeObserver(() => {
+    if (resizeQueued) return;
+    resizeQueued = true;
+    requestAnimationFrame(() => {
+      resizeQueued = false;
+      if (R) { safely("Groesse anpassen", layout); requestAnimationFrame(draw); }
+    });
+  }).observe(canvas.parentElement);
   const scheme = window.matchMedia("(prefers-color-scheme: dark)");
   if (scheme.addEventListener) scheme.addEventListener("change", () => requestAnimationFrame(draw));
   new MutationObserver(() => requestAnimationFrame(draw)).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });

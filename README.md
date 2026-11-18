@@ -905,7 +905,8 @@ fest, nicht den Wert: Die Werte bleiben 1, 1/2 und 1/4, aber **Moor ist ein Vier
   Gemessen (nativ, Release): schlechtester Fall 5 Spieler 82 auf 4 ms, 8 Spieler 21 auf 12 ms. Ob das die gemeldete Stoerung war, ist
   **nicht bewiesen**; nachgestellt werden konnte sie weder im Browser noch nativ.
 - **Fehlerleiste im Viewer**: Unerwartete Fehler (Zeichnen, Anzeige, Bot-Zug anzeigen) erscheinen als rote Leiste oben (Antippen blendet
-  sie aus) und halten die Bots nicht mehr an: der Zug ist im Spielkern schon gespielt, scheitert nur die Anzeige, laeuft die Partie weiter.
+  sie aus; die harmlose Browser-Meldung "ResizeObserver loop completed" wird nicht angezeigt, und der Beobachter rechnet die Groesse jetzt im
+  naechsten Bild statt sofort, dann tritt sie gar nicht mehr auf) und halten die Bots nicht mehr an: der Zug ist im Spielkern schon gespielt, scheitert nur die Anzeige, laeuft die Partie weiter.
 - **Offen**: eine eigene Gelaende-Wirkung auf Bewegung (Moor bremst) wurde nicht gebaut, das waere eine zweite Idee. Die Anteile und das
   Rauschen sind Konstanten in `terrain.rs`, noch kein Menuefeld.
 
