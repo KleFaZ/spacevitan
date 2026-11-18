@@ -878,6 +878,8 @@ aendern, und man kann eigene Karten bauen.
   Wertung entschieden. Brot wird von den Bots reichlich geerntet (zwei Brot-Felder je Ecke gegen ein Eisen-Feld), aber nur zu einem
   Teil ausgegeben; es ist heute eher Ueberschuss als Engpass. Naheliegende Stellschrauben, nicht gebaut: Brot zahlt einen Teil der
   Stufen (Figur verbessern), weniger Brot-Felder je Ecke, hoehere Brotpreise.
+- **Viewer-Korrektur nebenbei**: Der Kaufdialog schrieb bei *Bergbau*, *Schmiede*, *Sturmangriff* und *Doppelzug* faelschlich "Die Figur
+  darf danach in diesem Zug nicht ziehen". Diese Sofort-Karten sperren keine Figur (die Engine tat das nie), der Satz ist weg.
 - **Offen: Fort-Karte** (Idee vom 18.11., *nicht* gebaut, wartet auf ein OK). Die Figur auf dem Fort zaehlt als ihre echte Stufe +1,
   solange sie dort steht. Einschaetzung:
   - *Was dafuer spricht*: ein Brettobjekt neben Fabrik und Koenig, sichtbar fuer beide, also Gegenspiel moeglich (wie beim Schach ein

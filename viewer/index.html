@@ -3622,7 +3622,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Was ein Kauf dieser Karte den Zug kostet (Version 3: Sperre der Figur oder ganzer Zug). */
   function lockNote(c) {
-    if (!isTerr() || c.key === "factory_shift") return "";
+    // Sofort-Karten (Sturmangriff, Doppelzug, Bergbau, Schmiede) und "Fabrik ruecken" sperren keine Figur
+    if (!isTerr() || c.key === "factory_shift" || ["charge", "double_move", "mining", "smelter"].includes(c.key)) return "";
     const mode = cardLockMode();
     if (mode === 1) return c.key === "king_boost" ? "Der König darf danach in diesem Zug nicht ziehen." : "Die Figur darf danach in diesem Zug nicht ziehen.";
     if (mode === 2) return "Der Kauf ist dein ganzer Zug.";
