@@ -853,6 +853,33 @@ aendern, und man kann eigene Karten bauen.
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
 
+### Version 3.4: Gelaende (`terr_terrain`, Standard aus; Wunsch vom 18.11.2026)
+
+Jedes Feld ist **Feld** (zaehlt 1 Flaeche), **Wald** (1/2) oder **Moor** (1/4). Das ist die einzige Wirkung: es aendert, wie viel
+Flaeche ein Feld im Einkommen bringt. Rohstoffe, Erntezaehler, Zugweite und Wertung bleiben, wie sie sind. Im Menue: *Erweiterte
+Einstellungen → Gelaende*, und im Paket *Neue Regelideen* ist es eingeschaltet. Standard ist es **aus**, weil es die Wirtschaft aendert
+(siehe Messung) und noch niemand damit gespielt hat.
+
+- **Rechnung**: in Vierteln (`Terrain::quarters`: Feld 4, Wald 2, Moor 1). Das Einkommen je Runde ist die Summe der Viertel aller mit der
+  Fabrik verbundenen Felder durch 4; der Rest unter einer ganzen Flaeche wird in die naechste Runde uebertragen (`State::area_rest`,
+  0 bis 3), damit nichts verloren geht. Fabrik zerstoert oder Land vergessen setzt den Rest auf 0. Die Preise bleiben in ganzen Flaechen.
+  Die Anzeige im Viewer rechnet mit Bruchteilen (zum Beispiel "+3,5").
+- **Verteilung** (`crates/game_core/src/terrain.rs`): eigener Zufallsstrom aus dem Seed, die Rohstoffe liegen mit und ohne Gelaende an
+  denselben Stellen (Test `terrain_does_not_move_a_single_deposit`). Je Gebiet (Ecke) gleich viele Waldfelder (24 % der freien Felder) und
+  Moorfelder (12 %), in zusammenhaengenden Flecken (Wald bis 6, Moor bis 4 Felder). Felder bis Abstand 2 vom Start bleiben Feld. Von 200
+  Verteilungen gewinnt die mit dem kleinsten Unterschied im Flaechenwert rund um die Startecken der Spieler: gemessen hoechstens 4 Viertel
+  (ein volles Feld) bei rund 90 im Umkreis, ueber 2 bis 6 Spieler und je 20 Seeds (Test `the_land_value_around_each_start_is_nearly_equal`).
+  Auf dem 10er-Quadrat sind das rund 16 Wald- und 8 Moorfelder von 100.
+- **Anzeige**: Wald hat einen gruenlichen Hintergrund mit drei Tannen, Moor einen violetten mit Schilf und Wellenlinie. Liegt ein
+  Vorkommen, eine Figur oder Fabrik auf dem Feld, bleibt ein kleines Abzeichen unten rechts. Die Legende hat eine Zeile dazu, die
+  Feldinfo (Maus oder Antippen) nennt Art und Wert. Das Gelaende steht im Replay-Kopf als `terrain` (0 Feld, 1 Wald, 2 Moor je Feld).
+- **Bots** werten Land nach seinem Flaechenwert (`Game::land_quarters` in `area_bot.rs` und `ai.rs`); ohne Schalter ist alles wie vorher.
+- **Messung** (2 Bots `flaeche`, 80 Partien, Version 3): ohne Gelaende erste Figur Stufe 2 in Runde 33,7, Stufe 3 in 59,5, Stufe 4 in 83
+  (in 63 von 80 Partien erreicht); mit Gelaende 35,6, 65,4 und 87,5 (in 42 von 80). Es bremst also ungefaehr um ein Siebtel, Partien
+  laufen weiter bis zur Wertung nach Runde 100. Das ist die Stellschraube, wenn es zu langsam wird: kleinere Anteile oder billigere Stufen.
+- **Offen**: eine eigene Gelaende-Wirkung auf Bewegung (Moor bremst) wurde nicht gebaut, das waere eine zweite Idee. Die Anteile
+  (24 % / 12 %) und Flecken sind Konstanten in `terrain.rs`, noch kein Menuefeld.
+
 ### Version 3.3 (Wuensche vom 18.11.2026)
 
 - **Brot ist ein Lager mit Erntezaehler wie Eisen und muss besetzt sein** (`terr_bread=3` in `Config::set_v3`; vorher nur ein
@@ -929,9 +956,8 @@ Noch nicht gebaut, bewusst offen:
 
 - **Timer** (erst sinnvoll mit echtem Mehrspieler): Optionen sind feste Zeit je Zug (etwa 10 s), Gesamtzeit mit Zuschlag je Zug wie
   bei Lichess oder gleichzeitige Zuege nach 10 s. Premoves entschaerfen kurze Timer, weil man vorplanen kann.
-- **Gelaendekarten** (Feld = 1, Wald = 1/2, Moor = 1/4 Flaechenwert, mit eigenem Hintergrund): Idee, nicht umgesetzt. Rechnerisch am
-  einfachsten in Vierteln (Feld 4, Wald 2, Moor 1), damit alles ganzzahlig bleibt; beruehrt Einkommen, Preise, Bots, Kartenerzeugung
-  und Anzeige und braucht eine Messung wie die Karten, daher erst als Schalter (Standard aus).
+- **Gelaendekarten** (Felder mit eigener Art): seit Version 3.4 umgesetzt, siehe dort (`terr_terrain`). Eine *Karte*, die Gelaende
+  verteilt oder verwandelt, gibt es nicht; das Gelaende liegt von Anfang an fest auf dem Brett.
 
 ### Version 3.1 (vier Schalter, alle Standard aus)
 
