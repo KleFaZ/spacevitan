@@ -114,6 +114,11 @@ pub enum Event {
         target: Option<PieceId>,
         paid: Inventory,
     },
+    /// Version 3.3: das Fort von `player` ist zerstoert (sein Feld gehoert jetzt jemand anderem).
+    FortLost {
+        player: PlayerId,
+        cell: CellId,
+    },
     /// Rekrut: ein Bauer neben der Fabrik.
     Recruited {
         piece: PieceId,

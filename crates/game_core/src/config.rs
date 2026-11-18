@@ -210,6 +210,10 @@ pub struct Config {
     /// Ab Version 3.3 ist das mit `n = 3` (gleicher Takt wie Eisen) der Standard von `set_v3`;
     /// 0 = aus (Kat 3 zaehlt wieder als Flaechenbonus `2^k`).
     pub terr_bread: u32,
+    /// Version 3.3: die Karte Fort liegt im Markt. Sie setzt ein Fort auf das Feld einer gewaehlten
+    /// eigenen Figur; eine eigene Figur (nie der Koenig) auf dem Fort zieht `n` oder `n + 1` Felder.
+    /// Braucht `terr_cardset3` und `terr_cardany`. Standard aus.
+    pub terr_fort: bool,
     /// Eigene Preise, Karten, die nicht gezogen werden, und selbst gebaute Karten (Version 3).
     pub card_tweaks: crate::cards::CardTweaks,
     /// Brettform unabhaengig von der Spielerzahl: 0 = wie bisher nach Spielerzahl, sonst die
@@ -321,6 +325,7 @@ impl Config {
             terr_upkeep_sq: false,
             terr_yield_lvl: false,
             terr_bread: 0,
+            terr_fort: false,
             card_tweaks: crate::cards::CardTweaks::standard(),
             board_corners: 0,
         }
@@ -482,6 +487,7 @@ impl Config {
             "terr_upkeep_sq" => self.terr_upkeep_sq = value != 0,
             "terr_yield_lvl" => self.terr_yield_lvl = value != 0,
             "terr_bread" => self.terr_bread = as_u32(value)?,
+            "terr_fort" => self.terr_fort = value != 0,
             "board_corners" => self.board_corners = as_u32(value)?.min(255) as u8,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
@@ -656,6 +662,11 @@ impl Config {
         if self.terr_bread > 0 && !self.terr_cycle {
             return Err(ConfigError::Invalid(
                 "terr_bread braucht terr_cycle (den Erntezaehler)",
+            ));
+        }
+        if self.terr_fort && !(self.territory && self.terr_cardset3 && self.terr_cardany) {
+            return Err(ConfigError::Invalid(
+                "terr_fort braucht den Kartensatz von Version 3 (terr_cardset3) und Karten auf Figuren (terr_cardany)",
             ));
         }
         if self.terr_upkeep_sq && !self.terr_upkeep {

@@ -3164,7 +3164,7 @@ fn whole_games_with_all_new_switches_keep_every_invariant_on_every_board() {
         cfg.max_rounds = 60;
         cfg.score_after = 60;
         cfg.market_size = 11;
-        cfg.set_all("terr_delay=1,terr_upkeep_sq=1,terr_yield_lvl=1,terr_bread=2")
+        cfg.set_all("terr_delay=1,terr_upkeep_sq=1,terr_yield_lvl=1,terr_bread=2,terr_fort=1")
             .unwrap();
         let mut g = Game::new(cfg).unwrap_or_else(|e| panic!("{players}p {corners}e: {e:?}"));
         let mut bots: Vec<Box<dyn Bot>> = (0..players)
@@ -3185,4 +3185,238 @@ fn whole_games_with_all_new_switches_keep_every_invariant_on_every_board() {
             assert!(steps < 30_000);
         }
     }
+}
+
+// ----- Version 3.3: die Karte Fort (`terr_fort`) --------------------------------------------------
+
+/// Version 3 mit `terr_fort`, viel Flaeche, ein eigener Streifen Land von der Fabrik bis (6,0).
+fn fort_game() -> Game {
+    let mut cfg = v3_config(2);
+    cfg.set_all("terr_fort=1").unwrap();
+    let mut g = with_deposits_cfg(cfg, &[]);
+    g.state.area = vec![10_000; 2];
+    strip(&mut g, P0, 6);
+    g
+}
+
+/// Zahlt der Spieler 0 das Fort (3 Eisen + 1 Brot).
+fn fort_money(g: &mut Game) {
+    let (k1, k3) = (typ(g, 0, 1), typ(g, 0, 3));
+    stock(g, P0, k1, 3);
+    stock(g, P0, k3, 1);
+}
+
+fn fort_buy(g: &mut Game, piece: PieceId) {
+    let fid = g.home_factory(P0).unwrap().id;
+    g.apply(Action::BuyCard {
+        card: crate::cards::Card::Fort,
+        from: crate::action::PaySource::Factory(fid),
+        target: Some(piece),
+    })
+    .unwrap();
+}
+
+#[test]
+fn the_fort_is_a_switch_that_is_off_by_default_and_needs_the_version_3_cards() {
+    use crate::cards::Card;
+    let plain = v3_game(&[]);
+    assert!(!plain.config.terr_fort);
+    assert!(
+        !plain.state.market.contains(&Card::Fort),
+        "ohne Schalter kein Fort"
+    );
+    let g = fort_game();
+    assert!(
+        g.state.market.contains(&Card::Fort),
+        "mit Schalter liegt es immer aus"
+    );
+    assert_eq!(g.territory_card_price(Card::Fort), [3, 0, 1]);
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1,terr_fort=1").unwrap();
+    assert!(cfg.validate().is_ok());
+    cfg.set_all("terr_cardany=0").unwrap();
+    assert!(cfg.validate().is_err(), "Fort braucht Karten auf Figuren");
+    cfg.set_all("terr_cardany=1,terr_cardset3=0").unwrap();
+    assert!(
+        cfg.validate().is_err(),
+        "Fort braucht den Kartensatz von Version 3"
+    );
+}
+
+#[test]
+fn buying_the_fort_puts_it_under_the_chosen_piece_and_locks_that_piece() {
+    use crate::cards::Card;
+    let mut g = fort_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    fort_money(&mut g);
+    let fid = g.home_factory(P0).unwrap().id;
+    let buy_unit = Action::BuyCard {
+        card: Card::Fort,
+        from: crate::action::PaySource::Factory(fid),
+        target: Some(unit),
+    };
+    assert!(g.legal_actions().contains(&buy_unit));
+    // Der Koenig und ein Fabrikfeld kommen nie in Frage.
+    let king = king_id(&g, P0);
+    assert!(!g.legal_actions().iter().any(|a| matches!(
+        a,
+        Action::BuyCard { card: Card::Fort, target: Some(t), .. } if *t == king
+    )));
+    g.apply(buy_unit).unwrap();
+    assert_eq!(g.state.forts[P0.idx()], Some(c(&g, 3, 0)));
+    assert_eq!(storage_of(&g, P0, typ(&g, 0, 1)), 0);
+    assert_eq!(storage_of(&g, P0, typ(&g, 0, 3)), 0);
+    assert!(
+        g.piece_destinations(unit).is_empty(),
+        "die Figur ruht in diesem Zug"
+    );
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn a_piece_on_the_fort_moves_n_or_n_plus_one_fields() {
+    let mut g = fort_game();
+    let two = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    let near = c(&g, 3, 2);
+    let far = c(&g, 3, 3);
+    assert!(g.piece_destinations(two).contains(&near));
+    assert!(
+        !g.piece_destinations(two).contains(&far),
+        "ohne Fort nur genau 2"
+    );
+    fort_money(&mut g);
+    fort_buy(&mut g, two);
+    g.state.card_lock = None;
+    let dests = g.piece_destinations(two);
+    assert!(
+        dests.contains(&near) && dests.contains(&far),
+        "auf dem Fort 2 oder 3"
+    );
+    assert!(!dests.contains(&c(&g, 3, 4)), "nicht 4");
+    // Ein Bauer zieht dort 1 oder 2 Felder.
+    let mut h = fort_game();
+    let pawn = h.setup_unit(P0, c(&h, 3, 0), 1, 1);
+    fort_money(&mut h);
+    fort_buy(&mut h, pawn);
+    h.state.card_lock = None;
+    let d = h.piece_destinations(pawn);
+    assert!(d.contains(&c(&h, 3, 1)) && d.contains(&c(&h, 3, 2)));
+    assert!(!d.contains(&c(&h, 3, 3)));
+}
+
+#[test]
+fn the_fort_stays_behind_and_serves_any_own_piece_but_never_the_king() {
+    let mut g = fort_game();
+    let a = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    let other = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    fort_money(&mut g);
+    fort_buy(&mut g, a);
+    g.state.card_lock = None;
+    // Eine eigene Figur neben dem Fort hat keinen Vorteil.
+    assert!(
+        !g.piece_destinations(other).contains(&c(&g, 5, 8)),
+        "weg vom Fort: genau 2"
+    );
+    // Die Figur auf dem Fort zieht weg: das Fort bleibt stehen.
+    let step = Action::Move {
+        piece: a,
+        to: c(&g, 6, 0),
+    };
+    assert!(g.legal_actions().contains(&step), "3 Felder von dort");
+    g.apply(step).unwrap();
+    assert_eq!(g.state.forts[P0.idx()], Some(c(&g, 3, 0)));
+    assert!(
+        !g.piece_destinations(a).contains(&c(&g, 6, 3)),
+        "nach dem Wegziehen wieder genau 2"
+    );
+    // Eine andere eigene Figur auf dem Fort bekommt es; der Koenig nicht.
+    let b = g.setup_unit(P0, c(&g, 3, 0), 3, 3);
+    assert!(
+        g.piece_destinations(b).contains(&c(&g, 3, 4)),
+        "Stufe 3 auf dem Fort: 4 Felder"
+    );
+    let king = g.state.pieces[&king_id(&g, P0)].clone();
+    assert_eq!(g.fort_bonus(&king), 0);
+}
+
+#[test]
+fn a_new_fort_moves_the_old_one_and_each_player_has_only_one() {
+    let mut g = fort_game();
+    let a = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    let b = g.setup_unit(P0, c(&g, 5, 0), 2, 2);
+    fort_money(&mut g);
+    fort_buy(&mut g, a);
+    assert_eq!(g.state.forts[P0.idx()], Some(c(&g, 3, 0)));
+    // Auf dasselbe Feld nochmal ergibt keinen Kauf.
+    g.state.bought_this_turn = false;
+    g.state.card_lock = None;
+    fort_money(&mut g);
+    let again = g.legal_actions().into_iter().any(|x| {
+        matches!(
+            x,
+            Action::BuyCard { card: crate::cards::Card::Fort, target: Some(t), .. } if t == a
+        )
+    });
+    assert!(!again, "dort steht schon ein Fort");
+    fort_buy(&mut g, b);
+    assert_eq!(
+        g.state.forts[P0.idx()],
+        Some(c(&g, 5, 0)),
+        "das alte ist weg"
+    );
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_fort_is_destroyed_when_the_field_stops_belonging_to_its_owner() {
+    let mut g = fort_game();
+    let a = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    fort_money(&mut g);
+    fort_buy(&mut g, a);
+    let cell = c(&g, 3, 0);
+    g.set_land(cell, Some(P1));
+    assert_eq!(g.state.forts[P0.idx()], None, "Gegner faerbt das Feld");
+    // Auch neutral gewordenes Land zerstoert es.
+    let mut h = fort_game();
+    let b = h.setup_unit(P0, c(&h, 3, 0), 2, 2);
+    fort_money(&mut h);
+    fort_buy(&mut h, b);
+    let cell = c(&h, 3, 0);
+    h.set_land(cell, None);
+    assert_eq!(h.state.forts[P0.idx()], None);
+}
+
+#[test]
+fn an_enemy_that_captures_on_the_fort_destroys_it_and_the_game_reports_it() {
+    let mut g = fort_game();
+    let a = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    fort_money(&mut g);
+    fort_buy(&mut g, a);
+    // Gegner: eigenes Land bis neben das Fort, ein Bauer schlaegt die Figur auf dem Fort.
+    for x in 4..=9 {
+        paint(&mut g, P1, &[(x, 9)]);
+    }
+    for y in 0..=9 {
+        paint(&mut g, P1, &[(9, y)]);
+    }
+    paint(&mut g, P1, &[(8, 0), (7, 0), (6, 0), (5, 0)]);
+    let hunter = g.setup_unit(P1, c(&g, 4, 0), 1, 1);
+    paint(&mut g, P1, &[(4, 0)]);
+    g.state.card_lock = None;
+    g.state.bought_this_turn = false;
+    g.setup_current(P1);
+    let take = Action::Move {
+        piece: hunter,
+        to: c(&g, 3, 0),
+    };
+    assert!(
+        g.legal_actions().contains(&take),
+        "der Bauer darf die Figur auf dem Fort schlagen"
+    );
+    let events = g.apply(take).unwrap();
+    assert_eq!(g.state.forts[P0.idx()], None);
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, Event::FortLost { player, .. } if *player == P0)));
+    g.check_invariants().unwrap();
 }

@@ -71,6 +71,8 @@ Optionen:
                  Version 3.3: terr_bread=N (Standard 3 = wie Eisen: Brot wird alle N Runden mit
                  einer Figur auf dem Feld geerntet und liegt im Lager; die Karten kosten Eisen,
                  Gold und Brot); terr_bread=0 = der alte 2^k-Flaechenbonus
+                 terr_fort (Standard aus): die Karte Fort liegt im Markt; eine Figur auf dem Fort
+                 zieht n oder n+1 Felder, das Fort verschwindet, wenn das Feld nicht mehr dir gehoert
   --bots LISTE   pro Spieler: sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),
                  stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,

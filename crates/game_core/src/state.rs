@@ -247,6 +247,9 @@ pub struct State {
     /// schon neu gebaut). Der Neubau dauert mit `terr_rebuild_dist` so lange wie ein Umzug von
     /// dort zum Koenig.
     pub lost_factory: Vec<Option<CellId>>,
+    /// Version 3.3 (`terr_fort`): wo das Fort des Spielers steht (`None` = keines). Es steht immer
+    /// auf Land des Besitzers und verschwindet, sobald das Feld jemand anderem gehoert.
+    pub forts: Vec<Option<CellId>>,
     /// Vorkommen, die waehrend der Partie entstanden sind (Sternsplitter).
     pub extra_deposits: BTreeMap<CellId, Vec<ResourceId>>,
     /// Gebietsmodus: wem ein Feld gehoert (`None` = neutral). Sonst immer leer gefuellt.
@@ -292,6 +295,7 @@ impl State {
             armed_charge: vec![false; players],
             armed_extra: vec![0; players],
             lost_factory: vec![None; players],
+            forts: vec![None; players],
             extra_deposits: BTreeMap::new(),
             land: vec![None; cells],
             area: vec![0; players],

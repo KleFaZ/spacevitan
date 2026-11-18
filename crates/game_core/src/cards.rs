@@ -75,6 +75,9 @@ pub enum Card {
     Smelter,
     /// Version 3.2, Figur (nur ein Bauer): darf zusaetzlich ein Feld diagonal ziehen und schlagen.
     PawnDiagonal,
+    /// Version 3.3 (`terr_fort`), Figur: ein Fort entsteht auf dem Feld der gewaehlten Figur. Eine
+    /// eigene Figur (nie der Koenig) auf dem Fort zieht `n` oder `n + 1` Felder. Ein Fort je Spieler.
+    Fort,
     /// Version 3: eine selbst gebaute Karte, Platz 0 bis `MAX_CUSTOM - 1`; ihre Teile, ihr Name
     /// und ihr Preis stehen in `CardTweaks` (Regel `custom.<platz>`).
     Custom(u8),
@@ -175,6 +178,7 @@ impl Card {
             Card::Settle => "settle",
             Card::Smelter => "smelter",
             Card::PawnDiagonal => "pawn_diagonal",
+            Card::Fort => "fort",
             Card::Custom(i) => CUSTOM_KEYS[usize::from(i).min(CUSTOM_KEYS.len() - 1)],
         }
     }
@@ -190,7 +194,13 @@ impl Card {
 
     /// Die zusaetzlichen Karten von Version 3 (Kartensatz `terr_cardset3`); dazu kommen Karten aus
     /// Version 2 und die klassischen Doppelzug, Sturmangriff und Bergbau.
-    pub const V3_NEW: [Card; 4] = [Card::Pass, Card::Settle, Card::Smelter, Card::PawnDiagonal];
+    pub const V3_NEW: [Card; 5] = [
+        Card::Pass,
+        Card::Settle,
+        Card::Smelter,
+        Card::PawnDiagonal,
+        Card::Fort,
+    ];
 
     /// Karten des erweiterten Satzes, die standardmaessig nicht im Markt liegen (Version 3.2):
     /// Doppelzug und Sturmangriff. Im Karten-Editor (`pool.<karte>=1`) lassen sie sich einschalten.
@@ -269,6 +279,7 @@ impl Card {
             Card::Settle => "Siedler",
             Card::Smelter => "Schmiede",
             Card::PawnDiagonal => "Diagonalzug",
+            Card::Fort => "Fort",
             Card::Custom(_) => "Eigene Karte",
         }
     }
@@ -316,6 +327,9 @@ impl Card {
             Card::PawnDiagonal => {
                 "Nur auf einem Bauern: er darf zusätzlich ein Feld diagonal ziehen und schlagen."
             }
+            Card::Fort => {
+                "Ein Fort auf dem Feld einer eigenen Figur: wer darauf steht, zieht n oder n+1 Felder."
+            }
             Card::Custom(_) => "Eine selbst gebaute Karte.",
         }
     }
@@ -354,6 +368,7 @@ impl Card {
             | Card::Settle
             | Card::Smelter
             | Card::PawnDiagonal
+            | Card::Fort
             | Card::Custom(_) => cost(1, 0, 0, 0, 0),
         }
     }
@@ -452,6 +467,9 @@ impl Card {
             Card::Settle => {
                 "Eine eigene Figur färbt sofort alle freien Nachbarfelder in deiner Farbe (auch gegnerisches Land, nie Felder mit einer Figur)."
             }
+            Card::Fort => {
+                "Ein Fort entsteht auf dem Feld einer eigenen Figur (nicht der König) auf eigenem, verbundenem Land. Jede eigene Figur auf dem Fort darf n oder n+1 Felder ziehen (der König nicht). Nur ein Fort je Spieler, ein neues versetzt es; es verschwindet, sobald das Feld nicht mehr dir gehört."
+            }
             Card::Mining => "Deine Fabrik erntet Gold (Kat 2) dauerhaft doppelt (+1 je Ernte).",
             Card::Smelter => "Deine Fabrik erntet Eisen (Kat 1) dauerhaft doppelt (+1 je Ernte).",
             other => other.text(),
@@ -465,6 +483,7 @@ impl Card {
             Card::Hop => [4, 0, 0],
             Card::Pass => [2, 0, 0],
             Card::PawnDiagonal => [3, 1, 0],
+            Card::Fort => [4, 0, 0],
             Card::Settle => [3, 2, 0],
             Card::FactoryShift => [3, 0, 0],
             Card::Charge => [2, 2, 0],
@@ -488,6 +507,7 @@ impl Card {
             Card::Hop => [1, 0, 3],
             Card::Pass => [1, 0, 1],
             Card::PawnDiagonal => [3, 1, 0],
+            Card::Fort => [3, 0, 1],
             Card::Settle => [1, 2, 2],
             Card::FactoryShift => [3, 0, 0],
             Card::Charge => [3, 1, 0],
@@ -512,6 +532,7 @@ impl Card {
             | Card::Hop
             | Card::Pass
             | Card::PawnDiagonal
+            | Card::Fort
             | Card::Settle
             | Card::Runestone => CardTarget::Unit,
             _ => CardTarget::Player,

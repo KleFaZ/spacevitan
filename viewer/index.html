@@ -739,6 +739,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   let cardMode = null; // Version 3: { card } = Karte gewaehlt, die Figur dafuer steht noch aus
   let cardPopKey = null;   // Version 3.2: Karte, deren Fenster offen ist
   let kingPopOpen = false; // Version 3.2: Blase "Koenig verbessern" am Koenig
+  let kingTapId = null;    // Version 3.3: Figur, die der letzte Klick traf (der zweite Klick auf den Koenig oeffnet die Blase)
   let kingGlowDrawn = false, glowTimer = 0; // Leuchten des Koenigs: Puls ueber einen Zeitgeber
   let inspect = null;  // { R, fi, id, cells } = Ziehfelder einer beliebig angeklickten Figur (auch gegnerisch)
   let hoverReach = null;  // { R, fi, id, cells } = Ziehfelder der Figur unter dem Mauszeiger (verschwinden mit der Maus)
@@ -1338,6 +1339,23 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, geo.W * 0.045); ctx.stroke();
   }
 
+  /** Version 3.3: ein Fort auf dem Feld: steinerner Boden, Zinnenrand in der Farbe des Besitzers und ein kleiner Turm in der Ecke. */
+  function drawFortMark(cell, color) {
+    const [x, y] = R.board.cells[cell], [cx, cy] = iso(x, y), W = geo.W;
+    ctx.save();
+    cellPath(cell, 0.9);
+    ctx.fillStyle = "rgba(125,115,100,0.4)"; ctx.fill();
+    ctx.lineJoin = "round"; ctx.lineWidth = Math.max(3, W * 0.1); ctx.strokeStyle = color;
+    ctx.setLineDash([W * 0.17, W * 0.09]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(255,255,255,0.55)"; cellPath(cell, 0.9); ctx.stroke();
+    const s = W * 0.2, tx = cx - W * 0.3, ty = cy - (geo.flat ? W * 0.3 : W * 0.12);
+    ctx.fillStyle = color; ctx.strokeStyle = "rgba(20,20,20,0.75)"; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(tx - s / 2, ty - s / 2, s, s);
+    for (const dx of [-0.5, -0.14, 0.22]) ctx.rect(tx + dx * s, ty - s / 2 - s * 0.26, s * 0.28, s * 0.26);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
   function markCell(cell, color) {
     if (geo.flat && geo.square) {
       // wie bei lichess: Punkt auf leeren Zielfeldern, Ring auf Feldern mit Gegner
@@ -2245,6 +2263,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 
     drawRoutes(f);
 
+    // Version 3.3: Forts (am Boden, unter Figuren und Fabriken)
+    (f.forts || []).forEach((cell, p) => { if (cell !== null && cell !== undefined && f.alive[p]) drawFortMark(cell, PLAYER[p].color); });
+
     // Objekte sammeln und nach Tiefe sortieren
     const objs = [];
     const occupied = new Set(f.pieces.map((p) => p.cell));
@@ -2595,6 +2616,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function eventText(e) {
     switch (e.type) {
       case "card_bought": return `${playerName(e.player)} kauft „${CARD(e.card).name}“ und zahlt ${invText(e.paid)}.`;
+      case "fort_lost": return `Fort von ${playerName(e.player)} auf ${cellName(e.cell)} ist zerstört: das Feld gehört ihm nicht mehr.`;
       case "shield_blocked": return `Schild hält: ${playerName(e.by)} prallt auf ${cellName(e.at)} ab.`;
       case "recruited": return `${playerName(e.owner)} bekommt einen Rekruten auf ${cellName(e.cell)}.`;
       case "deposit_created": return `Neues Kat-1-Vorkommen auf ${cellName(e.cell)} (${colorOwner(e.resource)}).`;
@@ -3408,6 +3430,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     mining: { h: 40, fx: "+1 Gold je Ernte" },
     smelter: { h: 14, fx: "+1 Eisen je Ernte" },
     king_boost: { h: 52, fx: "König zieht weiter" },
+    fort: { h: 200, fx: "n oder n+1 Felder" },
   };
   const ART_TXT = (x, y, size, t) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="${size}" font-weight="800" fill="#fff" stroke="none" font-family="sans-serif">${t}</text>`;
   const CARD_ART = {
@@ -3423,6 +3446,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     mining: `<circle cx="42" cy="27" r="11" fill="#ffd23f" stroke="#fff6c8"/><circle cx="42" cy="27" r="5.5" stroke="#b8860b" stroke-width="1.6"/><path d="M8 39L28 14" stroke-width="3"/><path d="M18 8Q30 5 36 15"/>`,
     smelter: `<path d="M10 38L17 26H47L54 38z" fill="#c4ccd6" stroke="#fff"/><path d="M32 4C38 11 40 15 36 20 35 17 33 16 32 17 29 15 27 18 28 21 24 17 28 9 32 4z" fill="#ff9a3c" stroke="#ffe0a8" stroke-width="1.2"/>`,
     king_boost: `<path d="M10 38V18l9 9 11-15 11 15 9-9v20z" fill="#ffd23f" stroke="#fff6c8"/><path d="M54 14V4M49 9l5-5 5 5"/>`,
+    fort: `<path d="M12 40V14h8v6h6v-6h12v6h6v-6h8v26z" fill="#fff" fill-opacity=".92" stroke="none"/><path d="M27 40V31a5 5 0 0110 0v9" stroke="#2a2f3a" stroke-width="2.2"/>${ART_TXT(32, 12, 10, "n+1")}`,
   };
   const CARD_ART_DEFAULT = `<path d="M32 5l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#ffe27a" stroke="#fff6c8" stroke-width="1.3"/>`;
   const cardArt = (key) => `<svg viewBox="0 0 64 44" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CARD_ART[key] || CARD_ART_DEFAULT}</svg>`;
@@ -3651,6 +3675,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           c.terr_upkeep ? `Unterhalt: jede Figur kostet je Runde ${c.terr_upkeep_sq ? "ihre Stufe im Quadrat" : "ihre Stufe"} in Fläche (bei Minus löst sich eine Figur auf)` : "",
           c.terr_yield_lvl ? "Ertrag je Stufe: eine Figur der Stufe n erntet n Stück je Ernte" : "",
           c.terr_delay ? "Sturmangriff und Doppelzug wirken erst im nächsten eigenen Zug" : "",
+          c.terr_fort ? "Fort-Karte: eine Figur auf dem Fort zieht n oder n+1 Felder; es verschwindet, wenn das Feld nicht mehr dem Besitzer gehört" : "",
           c.terr_kingup ? `König-Upgrade mit Gold (${c.terr_kingup_price || 1} je Zugfeld)` : "",
           c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
           c.terr_cardset3 ? `Neuer Kartensatz: Markt zufällig aus dem Pool, feste Preise in Eisen/Gold/Brot, ${c.terr_bend_tail ? "Ecke nur am Ende des Wegs" : "Ecke irgendwo auf dem Weg"}` : "",
@@ -4236,6 +4261,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const buyNeedsPiece = (opts) => opts.length > 0 && opts.every(([a]) => a.target !== null && a.target !== undefined);
   function cardMissText(c, piece) {
     const why = piece.king ? "Der König bekommt keine Figurenkarten (für ihn gibt es den Königs-Boost)."
+      : c.key === "fort" ? "Ein Fort braucht eigenes Land, das mit deiner Fabrik verbunden ist (nicht das Fabrikfeld), und steht dort noch nicht."
       : c.key === "pawn_diagonal" ? (piece.perks && piece.perks.pawn_diag ? "Dieser Bauer kann schon diagonal ziehen." : "Diese Karte gibt es nur für Bauern (Stufe 1).")
       : piece.range < 2 ? "Eine Figur der Stufe 1 zieht nur ein Feld: da gibt es nichts zu kürzen, keine Ecke und keinen Sprung."
       : piece.perks && pkn(piece.perks[c.key]) && stackOn() ? `Mehr bringt nichts: eine Figur der Stufe ${piece.range} trägt „${c.name}“ höchstens ${piece.range - 1}-mal (der letzte Schritt ist das Ziel).`
@@ -4299,6 +4325,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return true;
   }
   function boardClick(cell) {
+    const wasKingPop = kingPopOpen, prevKingTap = kingTapId;
+    kingTapId = null;
     hideKingPop();
     if (!canAct()) {
       if (interruptRoute(cell)) return;
@@ -4342,8 +4370,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     pendingMove = null;
     ctrlPath = null;
     const piece = cell === null ? null : f.pieces.find((p) => p.cell === cell && p.owner === f.current);
-    // Der Koenig leuchtet, wenn er sich verbessern laesst: Antippen zeigt die Blase mit dem Knopf (er ist trotzdem waehlbar)
-    if (piece && piece.king && (kingUpIdx() >= 0 || kingRebuildIdx() >= 0)) { kingPopOpen = true; renderKingPop(); }
+    // Der Koenig leuchtet, wenn er sich verbessern laesst. Ein Klick waehlt ihn nur (Ziehfelder), erst der
+    // zweite Klick hintereinander oeffnet die Blase mit den Knoepfen; ein dritter schliesst sie wieder.
+    if (piece && piece.king && (kingUpIdx() >= 0 || kingRebuildIdx() >= 0)) {
+      if (prevKingTap === piece.id && !wasKingPop) { kingPopOpen = true; renderKingPop(); }
+      else kingTapId = piece.id;
+    }
     if (!piece && cell !== null && isTerr() && facClick(cell)) return;
     // Andere Figuren (auch gegnerische) und Figuren ohne Zug: nur ihre Ziehfelder zeigen.
     if (!(piece && destinations(piece.id).length) && inspectAt(cell)) { selected = null; return; }
@@ -4647,6 +4679,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Version 3.1: neue Regelideen (Standard aus)", wide: true, grid: true, note: "Vier Ideen zum Ausprobieren, alle sind ohne Eintrag aus. Zusammen einschalten geht über den Knopf „Neue Regelideen“ oben. Sie brauchen Regelstufe 3.", fields: [
       { key: "terr_delay", label: "Verzögerung: Sturmangriff und Doppelzug", ph: () => "0", hint: () => "1 = beide Karten wirken erst in deinem nächsten Zug. Der Gegner sieht sie bereitliegen und kann reagieren. 0 = sie wirken sofort." },
       { key: "terr_upkeep_sq", label: "Unterhalt: Stufe im Quadrat", ph: () => "0", hint: () => "1 = eine Figur der Stufe n kostet je Runde n×n Fläche (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16). Braucht den Unterhalt." },
+      { key: "terr_fort", label: "Fort-Karte", ph: () => "0", hint: () => "1 = die Karte „Fort“ liegt immer im Markt: sie setzt ein Fort auf das Feld einer gewählten eigenen Figur (nicht der König, eigenes verbundenes Land, höchstens ein Fort je Spieler). Eine eigene Figur auf dem Fort zieht n oder n+1 Felder (der König nicht). Das Fort verschwindet, sobald das Feld nicht mehr dir gehört. Braucht den neuen Kartensatz und „Karten auf jede Figur“." },
       { key: "terr_yield_lvl", label: "Ertrag je Stufe", ph: () => "0", hint: () => "1 = eine Figur der Stufe n erntet n Stück je Ernte (Takt bleibt gleich; Schmiede und Bergbau addieren danach ihr +1). Der König erntet einfach. Braucht „Zähler nur mit eigener Figur“." },
       { key: "terr_bread", label: "Brot im Lager: Erntetakt (Runden)", ph: () => (menuVer() === 3 ? "3" : "0"), hint: () => "Standard in Version 3: 3 = Brot wird alle 3 Runden geerntet (gleicher Takt wie Eisen), solange eine eigene Figur darauf steht, und liegt im Lager. Die Karten kosten dann Eisen, Gold und Brot (Tempo und Nachschub vor allem Brot, Kampf und Bauten Eisen, der König Gold). 0 = aus: Brot bringt k verbundene Felder 2^k Fläche je Runde, die Karten kosten nur Eisen und Gold. Ohne den Brot-Bonus wächst die Fläche langsamer: Stufe 4 kommt in Bot-Partien um Runde 84 statt 57." },
     ] },
@@ -5138,8 +5171,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const QUICK_PRESETS = {
     standard: { note: "Version 3.3: Brot ist ein Lager wie Eisen (Zähler 3, Figur muss draufstehen), die Kartenpreise sind auf Eisen, Gold und Brot verteilt.", rules: {} },
     ideas: {
-      note: "Standard plus drei neue Schalter: Doppelzug und Sturmangriff wirken erst eine Runde nach dem Kauf, der Unterhalt wächst mit der Stufe zum Quadrat, und der Ertrag eines Feldes wächst mit der Stufe der Figur darauf (Brot ist seit 3.3 schon im Standard ein Lager).",
-      rules: { terr_delay: 1, terr_upkeep_sq: 1, terr_yield_lvl: 1 },
+      note: "Standard plus vier neue Schalter: Doppelzug und Sturmangriff wirken erst eine Runde nach dem Kauf, der Unterhalt wächst mit der Stufe zum Quadrat, der Ertrag eines Feldes wächst mit der Stufe der Figur darauf, und die Karte Fort liegt im Markt (eine Figur auf dem Fort zieht n oder n+1 Felder). Brot ist seit 3.3 schon im Standard ein Lager.",
+      rules: { terr_delay: 1, terr_upkeep_sq: 1, terr_yield_lvl: 1, terr_fort: 1 },
     },
     oldbread: {
       note: "Der alte Stand bis 3.2: Brot ist kein Lager, sondern k verbundene Brot-Felder bringen 2^k Fläche je Runde. Die Karten kosten nur Eisen und Gold, die Fläche wächst schneller.",

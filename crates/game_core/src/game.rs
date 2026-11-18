@@ -53,7 +53,7 @@ impl Game {
         } else {
             &[]
         };
-        state.market = if config.territory {
+        let mut market = if config.territory {
             cards::draw_market_territory_with(
                 config.seed,
                 config.market_size as usize,
@@ -71,6 +71,12 @@ impl Game {
                 always,
             )
         };
+        // Version 3.3: das Fort liegt (wie der Koenigs-Boost) immer aus, wenn der Schalter an ist.
+        if config.territory && config.terr_fort {
+            market.push(Card::Fort);
+            market.sort();
+        }
+        state.market = market;
         Game {
             config,
             map: Arc::new(map),
@@ -207,7 +213,7 @@ impl Game {
                 level: 1, range, ..
             } => {
                 // Stufe 1: nur geradeaus, nicht ueber Figuren hinweg.
-                let range = *range + self.charge_bonus(owner);
+                let range = *range + self.charge_bonus(owner) + self.fort_bonus(piece);
                 for dir in 0..board.dir_count() {
                     for cell in board.line(piece.cell, dir, range as usize) {
                         match self.state.piece_at(cell) {
@@ -223,7 +229,7 @@ impl Game {
             }
             PieceKind::Unit { range, .. } => {
                 // Ab Stufe 2: beliebige Wege bis `range` Schritte, nicht durch Figuren hindurch.
-                let range = &(*range + self.charge_bonus(owner));
+                let range = &(*range + self.charge_bonus(owner) + self.fort_bonus(piece));
                 let mut dist = vec![u32::MAX; board.len()];
                 let mut queue = VecDeque::new();
                 dist[piece.cell.idx()] = 0;
@@ -316,6 +322,16 @@ impl Game {
         out.sort();
         out.dedup();
         out
+    }
+
+    /// Version 3.3: steht die Figur (nie der Koenig) auf dem Fort ihres Besitzers? Dann darf sie
+    /// einen Schritt weiter ziehen (mit `terr_exact` n oder n+1 Felder).
+    pub(crate) fn fort_bonus(&self, piece: &Piece) -> u8 {
+        u8::from(
+            self.config.terr_fort
+                && !piece.is_king()
+                && self.state.forts[piece.owner.idx()] == Some(piece.cell),
+        )
     }
 
     /// Sturmangriff: Reichweite +1 fuer die Figuren des Spielers am Zug, nur in diesem Zug.
@@ -821,6 +837,24 @@ impl Game {
     /// Wie `apply`, aber ohne Pruefung. Nur fuer Aktionen aus `legal_actions_for` des
     /// Spielers, der gerade am Zug ist (die Suche der KI spart sich so die doppelte Arbeit).
     pub(crate) fn apply_unchecked(&mut self, action: Action) -> Vec<Event> {
+        // Version 3.3: ein Fort, das der Zug zerstoert (das Feld gehoert nicht mehr dem Besitzer),
+        // meldet `Event::FortLost`.
+        let forts = self.config.terr_fort.then(|| self.state.forts.clone());
+        let mut events = self.apply_inner(action);
+        if let Some(before) = forts {
+            for (i, was) in before.iter().enumerate() {
+                if let (Some(cell), None) = (was, self.state.forts[i]) {
+                    events.push(Event::FortLost {
+                        player: PlayerId(i as u8),
+                        cell: *cell,
+                    });
+                }
+            }
+        }
+        events
+    }
+
+    fn apply_inner(&mut self, action: Action) -> Vec<Event> {
         debug_assert!(self.state.outcome.is_none(), "Spiel ist vorbei");
         let actor = self.state.current;
         let mut events = Vec::new();
@@ -1106,6 +1140,11 @@ impl Game {
                 p.pass = p.pass.saturating_add(1);
             }
             Card::PawnDiagonal => self.target_mut(target).perks.pawn_diag = true,
+            Card::Fort => {
+                // Das Fort steht auf dem Feld der gewaehlten Figur; ein neues versetzt das alte.
+                let cell = self.target_mut(target).cell;
+                self.state.forts[actor.idx()] = Some(cell);
+            }
             Card::Settle => self.settle_around(actor, target, events),
             Card::Smelter => self.state.player_perks[actor.idx()].smelter = true,
             Card::Custom(_) => {

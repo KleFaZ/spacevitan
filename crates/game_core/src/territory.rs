@@ -638,6 +638,10 @@ impl Game {
         let PieceKind::Unit { level, range, .. } = &piece.kind else {
             return false;
         };
+        // Fort: auf jede eigene Einheit, wenn auf ihrem Feld ein Fort entstehen darf.
+        if card == Card::Fort {
+            return self.fort_fits(piece);
+        }
         // Diagonalzug: nur auf einem Bauern (Stufe 1) und nur einmal je Figur.
         if card == Card::PawnDiagonal {
             return *level == 1 && !piece.perks.pawn_diag;
@@ -666,6 +670,20 @@ impl Game {
             u8::from(*range >= 2)
         };
         have < most
+    }
+
+    /// Version 3.3: darf auf dem Feld dieser Figur ein Fort entstehen? Es braucht eigenes Land, das mit
+    /// der stehenden Fabrik verbunden ist, kein Fabrikfeld und noch kein eigenes Fort dort.
+    fn fort_fits(&self, piece: &Piece) -> bool {
+        let owner = piece.owner;
+        self.config.terr_fort
+            && !piece.is_king()
+            && self.state.land[piece.cell.idx()] == Some(owner)
+            && self.state.forts[owner.idx()] != Some(piece.cell)
+            && self.state.factory_at(piece.cell).is_none()
+            && self
+                .connected_land(owner)
+                .is_some_and(|c| c[piece.cell.idx()])
     }
 
     /// Was `player` fuer `card` aus dem Lager seiner Fabrik zahlen wuerde.
@@ -1160,9 +1178,13 @@ impl Game {
             return;
         };
         let base = *range + self.charge_bonus(piece.owner);
-        // Die Laenge `base`, dazu je Karte Kuerzer ein Schritt weniger (mindestens 1 Feld).
+        // Die Laenge `base`, dazu je Karte Kuerzer ein Schritt weniger (mindestens 1 Feld); auf dem
+        // Fort (Version 3.3) darf es auch einer mehr sein.
         let shorter = usize::from(piece.perks.shorten).min(usize::from(base).saturating_sub(1));
-        let lengths: Vec<usize> = (0..=shorter).map(|i| usize::from(base) - i).collect();
+        let longest = usize::from(base) + usize::from(self.fort_bonus(piece));
+        let lengths: Vec<usize> = (0..=shorter + longest - usize::from(base))
+            .map(|i| longest - i)
+            .collect();
         let mut path = Vec::with_capacity(5);
         for len in lengths {
             self.walk_from(
@@ -1453,6 +1475,12 @@ impl Game {
     /// Aendert den Besitzer eines Feldes. Wechselt er, faengt die Reifezeit des Feldes neu an.
     pub(crate) fn set_land(&mut self, cell: CellId, owner: Option<PlayerId>) {
         if self.state.land[cell.idx()] != owner {
+            // Ein Fort steht nur auf eigenem Land: faellt das Feld, ist es zerstoert.
+            for (i, fort) in self.state.forts.iter_mut().enumerate() {
+                if *fort == Some(cell) && owner != Some(PlayerId(i as u8)) {
+                    *fort = None;
+                }
+            }
             self.state.land[cell.idx()] = owner;
             self.state.owned_since[cell.idx()] = self.state.round;
             self.state.age[cell.idx()] = 0;
@@ -2034,6 +2062,15 @@ impl Game {
                 .any(|&c| self.cards_go_on_pieces(c))
         {
             return Err("eine Figurenkarte liegt neben der Fabrik, sie wirkt sofort".into());
+        }
+        for (i, fort) in st.forts.iter().enumerate() {
+            if let Some(cell) = fort {
+                if st.land[cell.idx()] != Some(PlayerId(i as u8)) {
+                    return Err(format!(
+                        "das Fort von Spieler {i} steht nicht auf seinem Land"
+                    ));
+                }
+            }
         }
         if st.stored_card.contains(&Some(Card::KingBoost)) {
             return Err("der Koenigs-Boost liegt nicht neben der Fabrik, er wirkt sofort".into());
