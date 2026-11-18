@@ -347,6 +347,15 @@ impl Game {
         }
     }
 
+    /// Flaechenwert eines Feldes in Vierteln: 4 (voll), ohne Gelaende immer 4.
+    pub(crate) fn land_quarters(&self, cell: CellId) -> u32 {
+        if self.config.terr_terrain {
+            self.map.terrain_at(cell).quarters()
+        } else {
+            4
+        }
+    }
+
     /// Alle Felder, die dem Spieler gehoeren, verbunden oder nicht.
     pub fn land_count(&self, player: PlayerId) -> u32 {
         self.state

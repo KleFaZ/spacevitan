@@ -1203,12 +1203,14 @@ impl SearchBot {
             if st.land[cell.idx()] != Some(p) {
                 continue;
             }
+            // Mit Gelaende zaehlt ein Feld nach seinem Flaechenwert in Vierteln (sonst 4 = voll).
+            let q = g.land_quarters(cell) as i32;
             match &conn {
-                Some(c) if c[cell.idx()] => linked += 1,
-                _ => loose += 1,
+                Some(c) if c[cell.idx()] => linked += q,
+                _ => loose += q,
             }
         }
-        v += w.land * linked + w.land_loose * loose;
+        v += (w.land * linked + w.land_loose * loose) / 4;
         // Version 3: eine Figur auf einem Rohstofffeld laesst dessen Erntezaehler laufen.
         if g.config.terr_occupy {
             if let Some(c) = &conn {

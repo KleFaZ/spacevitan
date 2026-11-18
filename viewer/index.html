@@ -800,6 +800,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return { linked, anchored };
   }
   const isTerr = () => !!(R && R.config && R.config.territory);
+  /** Version 3.4: Gelaende. R.terrain[cell]: 0 Feld, 1 Wald, 2 Moor mit Flaechenwert 1, 1/2, 1/4 (in Vierteln 4, 2, 1). */
+  const terrainOn = () => !!(R && R.config && R.config.terr_terrain && R.terrain);
+  const TERRAIN_KIND = ["Feld", "Wald", "Moor"], TERRAIN_FRAC = ["1", "½", "¼"], TERRAIN_Q = [4, 2, 1];
+  const TERRAIN_INK = ["", "#2f6b34", "#5b4a8a"], TERRAIN_WASH = ["", "rgba(70,150,80,0.20)", "rgba(110,90,170,0.27)"];
+  /** Zahl fuer die Anzeige: ganz, sonst mit Komma (Viertel: 0,25 / 0,5 / 0,75). */
+  const fmtNum = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
   /** Wehrlos: der Spieler hat eine Fabrik, die Figur steht aber nicht auf Land, das daran haengt. */
   const helpless = (f, p) => !!f.land && f.anchored[p.owner] && !(f.land[p.cell] === p.owner && f.linked[p.cell]);
   const TERR_WHITE = "#f3f1ea";
@@ -1333,8 +1339,64 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+    if (terrainOn()) drawTerrainTile(cell);
   }
 
+  /** Gelaendezeichen: 1 = Wald (drei Tannen), 2 = Moor (Schilf mit Wellenlinie); s = Groesse, (cx, cy) = Mitte. */
+  function drawTerrainGlyph(kind, cx, cy, s) {
+    ctx.save();
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    if (kind === 1) {
+      for (const [dx, dy, k] of [[-0.95, 0.55, 1], [0.9, 0.7, 0.9], [-0.05, -0.45, 1.15]]) {
+        const x = cx + dx * s, y = cy + dy * s, h = s * 1.15 * k, w = s * 0.62 * k;
+        ctx.fillStyle = "#5a4020"; ctx.fillRect(x - w * 0.12, y + h * 0.28, w * 0.24, h * 0.3);
+        ctx.beginPath(); ctx.moveTo(x, y - h * 0.7); ctx.lineTo(x + w, y + h * 0.35); ctx.lineTo(x - w, y + h * 0.35); ctx.closePath();
+        ctx.fillStyle = "#3f8a45"; ctx.fill(); ctx.lineWidth = Math.max(1, s * 0.1); ctx.strokeStyle = "#1f4a25"; ctx.stroke();
+      }
+    } else if (kind === 2) {
+      ctx.strokeStyle = "#7a69ad"; ctx.lineWidth = Math.max(1.2, s * 0.17);
+      for (const dy of [0.35, 0.95]) {
+        ctx.beginPath(); ctx.moveTo(cx - s * 1.25, cy + dy * s);
+        ctx.quadraticCurveTo(cx - s * 0.65, cy + (dy - 0.38) * s, cx, cy + dy * s);
+        ctx.quadraticCurveTo(cx + s * 0.65, cy + (dy + 0.38) * s, cx + s * 1.25, cy + dy * s);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = "#4d6b3a"; ctx.lineWidth = Math.max(1.2, s * 0.13);
+      for (const [dx, top] of [[-0.55, -1.0], [0.05, -1.35], [0.62, -0.85]]) {
+        ctx.beginPath(); ctx.moveTo(cx + dx * s, cy + 0.2 * s); ctx.lineTo(cx + dx * s, cy + top * s + 0.3 * s); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(cx + dx * s, cy + top * s + 0.05 * s, s * 0.17, s * 0.34, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "#6b4a2a"; ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+  /** Gelaende unter allem anderen: leicht gefaerbt (Wald gruen, Moor violett) mit grossen Zeichen. */
+  function drawTerrainTile(cell) {
+    const kind = R.terrain[cell] || 0;
+    if (!kind) return;
+    cellPath(cell, 1);
+    ctx.fillStyle = TERRAIN_WASH[kind]; ctx.fill();
+    const [x, y] = R.board.cells[cell], [cx, cy] = iso(x, y);
+    const s = geo.flat ? geo.U * 0.15 : geo.W * 0.12;
+    ctx.globalAlpha = 0.72;
+    drawTerrainGlyph(kind, cx, cy + (geo.flat ? 0 : geo.W * 0.02), s);
+    ctx.globalAlpha = 1;
+  }
+  /** Kleines Abzeichen unten rechts, wenn Vorkommen, Figur oder Fabrik das grosse Zeichen verdecken. */
+  function drawTerrainBadges(f, covered) {
+    if (!terrainOn()) return;
+    for (let c = 0; c < R.terrain.length; c++) {
+      const kind = R.terrain[c];
+      if (!kind || !(covered.has(c) || liveDeposits(f, c).length)) continue;
+      const [x, y] = R.board.cells[c], [cx, cy] = iso(x, y);
+      const u = geo.W, r = Math.max(6, u * 0.14);
+      const bx = cx + u * (geo.flat ? 0.3 : 0.3), by = cy + u * (geo.flat ? 0.3 : 0.06);
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.96)"; ctx.fill();
+      ctx.lineWidth = Math.max(1.5, r * 0.3); ctx.strokeStyle = TERRAIN_INK[kind]; ctx.stroke();
+      drawTerrainGlyph(kind, bx, by + r * 0.05, r * 0.5);
+    }
+  }
   function outlineCell(cell, color, fillAlpha) {
     cellPath(cell, 0.86);
     if (fillAlpha) {
@@ -2345,6 +2407,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     for (const [c, col] of lateMarks) paintFlatMark(c, col);
     lateMarks = null;
     drawResourceBadges(f, new Set([...occupied, ...built]));
+    drawTerrainBadges(f, new Set([...occupied, ...built]));
     if (pills) { for (const job of pills) job(); pills = null; }
     canvas.dataset.pieces = String(f.pieces.length);
     canvas.dataset.frame = String(fi);
@@ -2737,7 +2800,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const upkeepLevel = (lvl) => (upkeepSqOn() ? lvl * lvl : lvl);
   /** Unterhalt je Runde: Summe der Stufen aller Figuren des Spielers, der Koenig zahlt nichts. */
   const upkeepOf = (f, p) => (upkeepOn() ? f.pieces.filter((x) => x.owner === p && !x.king).reduce((a, x) => a + upkeepLevel(x.level || 1), 0) : 0);
-  const signed = (n) => (n < 0 ? `−${-n}` : `+${n}`);
+  const signed = (n) => (n < 0 ? `−${fmtNum(-n)}` : `+${fmtNum(n)}`);
   /** Koenigs-Upgrade mit Gold (Regel terr_kingup): naechste Stufe, Zusatzfelder und Preis in Gold; null, wenn aus. */
   const kingUpOn = () => !!(R && R.king_up && R.king_up.on);
   function kingUpInfo(f, p) {
@@ -2757,15 +2820,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     // Schmiede (+1 Eisen) und Bergbau (+1 Gold) bringen je Ernte eine Einheit mehr.
     const ppl = (f.player_perks || [])[p] || {};
     const more = { 1: ppl.smelter ? 1 : 0, 2: ppl.mining ? 1 : 0, 3: 0, 4: 0 };
+    let quarters = 0;
     for (let c = 0; c < f.land.length; c++) {
       if (f.land[c] !== p || !f.linked[c]) continue;
-      inc.area++;
+      if (terrainOn()) quarters += TERRAIN_Q[R.terrain[c] || 0]; else inc.area++;
       for (const res of liveDeposits(f, c)) {
         if (bonusOn() && category(res) === 3) { inc.k3++; continue; }
         if (mine && !mine.has(c)) continue;
         if (cycleOn() ? harvestIn(f, c, res) === 1 : !ripenLeft(f, c, res)) inc[category(res)] += y * (yieldLvlOn() && mine ? mine.get(c) || 1 : 1) + (more[category(res)] || 0);
       }
     }
+    if (terrainOn()) inc.area = quarters / 4;
     inc.bonus = bonusArea(inc.k3);
     inc.upkeep = upkeepOf(f, p);
     inc.net = inc.area + inc.bonus - inc.upkeep;
@@ -2795,7 +2860,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return bits.join(", ");
   }
   function incomeText(inc) {
-    const parts = [`${inc.area} Land`];
+    const parts = [`${fmtNum(inc.area)} Land`];
     if (inc.bonus) parts.push(`${inc.bonus} durch ${inc.k3}× Brot`);
     if (inc.upkeep) parts.push(`−${inc.upkeep} Unterhalt`);
     const bits = [`${signed(inc.net)} Fläche (${parts.join(", ")})`];
@@ -2857,7 +2922,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const stock = (c) => catUnits(fac.storage, c);
     // --- Bestand mit Zuwachs je Runde
     const tiles = [];
-    const areaTip = `Fläche ${area}. Am Ende deines Zugs: ${inc.area} Land${inc.bonus ? `, +${inc.bonus} durch ${inc.k3}× Brot` : ""}${inc.upkeep ? `, −${inc.upkeep} Unterhalt` : ""} = ${signed(inc.net)}`;
+    const areaTip = `Fläche ${area}. Am Ende deines Zugs: ${fmtNum(inc.area)} Land${inc.bonus ? `, +${inc.bonus} durch ${inc.k3}× Brot` : ""}${inc.upkeep ? `, −${inc.upkeep} Unterhalt` : ""} = ${signed(inc.net)}`;
     tiles.push(rsHtml(symSvg(areaKind(), 24, color, false, "Fläche"), area, growthHtml(inc.net, areaTip), areaTip));
     tiles.push(rsHtml(symSvg("iron", 24, null, false, "Eisen"), stock(1), growthHtml(inc[1], "Eisen im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Eisen (Kat 1)"));
     tiles.push(rsHtml(symSvg("gold", 24, null, false, "Gold"), stock(2), growthHtml(inc[2], "Gold im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Gold (Kat 2)"));
@@ -3691,6 +3756,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           c.terr_upkeep ? `Unterhalt: jede Figur kostet je Runde ${c.terr_upkeep_sq ? "ihre Stufe im Quadrat" : "ihre Stufe"} in Fläche (bei Minus löst sich eine Figur auf)` : "",
           c.terr_yield_lvl ? "Ertrag je Stufe: eine Figur der Stufe n erntet n Stück je Ernte" : "",
           c.terr_delay ? "Sturmangriff und Doppelzug wirken erst im nächsten eigenen Zug" : "",
+          c.terr_terrain ? "Gelände: Feld zählt 1 Fläche, Wald ½, Moor ¼ (gleich viele je Gebiet)" : "",
           c.terr_fort ? "Fort-Karte: eine Figur auf dem Fort zieht n oder n+1 Felder; es verschwindet, wenn das Feld nicht mehr dem Besitzer gehört" : "",
           c.terr_kingup ? `König-Upgrade mit Gold (${c.terr_kingup_price || 1} je Zugfeld)` : "",
           c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
@@ -3945,6 +4011,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const o = f.land[cell];
       rows.unshift(o < 0 ? "Neutrales Land (weiß)"
         : `Land von ${playerName(o)}${f.anchored[o] ? "" : " (seine Fabrik ist zerstört)"}`);
+      if (terrainOn()) {
+        const k = R.terrain[cell] || 0;
+        rows.splice(1, 0, `Gelände: ${TERRAIN_KIND[k]}, zählt ${TERRAIN_FRAC[k]} Fläche (Feld 1, Wald ½, Moor ¼)`);
+      }
       if (piece && helpless(f, piece)) rows.push("Wehrlos: nicht mit dem eigenen Land verbunden, färbt nichts und kann nicht schlagen.");
       // Version 3: Dauer und Preis eines Umzugs der eigenen Fabrik hierher, schon vor der Entscheidung.
       const hp = mode === "play" && live && R === liveR ? live.seats.indexOf("mensch") : -1;
@@ -4017,6 +4087,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["rim", "Gebietsmodus: Rand der Kachel in der Farbe des Vorkommens (Eisen grau-blau, Gold gelb, Brot braun). Steht eine Figur auf dem Feld, zeigt ein Abzeichen am Feldrand, was darunter liegt."],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
       ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
+      ["terrain", "Gelände: Feld zählt 1 Fläche, Wald (grün, Tannen) ½, Moor (violett, Schilf) ¼."],
       ["land", "Gebietsmodus: Land in der Farbe des Spielers. Jedes Feld auf dem Weg einer Figur wird ihre Farbe, betritt ein Gegner es, kippt es um."],
       ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt: sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist. Es genügt, dass sie neben ihrem verbundenen Land steht: dann färbt sie ihr Feld und ist wieder aktiv."],
     ];
@@ -4078,7 +4149,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       t2x = { ...t2x, unit1: ttx.unit1, unit2: ttx.unit2, unitCards: "Karten als weiße Abzeichen: −1 = Kürzer, L = Ecke, Bogen = Sprung." };
     }
     const noGrain = v2 && R.config.terr_cats === 2;
-    const shown = terr ? items.filter(([k]) => k !== "loot" && k !== "barrel" && !(noGrain && k === "grain")) : items.filter(([k]) => k !== "rim");
+    const shown = terr
+      ? items.filter(([k]) => k !== "loot" && k !== "barrel" && !(noGrain && k === "grain") && (k !== "terrain" || terrainOn()))
+      : items.filter(([k]) => k !== "rim" && k !== "terrain");
     const dl = $("legend");
     dl.innerHTML = "";
     const saved = geo;
@@ -4121,6 +4194,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         if (kind === "rim") legendRim(lc, false);
         if (kind === "barrel") drawBarrel(20, 34, 40);
         if (kind === "loot") drawLoot(20, 28);
+        if (kind === "terrain") legendTerrain(lc);
         if (kind === "land") {
           lc.fillStyle = mixHex(PLAYER[0].color, "#ffffff", 0.5);
           lc.fillRect(6, 10, 28, 20);
@@ -4152,6 +4226,21 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     lc.fillStyle = PLAYER[0].color; lc.beginPath(); lc.arc(23, 17, 6.5, 0, Math.PI * 2); lc.fill();
     lc.lineWidth = 1.4; lc.strokeStyle = "rgba(0,0,0,0.6)"; lc.stroke();
   }
+  /** Legendenbild Gelaende: drei Kacheln nebeneinander (Feld, Wald, Moor). */
+  function legendTerrain(lc) {
+    lc.save();
+    for (let k = 0; k < 3; k++) {
+      const x = 2 + k * 12.5;
+      lc.fillStyle = TERR_WHITE; lc.fillRect(x, 10, 11.5, 20);
+      if (k) { lc.fillStyle = TERRAIN_WASH[k]; lc.fillRect(x, 10, 11.5, 20); }
+      lc.strokeStyle = "rgba(0,0,0,0.3)"; lc.lineWidth = 0.8; lc.strokeRect(x + 0.4, 10.4, 10.7, 19.2);
+    }
+    const g = ctx; ctx = lc;
+    drawTerrainGlyph(1, 20, 20, 2.5);
+    drawTerrainGlyph(2, 32.5, 21, 2.6);
+    ctx = g;
+    lc.restore();
+  }
   /** Legendenbild in der 2D-Ansicht (Mitte des 40x40-Bildes ist 20/20). */
   const legendV2 = () => isTerr() && !!(R.config && R.config.terr_exact);
   function legendFlat(kind, lc) {
@@ -4173,6 +4262,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (kind === "rim") legendRim(lc, true);
     if (kind === "barrel") flatGlyph(4, 20, 20, 9, "#9a6a3c");
     if (kind === "loot") drawLoot(20, 22);
+    if (kind === "terrain") legendTerrain(lc);
     if (kind === "land") {
       lc.fillStyle = mixHex(PLAYER[0].color, "#ffffff", 0.5);
       lc.fillRect(6, 6, 28, 28);
@@ -4695,6 +4785,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Version 3.1: neue Regelideen (Standard aus)", wide: true, grid: true, note: "Vier Ideen zum Ausprobieren, alle sind ohne Eintrag aus. Zusammen einschalten geht über den Knopf „Neue Regelideen“ oben. Sie brauchen Regelstufe 3.", fields: [
       { key: "terr_delay", label: "Verzögerung: Sturmangriff und Doppelzug", ph: () => "0", hint: () => "1 = beide Karten wirken erst in deinem nächsten Zug. Der Gegner sieht sie bereitliegen und kann reagieren. 0 = sie wirken sofort." },
       { key: "terr_upkeep_sq", label: "Unterhalt: Stufe im Quadrat", ph: () => "0", hint: () => "1 = eine Figur der Stufe n kostet je Runde n×n Fläche (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16). Braucht den Unterhalt." },
+      { key: "terr_terrain", label: "Gelände (Feld, Wald, Moor)", ph: () => "0", hint: () => "1 = jedes Feld ist Feld (zählt 1 Fläche), Wald (½) oder Moor (¼). Jedes Gebiet bekommt gleich viele Wald- und Moorfelder, die Umgebung des Starts bleibt Feld. Das Gelände ändert nur die Fläche je Runde, nicht Rohstoffe oder Zugweite; ein Rest unter einer ganzen Fläche geht in die nächste Runde." },
       { key: "terr_fort", label: "Fort-Karte", ph: () => "0", hint: () => "1 = die Karte „Fort“ liegt immer im Markt: sie setzt ein Fort auf das Feld einer gewählten eigenen Figur (nicht der König, eigenes verbundenes Land, höchstens ein Fort je Spieler). Eine eigene Figur auf dem Fort zieht n oder n+1 Felder (der König nicht). Das Fort verschwindet, sobald das Feld nicht mehr dir gehört. Braucht den neuen Kartensatz und „Karten auf jede Figur“." },
       { key: "terr_yield_lvl", label: "Ertrag je Stufe", ph: () => "0", hint: () => "1 = eine Figur der Stufe n erntet n Stück je Ernte (Takt bleibt gleich; Schmiede und Bergbau addieren danach ihr +1). Der König erntet einfach. Braucht „Zähler nur mit eigener Figur“." },
       { key: "terr_bread", label: "Brot im Lager: Erntetakt (Runden)", ph: () => (menuVer() === 3 ? "3" : "0"), hint: () => "Standard in Version 3: 3 = Brot wird alle 3 Runden geerntet (gleicher Takt wie Eisen), solange eine eigene Figur darauf steht, und liegt im Lager. Die Karten kosten dann Eisen, Gold und Brot (Tempo und Nachschub vor allem Brot, Kampf und Bauten Eisen, der König Gold). 0 = aus: Brot bringt k verbundene Felder 2^k Fläche je Runde, die Karten kosten nur Eisen und Gold. Ohne den Brot-Bonus wächst die Fläche langsamer: Stufe 4 kommt in Bot-Partien um Runde 84 statt 57." },
@@ -5187,8 +5278,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const QUICK_PRESETS = {
     standard: { note: "Version 3.3: Brot ist ein Lager wie Eisen (Zähler 3, Figur muss draufstehen), die Kartenpreise sind auf Eisen, Gold und Brot verteilt.", rules: {} },
     ideas: {
-      note: "Standard plus vier neue Schalter: Doppelzug und Sturmangriff wirken erst eine Runde nach dem Kauf, der Unterhalt wächst mit der Stufe zum Quadrat, der Ertrag eines Feldes wächst mit der Stufe der Figur darauf, und die Karte Fort liegt im Markt (eine Figur auf dem Fort zieht n oder n+1 Felder). Brot ist seit 3.3 schon im Standard ein Lager.",
-      rules: { terr_delay: 1, terr_upkeep_sq: 1, terr_yield_lvl: 1, terr_fort: 1 },
+      note: "Standard plus fünf neue Schalter: Doppelzug und Sturmangriff wirken erst eine Runde nach dem Kauf, der Unterhalt wächst mit der Stufe zum Quadrat, der Ertrag eines Feldes wächst mit der Stufe der Figur darauf, die Karte Fort liegt im Markt (eine Figur auf dem Fort zieht n oder n+1 Felder), und jedes Feld ist Feld, Wald oder Moor (zählt 1, ½ oder ¼ Fläche). Brot ist seit 3.3 schon im Standard ein Lager.",
+      rules: { terr_delay: 1, terr_upkeep_sq: 1, terr_yield_lvl: 1, terr_fort: 1, terr_terrain: 1 },
     },
     oldbread: {
       note: "Der alte Stand bis 3.2: Brot ist kein Lager, sondern k verbundene Brot-Felder bringen 2^k Fläche je Runde. Die Karten kosten nur Eisen und Gold, die Fläche wächst schneller.",

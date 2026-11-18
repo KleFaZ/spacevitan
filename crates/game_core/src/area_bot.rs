@@ -61,7 +61,8 @@ fn standing(g: &Game, p: PlayerId) -> i64 {
     let worked = g.config.terr_occupy.then(|| g.worked_cells(p));
     if let Some(connected) = g.connected_land(p) {
         for cell in g.map.board.cells().filter(|c| connected[c.idx()]) {
-            v += LAND;
+            // Mit Gelaende zaehlt ein Feld nach seinem Flaechenwert (Viertel), sonst voll.
+            v += LAND * i64::from(g.land_quarters(cell)) / 4;
             for res in g.all_deposits(cell) {
                 let cat = usize::from(g.map.category(res)).clamp(1, 4) - 1;
                 // Kat 3 zaehlt mit Flaechenbonus nur ueber `2^k` unten, nicht als Vorkommen.
