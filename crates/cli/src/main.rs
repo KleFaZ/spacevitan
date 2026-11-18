@@ -72,7 +72,9 @@ Optionen:
                  einer Figur auf dem Feld geerntet und liegt im Lager; die Karten kosten Eisen,
                  Gold und Brot); terr_bread=0 = der alte 2^k-Flaechenbonus
                  terr_terrain (Standard aus): Gelaende, jedes Feld ist Feld (Flaechenwert 1), Erde (1/2)
-                 oder Moor (1/4); gleich viele je Gebiet, Rest in der naechsten Runde;
+                 oder Moor (1/4); Moor ein Viertel der Felder (eher in den Ecken), Erde ein
+                 Drittel (dazwischen), Rest Feld (eher in der Mitte); gleich viele je Gebiet,
+                 Rest unter einer Flaeche in der naechsten Runde;
                  terr_fort (Standard aus): die Karte Fort liegt im Markt; eine Figur auf dem Fort
                  zieht n oder n+1 Felder, das Fort verschwindet, wenn das Feld nicht mehr dir gehoert
   --bots LISTE   pro Spieler: sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),

@@ -803,10 +803,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Version 3.4: Gelaende. R.terrain[cell]: 0 Feld, 1 Erde, 2 Moor mit Flaechenwert 1, 1/2, 1/4 (in Vierteln 4, 2, 1). */
   const terrainOn = () => !!(R && R.config && R.config.terr_terrain && R.terrain);
   const TERRAIN_KIND = ["Feld", "Erde", "Moor"], TERRAIN_FRAC = ["1", "½", "¼"], TERRAIN_Q = [4, 2, 1];
-  /** Graustufen statt Farbe (keine Spielerfarbe): Feld hell, Erde mittel, Moor dunkel; Hintergrund nur ein Hauch mit Schraffur. */
+  /** Graustufen statt Farbe (keine Spielerfarbe): Kreis Feld hell, Erde mittel, Moor dunkel. Hintergrund: je mehr Wert, desto staerker schraffiert (Feld gekreuzt, Erde einfach, Moor gar nicht). */
   const TERRAIN_INK = ["#a4a4a4", "#6e6e6e", "#383838"];
-  const TERRAIN_WASH = ["", "rgba(90,90,90,0.08)", "rgba(50,50,50,0.15)"];
-  const TERRAIN_HATCH = ["", "rgba(60,60,60,0.26)", "rgba(30,30,30,0.36)"];
+  const TERRAIN_WASH = ["", "rgba(90,90,90,0.08)", ""];
+  const TERRAIN_HATCH = ["rgba(60,60,60,0.22)", "rgba(60,60,60,0.26)", ""];
   /** Zahl fuer die Anzeige: ganz, sonst mit Komma (Viertel: 0,25 / 0,5 / 0,75). */
   const fmtNum = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
   /** Wehrlos: der Spieler hat eine Fabrik, die Figur steht aber nicht auf Land, das daran haengt. */
@@ -1345,24 +1345,24 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (terrainOn()) drawTerrainTile(cell);
   }
 
-  /** Schraffur fuer Erde (eine Richtung, weit) und Moor (gekreuzt, dichter); (cx, cy) = Mitte, half = halbe Kachelbreite. */
+  /** Schraffur: Feld gekreuzt und dicht (am staerksten), Erde eine Richtung und weiter, Moor keine; (cx, cy) = Mitte, half = halbe Kachelbreite. */
   function terrainHatch(kind, cx, cy, half, step) {
-    if (!kind) return;
+    if (kind === 2) return;
     ctx.save();
     ctx.strokeStyle = TERRAIN_HATCH[kind]; ctx.lineWidth = Math.max(0.8, step * 0.12);
     ctx.beginPath();
-    const s = kind === 2 ? step * 0.78 : step, h = half * 1.3;
+    const s = kind === 0 ? step * 0.78 : step, h = half * 1.3;
     for (let t = -2 * h; t <= 2 * h; t += s) { ctx.moveTo(cx + t - h, cy + h); ctx.lineTo(cx + t + h, cy - h); }
-    if (kind === 2) for (let t = -2 * h; t <= 2 * h; t += s) { ctx.moveTo(cx + t - h, cy - h); ctx.lineTo(cx + t + h, cy + h); }
+    if (kind === 0) for (let t = -2 * h; t <= 2 * h; t += s) { ctx.moveTo(cx + t - h, cy - h); ctx.lineTo(cx + t + h, cy + h); }
     ctx.stroke();
     ctx.restore();
   }
-  /** Gelaende unter allem anderen: nur ein grauer Hauch mit Schraffur, Feld bleibt unberuehrt. */
+  /** Gelaende unter allem anderen: ein grauer Hauch (Erde) und Schraffur nach Wert; Moor bleibt unberuehrt. */
   function drawTerrainTile(cell) {
     const kind = R.terrain[cell] || 0;
-    if (!kind) return;
+    if (kind === 2) return;
     cellPath(cell, 1);
-    ctx.fillStyle = TERRAIN_WASH[kind]; ctx.fill();
+    if (TERRAIN_WASH[kind]) { ctx.fillStyle = TERRAIN_WASH[kind]; ctx.fill(); }
     ctx.save(); ctx.clip();
     const [x, y] = R.board.cells[cell], [cx, cy] = iso(x, y);
     terrainHatch(kind, cx, cy, geo.W * 0.6, geo.flat ? geo.U * 0.2 : geo.W * 0.17);
@@ -3766,7 +3766,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           c.terr_upkeep ? `Unterhalt: jede Figur kostet je Runde ${c.terr_upkeep_sq ? "ihre Stufe im Quadrat" : "ihre Stufe"} in Fläche (bei Minus löst sich eine Figur auf)` : "",
           c.terr_yield_lvl ? "Ertrag je Stufe: eine Figur der Stufe n erntet n Stück je Ernte" : "",
           c.terr_delay ? "Sturmangriff und Doppelzug wirken erst im nächsten eigenen Zug" : "",
-          c.terr_terrain ? "Gelände: Feld zählt 1 Fläche, Erde ½ (meist in der Mitte), Moor ¼ (meist in den Ecken)" : "",
+          c.terr_terrain ? "Gelände: Feld zählt 1 Fläche (meist in der Mitte), Erde ½ (⅓ der Felder, zwischen Mitte und Ecke), Moor ¼ (¼ der Felder, meist in den Ecken)" : "",
           c.terr_fort ? "Fort-Karte: eine Figur auf dem Fort zieht n oder n+1 Felder; es verschwindet, wenn das Feld nicht mehr dem Besitzer gehört" : "",
           c.terr_kingup ? `König-Upgrade mit Gold (${c.terr_kingup_price || 1} je Zugfeld)` : "",
           c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
@@ -4097,7 +4097,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["rim", "Gebietsmodus: Rand der Kachel in der Farbe des Vorkommens (Eisen grau-blau, Gold gelb, Brot braun). Steht eine Figur auf dem Feld, zeigt ein Abzeichen am Feldrand, was darunter liegt."],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
       ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
-      ["terrain", "Gelände: kleiner Kreis unten links im Feld. Ganzer Kreis = Feld, zählt 1 Fläche. Halber Kreis = Erde (leicht schraffiert, meist in der Mitte), ½. Viertelkreis = Moor (dichter schraffiert, meist in den Eckbereichen), ¼."],
+      ["terrain", "Gelände: kleiner Kreis unten links im Feld. Ganzer Kreis = Feld (gekreuzt schraffiert, meist in der Mitte), zählt 1 Fläche. Halber Kreis = Erde (einfach schraffiert, meist zwischen Mitte und Ecke), ½. Viertelkreis = Moor (ohne Schraffur, meist in den Ecken), ¼."],
       ["land", "Gebietsmodus: Land in der Farbe des Spielers. Jedes Feld auf dem Weg einer Figur wird ihre Farbe, betritt ein Gegner es, kippt es um."],
       ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt: sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist. Es genügt, dass sie neben ihrem verbundenen Land steht: dann färbt sie ihr Feld und ist wieder aktiv."],
     ];
@@ -4244,8 +4244,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const x = 2 + k * 12.5;
       lc.save();
       lc.fillStyle = TERR_WHITE; lc.fillRect(x, 8, 11.5, 24);
-      if (k) {
-        lc.fillStyle = TERRAIN_WASH[k]; lc.fillRect(x, 8, 11.5, 24);
+      if (k < 2) {
+        if (TERRAIN_WASH[k]) { lc.fillStyle = TERRAIN_WASH[k]; lc.fillRect(x, 8, 11.5, 24); }
         lc.beginPath(); lc.rect(x, 8, 11.5, 24); lc.clip();
         terrainHatch(k, x + 5.75, 20, 8, 5.2);
       }
@@ -4800,7 +4800,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Version 3.1: neue Regelideen (Standard aus)", wide: true, grid: true, note: "Vier Ideen zum Ausprobieren, alle sind ohne Eintrag aus. Zusammen einschalten geht über den Knopf „Neue Regelideen“ oben. Sie brauchen Regelstufe 3.", fields: [
       { key: "terr_delay", label: "Verzögerung: Sturmangriff und Doppelzug", ph: () => "0", hint: () => "1 = beide Karten wirken erst in deinem nächsten Zug. Der Gegner sieht sie bereitliegen und kann reagieren. 0 = sie wirken sofort." },
       { key: "terr_upkeep_sq", label: "Unterhalt: Stufe im Quadrat", ph: () => "0", hint: () => "1 = eine Figur der Stufe n kostet je Runde n×n Fläche (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16). Braucht den Unterhalt." },
-      { key: "terr_terrain", label: "Gelände (Feld, Erde, Moor)", ph: () => "0", hint: () => "1 = jedes Feld ist Feld (zählt 1 Fläche), Erde (½, liegt meist in der Mitte) oder Moor (¼, liegt in den Eckbereichen). Es sind nur wenige Felder; jede Ecke bekommt gleich viele Moorfelder, die Umgebung des Starts bleibt Feld. Das Gelände ändert nur die Fläche je Runde, nicht Rohstoffe oder Zugweite; ein Rest unter einer ganzen Fläche geht in die nächste Runde." },
+      { key: "terr_terrain", label: "Gelände (Feld, Erde, Moor)", ph: () => "0", hint: () => "1 = jedes Feld ist Feld (zählt 1 Fläche, rund 42 % der Felder, eher in der Mitte), Erde (½, ein Drittel, eher zwischen Mitte und Ecke) oder Moor (¼, ein Viertel, eher in den Ecken). Jede Ecke bekommt gleich viele Erd- und Moorfelder, die Umgebung des Starts bleibt Feld. Das Gelände ändert nur die Fläche je Runde, nicht Rohstoffe oder Zugweite; ein Rest unter einer ganzen Fläche geht in die nächste Runde." },
       { key: "terr_fort", label: "Fort-Karte", ph: () => "0", hint: () => "1 = die Karte „Fort“ liegt immer im Markt: sie setzt ein Fort auf das Feld einer gewählten eigenen Figur (nicht der König, eigenes verbundenes Land, höchstens ein Fort je Spieler). Eine eigene Figur auf dem Fort zieht n oder n+1 Felder (der König nicht). Das Fort verschwindet, sobald das Feld nicht mehr dir gehört. Braucht den neuen Kartensatz und „Karten auf jede Figur“." },
       { key: "terr_yield_lvl", label: "Ertrag je Stufe", ph: () => "0", hint: () => "1 = eine Figur der Stufe n erntet n Stück je Ernte (Takt bleibt gleich; Schmiede und Bergbau addieren danach ihr +1). Der König erntet einfach. Braucht „Zähler nur mit eigener Figur“." },
       { key: "terr_bread", label: "Brot im Lager: Erntetakt (Runden)", ph: () => (menuVer() === 3 ? "3" : "0"), hint: () => "Standard in Version 3: 3 = Brot wird alle 3 Runden geerntet (gleicher Takt wie Eisen), solange eine eigene Figur darauf steht, und liegt im Lager. Die Karten kosten dann Eisen, Gold und Brot (Tempo und Nachschub vor allem Brot, Kampf und Bauten Eisen, der König Gold). 0 = aus: Brot bringt k verbundene Felder 2^k Fläche je Runde, die Karten kosten nur Eisen und Gold. Ohne den Brot-Bonus wächst die Fläche langsamer: Stufe 4 kommt in Bot-Partien um Runde 84 statt 57." },

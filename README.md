@@ -857,46 +857,49 @@ aendern, und man kann eigene Karten bauen.
 
 Jedes Feld ist **Feld** (zaehlt 1 Flaeche), **Erde** (1/2) oder **Moor** (1/4). Das ist die einzige Wirkung: es aendert, wie viel
 Flaeche ein Feld im Einkommen bringt. Rohstoffe, Erntezaehler, Zugweite und Wertung bleiben, wie sie sind. Im Menue: *Erweiterte
-Einstellungen → Gelaende*, und im Paket *Neue Regelideen* ist es eingeschaltet. Standard ist es **aus**, weil es die Wirtschaft aendert
-(siehe Messung) und noch niemand damit gespielt hat.
+Einstellungen → Gelaende*, und im Paket *Neue Regelideen* ist es eingeschaltet. Standard ist es **aus**, weil es die Wirtschaft stark
+bremst (siehe Messung) und noch niemand damit gespielt hat.
 
-Umbau vom 18.11.2026 (zweiter Wunsch): vorher hiess die mittlere Art *Wald* und war ueber das ganze Brett verteilt (rund 24 von 100
-Feldern, mit grossen Zeichen und Farbe). Jetzt heisst sie **Erde**, es sind **deutlich weniger Felder** (rund 15 von 100), die Erde
-liegt **in der Mitte** und das Moor **in den Eckbereichen**, und die Anzeige ist nur noch ein kleiner Kreis plus ein grauer Hauch.
+Entwicklung am 18.11.2026: Zuerst gab es *Feld / Wald / Moor* mit grossen Zeichen. Auf den zweiten Wunsch hin heisst die mittlere Art
+**Erde**, die Anzeige ist ein kleiner Kreis, und die Verteilung folgte Zonen. Der dritte Wunsch (gilt jetzt) legt die **Haeufigkeit**
+fest, nicht den Wert: Die Werte bleiben 1, 1/2 und 1/4, aber **Moor ist ein Viertel der Felder, Erde ein Drittel, der Rest Feld**
+(rund 42 %).
 
 - **Rechnung**: in Vierteln (`Terrain::quarters`: Feld 4, Erde 2, Moor 1). Das Einkommen je Runde ist die Summe der Viertel aller mit der
   Fabrik verbundenen Felder durch 4; der Rest unter einer ganzen Flaeche wird in die naechste Runde uebertragen (`State::area_rest`,
   0 bis 3), damit nichts verloren geht. Fabrik zerstoert oder Land vergessen setzt den Rest auf 0. Die Preise bleiben in ganzen Flaechen.
-  Die Anzeige im Viewer rechnet mit Bruchteilen (zum Beispiel "+3,5").
+  Die Anzeige im Viewer rechnet mit Bruchteilen (zum Beispiel "+3,5"). Im Mittel zaehlt ein Feld damit
+  0,42 · 1 + 0,33 · 0,5 + 0,25 · 0,25 = rund 0,65 Flaeche (bei der Verteilung ueber das ganze Brett, die Startumgebung bleibt Feld).
 - **Verteilung** (`crates/game_core/src/terrain.rs`): eigener Zufallsstrom aus dem Seed, die Rohstoffe liegen mit und ohne Gelaende an
-  denselben Stellen (Test `terrain_does_not_move_a_single_deposit`). Das Brett hat Zonen:
-  - *Start*: Felder bis Abstand 2 von einer Startecke bleiben Feld.
-  - *Mitte*: Felder, deren Abstand zur naechsten Ecke mindestens 70 % des groessten solchen Abstands betraegt. Hier liegt die **Erde**
-    (30 % der Mittelfelder, in Flecken bis 5 Felder). Auf dem 10er-Quadrat sind das rund 7 Felder.
-  - *Eckbereich*: der Rest des Gebiets einer Ecke. Hier liegt das **Moor**: gleich viele Felder je Ecke (16 % des kleinsten
-    Eckbereichs), in Flecken bis 3 Felder. Der Eckbereich teilt sich in "nah" (bis zum Fairnessradius um die Ecke) und "fern", und
-    in beiden Teilen bekommt jede Ecke gleich viele Moorfelder, damit rund um jede Startecke gleich viel Moor liegt.
-  - Test `earth_lies_in_the_middle_and_bog_in_the_corner_areas`: Erde nie ausserhalb der Mitte, Moor nie ausserhalb der Eckbereiche;
-    Test `only_a_minority_of_the_board_is_not_field`: hoechstens ein Fuenftel des Bretts ist nicht Feld (gemessen 13 bis 20 %).
+  denselben Stellen (Test `terrain_does_not_move_a_single_deposit`).
+  - *Haeufigkeit*: je Eckgebiet 25 % Moor (`BOG_PERMILLE`) und 33,3 % Erde (`EARTH_PERMILLE`), der Rest Feld. Felder bis Abstand 2
+    von einer Startecke bleiben Feld. Jedes Eckgebiet bekommt **genau gleich viele** Moor- und Erdfelder (das kleinste Gebiet gibt die
+    Zahl vor; bei Brettern mit ungleichen Gebieten bleiben die mittleren Felder der groesseren Feld). Test
+    `about_a_quarter_is_bog_and_a_third_is_earth` prueft 19 bis 27 % Moor und 27 bis 36 % Erde ueber 2 bis 8 Spieler und je 12 Seeds.
+  - *Lage*: nach der **Luftlinie zur naechsten Startecke** (nicht nach Feldschritten; so werden die Eckbereiche rund, nicht zu Rauten
+    entlang des Brettrands). Nah an der Ecke liegt eher Moor, im Zwischenbereich eher Erde, in der Mitte eher Feld. Ein geglaettetes
+    Rauschen (`NOISE_WEIGHT` 30 %, `SMOOTH_ROUNDS` 3) mischt die Bereiche etwas und macht Flecken statt starrer Ringe. Test
+    `bog_lies_near_the_corners_earth_in_between_and_field_in_the_middle`: im Mittel Moor naeher an der Ecke als Erde, Erde naeher als Feld.
   - Von 200 Verteilungen gewinnt die mit dem kleinsten Unterschied im Flaechenwert rund um die Startecken der Spieler. Die Bretter fuer
     5, 7 und 8 Spieler sind selbst nicht ganz gleich gross (Basis ohne Gelaende: 5 Spieler 4, 7 Spieler 20, 8 Spieler 24 Viertel
     Unterschied rund um die Startecken); das Gelaende bringt dazu hoechstens ein volles Feld (4 Viertel) Unterschied, geprueft ueber
     2 bis 8 Spieler und je 20 Seeds (Test `the_terrain_adds_at_most_one_field_of_unfairness_around_the_starts`).
 - **Anzeige**: auf **jedem** Feld sitzt unten links ein kleiner runder Kreis wie bei den Rohstoff-Abzeichen: ganzer Kreis = Feld (1),
-  halber Kreis = Erde (1/2), Viertelkreis = Moor (1/4), in Graustufen (Feld hell, Erde mittel, Moor dunkel; keine Spielerfarbe). Dazu
-  ein dezenter grauer Hintergrund in Stufen: Feld bleibt unberuehrt, Erde bekommt eine leichte Schraffur in einer Richtung, Moor
-  eine dichtere gekreuzte Schraffur. Rohstoff-Abzeichen (Figur steht auf dem Vorkommen) ruecken dafuer rechts neben den Kreis. Die
-  Legende hat eine Zeile dazu, die Feldinfo (Maus oder Antippen) nennt Art und Wert. Das Gelaende steht im Replay-Kopf als `terrain`
+  halber Kreis = Erde (1/2), Viertelkreis = Moor (1/4), in Graustufen (Feld hell, Erde mittel, Moor dunkel; keine Spielerfarbe). Der
+  Hintergrund ist nach Wert **schraffiert**: Feld am staerksten (gekreuzt und dicht), Erde einfach (eine Richtung, dazu ein grauer
+  Hauch), Moor gar nicht. Rohstoff-Abzeichen (Figur steht auf dem Vorkommen) ruecken dafuer rechts neben den Kreis. Die Legende hat
+  eine Zeile dazu, die Feldinfo (Maus oder Antippen) nennt Art und Wert. Das Gelaende steht im Replay-Kopf als `terrain`
   (0 Feld, 1 Erde, 2 Moor je Feld).
 - **Bots** werten Land nach seinem Flaechenwert (`Game::land_quarters` in `area_bot.rs` und `ai.rs`); ohne Schalter ist alles wie vorher.
-- **Messung** (2 Bots `flaeche`, 80 Partien, Seeds 1 bis 80, Version 3): ohne Gelaende erste Figur Stufe 2 in Runde 34,7, Stufe 3 in
-  61,2, Stufe 4 in 83,0 (in 60 von 80 Partien erreicht); mit dem neuen Gelaende 35,6, 64,8 und 85,1 (in 43 von 80). Vor dem Umbau (mehr
-  Felder ueber das ganze Brett) waren es +1,9 / +5,9 Runden bis Stufe 2 / 3, jetzt +0,9 / +3,6: es bremst weniger, aber Stufe 4 wird
-  trotzdem seltener erreicht (43 statt 60 von 80, vorher 42 statt 63). Das liegt vermutlich am Moor in den Eckbereichen: es trifft das
-  eigene Land in der Fruehphase, nicht erst die Mitte. Partien laufen weiter bis zur Wertung nach Runde 100. Stellschrauben: weniger
-  Moor oder Moor erst weiter von der Ecke weg (`START_CLEAR`), oder billigere Stufen.
-- **Offen**: eine eigene Gelaende-Wirkung auf Bewegung (Moor bremst) wurde nicht gebaut, das waere eine zweite Idee. Die Anteile
-  (30 % Erde, 16 % Moor, 70 % Mitte) und die Flecken sind Konstanten in `terrain.rs`, noch kein Menuefeld.
+- **Messung** (2 Bots `flaeche`, 80 Partien, Seeds 1 bis 80, Version 3). Ohne Gelaende: erste Figur Stufe 2 in Runde 34,7, Stufe 3
+  in 61,2 (in 80 von 80 Partien), Stufe 4 in 83,0 (in 60 von 80). Mit der Verteilung dieser Fassung (Moor 25 %, Erde 33 %):
+  45,8 / 78,9 (in 58 von 80) / 92,8 (in 5 von 80). Das ist eine **starke Bremse**: Stufe 2 kommt gut 11 Runden spaeter, Stufe 4 wird
+  praktisch nicht mehr erreicht. Zum Vergleich die fruehere Fassung mit rund 15 % Gelaendefeldern: +0,9 / +3,6 Runden. Gewinner und
+  Landanteil aendern sich kaum (Siege 39 / 61 % statt 40 / 60 %), die Partie wird nur langsamer. Stellschrauben, falls es zu
+  langsam ist: weniger Moor und Erde, billigere Stufen (zum Beispiel Stufenpreise um etwa ein Drittel senken) oder ein Einkommen,
+  das die Verluste ausgleicht.
+- **Offen**: eine eigene Gelaende-Wirkung auf Bewegung (Moor bremst) wurde nicht gebaut, das waere eine zweite Idee. Die Anteile und das
+  Rauschen sind Konstanten in `terrain.rs`, noch kein Menuefeld.
 
 ### Version 3.3 (Wuensche vom 18.11.2026)
 
