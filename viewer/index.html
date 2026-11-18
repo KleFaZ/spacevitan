@@ -834,10 +834,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Version 3.4: Gelaende. R.terrain[cell]: 0 Feld, 1 Erde, 2 Moor mit Flaechenwert 1, 1/2, 1/4 (in Vierteln 4, 2, 1). */
   const terrainOn = () => !!(R && R.config && R.config.terr_terrain && R.terrain);
   const TERRAIN_KIND = ["Feld", "Erde", "Moor"], TERRAIN_FRAC = ["1", "½", "¼"], TERRAIN_Q = [4, 2, 1];
-  /** Graustufen statt Farbe (keine Spielerfarbe): Kreis Feld hell, Erde mittel, Moor dunkel. Hintergrund: je mehr Wert, desto staerker schraffiert (Feld gekreuzt, Erde einfach, Moor gar nicht). */
+  /** Graustufen statt Farbe (keine Spielerfarbe): Kreis Feld hell, Erde mittel, Moor dunkel. Hintergrund: je weniger Wert, desto staerker schraffiert (Feld leer, Erde einfach, Moor gekreuzt). */
   const TERRAIN_INK = ["#a4a4a4", "#6e6e6e", "#383838"];
   const TERRAIN_WASH = ["", "rgba(90,90,90,0.08)", ""];
-  const TERRAIN_HATCH = ["rgba(60,60,60,0.22)", "rgba(60,60,60,0.26)", ""];
+  const TERRAIN_HATCH = ["", "rgba(60,60,60,0.26)", "rgba(60,60,60,0.34)"];
   /** Zahl fuer die Anzeige: ganz, sonst mit Komma (Viertel: 0,25 / 0,5 / 0,75). */
   const fmtNum = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
   /** Wehrlos: der Spieler hat eine Fabrik, die Figur steht aber nicht auf Land, das daran haengt. */
@@ -1376,22 +1376,24 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (terrainOn()) drawTerrainTile(cell);
   }
 
-  /** Schraffur: Feld gekreuzt und dicht (am staerksten), Erde eine Richtung und weiter, Moor keine; (cx, cy) = Mitte, half = halbe Kachelbreite. */
+  /** Schraffur: Moor gekreuzt (am staerksten), Erde eine Richtung und weiter, Feld keine; (cx, cy) = Mitte, half = halbe Kachelbreite.
+   *  `step` ist der Linienabstand der Erde; das Moor hat zwei Richtungen mit etwas engerem Abstand (mal 0,78). Seit dem 18.11. nur
+   *  halb so viele Linien wie zuvor (Abstand verdoppelt). */
   function terrainHatch(kind, cx, cy, half, step) {
-    if (kind === 2) return;
+    if (kind === 0) return;
     ctx.save();
     ctx.strokeStyle = TERRAIN_HATCH[kind]; ctx.lineWidth = Math.max(0.8, step * 0.12);
     ctx.beginPath();
-    const s = kind === 0 ? step * 0.78 : step, h = half * 1.3;
+    const s = (kind === 2 ? step * 0.78 : step) * 2, h = half * 1.3;
     for (let t = -2 * h; t <= 2 * h; t += s) { ctx.moveTo(cx + t - h, cy + h); ctx.lineTo(cx + t + h, cy - h); }
-    if (kind === 0) for (let t = -2 * h; t <= 2 * h; t += s) { ctx.moveTo(cx + t - h, cy - h); ctx.lineTo(cx + t + h, cy + h); }
+    if (kind === 2) for (let t = -2 * h; t <= 2 * h; t += s) { ctx.moveTo(cx + t - h, cy - h); ctx.lineTo(cx + t + h, cy + h); }
     ctx.stroke();
     ctx.restore();
   }
-  /** Gelaende unter allem anderen: ein grauer Hauch (Erde) und Schraffur nach Wert; Moor bleibt unberuehrt. */
+  /** Gelaende unter allem anderen: ein grauer Hauch (Erde) und Schraffur nach Wert; Feld bleibt unberuehrt. */
   function drawTerrainTile(cell) {
     const kind = R.terrain[cell] || 0;
-    if (kind === 2) return;
+    if (kind === 0) return;
     cellPath(cell, 1);
     if (TERRAIN_WASH[kind]) { ctx.fillStyle = TERRAIN_WASH[kind]; ctx.fill(); }
     ctx.save(); ctx.clip();
@@ -3073,6 +3075,33 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     facPick = null;
     humanAct(i);
   }
+  /**
+   * "Hierher ziehen": die gewaehlte eigene Figur zur Fabrik schicken. Ein erlaubter Zug (direkt erreichbar) wird sofort
+   * gespielt, sonst wird ein Weg geplant (ein schon angetippter Weg wird bis zur Fabrik verlaengert). null = nichts zu tun.
+   */
+  function factoryGoto(f, info) {
+    if (!canAct() || selected === null) return null;
+    const piece = f.byId.get(selected);
+    if (!piece || piece.owner !== info.p || piece.cell === info.fac.cell) return null;
+    const base = ctrlPath && ctrlPath.piece === selected ? ctrlPath.cells : [piece.cell];
+    const oneI = base.length === 1 ? live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === info.fac.cell) : -1;
+    const ext = oneI >= 0 ? null : shortestPath(f, piece, base[base.length - 1], info.fac.cell);
+    const cells = ext && ext.length > 1 ? base.concat(ext.slice(1)) : null;
+    return { piece, oneI, cells, steps: cells ? cells.length - 1 : 1 };
+  }
+  function facGoto() {
+    if (!facState || facState.R !== R) return;
+    const g = factoryGoto(R.frames[fi], facState);
+    if (!g) return;
+    facOpen = false;
+    if (g.oneI >= 0) { humanAct(g.oneI); return; }
+    if (!g.cells) { routeNote = "Dorthin gibt es keinen freien Weg."; renderFactoryCard(); renderTurnBox(); return; }
+    commitRoute(g.piece, g.cells);
+    renderFactoryCard();
+  }
+  /** Eigene Fabrik (fertig gebaut, nicht besetzt) auf diesem Feld: ein Tipp darauf oeffnet ihr Menue. */
+  const ownFactoryMenuAt = (f, cell) => !!facState && facState.R === R && facState.fac.cell === cell && facState.fac.building <= 0 &&
+    !f.pieces.some((q) => q.cell === cell && q.owner === facState.p);
   /** Klick auf die eigene Fabrik: das Menue mit allen Aktionen ploppt auf (ein zweiter Klick schliesst es). true = Klick verbraucht. */
   function facClick(cell) {
     if (!facState || facState.R !== R || facState.fac.cell !== cell) return false;
@@ -3248,7 +3277,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const stockCard = stockCards ? `<p class="muted">Liegt bereit: ${escapeHtml(CARD(stockCards).name)}</p>` : "";
       let nextLine = "";
       if (next && !Number.isFinite(next.rounds)) nextLine = `<p class="muted">${escapeHtml(`${unitTitle(next.level)} (Stufe ${next.level}) kommt nicht: ${missingText(next)}. Verbinde Land mit passenden Vorkommen.`)}</p>`;
-      body = `<div class="fc-body">` +
+      // Ist eine eigene Figur gewaehlt: "Hierher ziehen" ganz oben (Zug oder Weg zur Fabrik)
+      const go = factoryGoto(f, info);
+      let gotoBtn = "";
+      if (go) {
+        const pName = go.piece.king ? "König" : unitTitle(go.piece.level);
+        const sym = go.piece.king ? symSvg("crown", 28, null, false, "König") : symSvg("u" + go.piece.level, 28, PLAYER[go.piece.owner].color, false, pName);
+        const small = go.oneI >= 0 ? `${pName} · ein Zug` : go.cells ? `${pName} · ${go.steps} Felder weit` : `${pName} · kein freier Weg`;
+        gotoBtn = `<div class="fc-sec">` + act(go.oneI >= 0 || go.cells ? "ok" : "", go.oneI >= 0 || go.cells ? `data-act="goto"` : "disabled", sym,
+          "Hierher ziehen", small, go.oneI >= 0 ? "Ziehen" : go.cells ? "Weg starten" : "", "", "Die gewählte Figur zu dieser Fabrik schicken") + `</div>`;
+      }
+      body = `<div class="fc-body">` + gotoBtn +
         (slim ? "" : `<p class="muted">Je Runde: ${escapeHtml(incomeText(inc))}</p>`) +
         `<div class="fc-sec">${slim ? "" : `<p class="fc-h">Figuren bauen</p>`}${figs.join("")}${nextLine}</div>` +
         (!slim && king ? `<div class="fc-sec"><p class="fc-h">König verbessern</p>${king}</div>` : "") +
@@ -3392,6 +3431,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     if (t.dataset.pick) { facOpen = false; renderFactoryCard(); pickCard(t.dataset.pick); return; }
     if (t.dataset.buy) { facOpen = false; humanAct(Number(t.dataset.buy)); return; }
+    if (t.dataset.act === "goto") { facGoto(); return; }
     if (t.dataset.act === "close") { facClose(); return; }
     if (t.dataset.act === "build") { facBuild(); return; }
     if (t.dataset.act === "shift") {
@@ -4128,7 +4168,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["rim", "Gebietsmodus: Rand der Kachel in der Farbe des Vorkommens (Eisen grau-blau, Gold gelb, Brot braun). Steht eine Figur auf dem Feld, zeigt ein Abzeichen am Feldrand, was darunter liegt."],
       ["barrel", "Kat 4 (ab 6 Spielern)"],
       ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
-      ["terrain", "Gelände: kleiner Kreis unten links im Feld. Ganzer Kreis = Feld (gekreuzt schraffiert, meist in der Mitte), zählt 1 Fläche. Halber Kreis = Erde (einfach schraffiert, meist zwischen Mitte und Ecke), ½. Viertelkreis = Moor (ohne Schraffur, meist in den Ecken), ¼."],
+      ["terrain", "Gelände: kleiner Kreis unten links im Feld. Ganzer Kreis = Feld (ohne Schraffur, meist in der Mitte), zählt 1 Fläche. Halber Kreis = Erde (einfach schraffiert, meist zwischen Mitte und Ecke), ½. Viertelkreis = Moor (gekreuzt schraffiert, meist in den Ecken), ¼."],
       ["land", "Gebietsmodus: Land in der Farbe des Spielers. Jedes Feld auf dem Weg einer Figur wird ihre Farbe, betritt ein Gegner es, kippt es um."],
       ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt: sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist. Es genügt, dass sie neben ihrem verbundenen Land steht: dann färbt sie ihr Feld und ist wieder aktiv."],
     ];
@@ -4275,7 +4315,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const x = 2 + k * 12.5;
       lc.save();
       lc.fillStyle = TERR_WHITE; lc.fillRect(x, 8, 11.5, 24);
-      if (k < 2) {
+      if (k > 0) {
         if (TERRAIN_WASH[k]) { lc.fillStyle = TERRAIN_WASH[k]; lc.fillRect(x, 8, 11.5, 24); }
         lc.beginPath(); lc.rect(x, 8, 11.5, 24); lc.clip();
         terrainHatch(k, x + 5.75, 20, 8, 5.2);
@@ -4469,11 +4509,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       if (cell === piece.cell) { ctrlPath = null; routeNote = "Weg verworfen."; renderTurnBox(); requestAnimationFrame(draw); return true; }
       const last = ctrlPath.cells[ctrlPath.cells.length - 1];
       if (cell === last) { commitRoute(piece, ctrlPath.cells); return true; }
-      if (f.pieces.some((q) => q.cell === cell)) return false; // andere Figur: Auswahl wechselt, der Weg faellt weg
+      if (f.pieces.some((q) => q.cell === cell) || ownFactoryMenuAt(f, cell)) return false; // andere Figur oder eigene Fabrik: Auswahl wechselt (Fabrik: Menue)
       routeClick(cell, "tile");
       return true;
     }
-    if (cell === piece.cell || f.pieces.some((q) => q.cell === cell)) return false;
+    if (cell === piece.cell || f.pieces.some((q) => q.cell === cell) || ownFactoryMenuAt(f, cell)) return false;
     if (live.legal.some((a) => a.type === "move" && a.piece === selected && a.to === cell)) return false; // ein Zug: zweimal tippen zieht
     pendingMove = null;
     routeClick(cell, "tile");
@@ -4511,6 +4551,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       routeNote = "";
       renderPanel();
     }
+    // Handy: Ein Tipp auf die eigene Fabrik waehlt sie (Menue mit "Hierher ziehen"), statt die Figur dorthin laufen zu lassen.
+    if (touchUi() && selected !== null && cell !== null && isTerr() && ownFactoryMenuAt(f, cell)) { pendingMove = null; if (facClick(cell)) return; }
     if (touchUi() && selected !== null && tapRoute(f, cell)) return;
     if (cell !== null && selected !== null) {
       const i = live.legal.findIndex((a) => a.type === "move" && a.piece === selected && a.to === cell);

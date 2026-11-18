@@ -886,8 +886,9 @@ fest, nicht den Wert: Die Werte bleiben 1, 1/2 und 1/4, aber **Moor ist ein Vier
     2 bis 8 Spieler und je 20 Seeds (Test `the_terrain_adds_at_most_one_field_of_unfairness_around_the_starts`).
 - **Anzeige**: auf **jedem** Feld sitzt unten links ein kleiner runder Kreis wie bei den Rohstoff-Abzeichen: ganzer Kreis = Feld (1),
   halber Kreis = Erde (1/2), Viertelkreis = Moor (1/4), in Graustufen (Feld hell, Erde mittel, Moor dunkel; keine Spielerfarbe). Der
-  Hintergrund ist nach Wert **schraffiert**: Feld am staerksten (gekreuzt und dicht), Erde einfach (eine Richtung, dazu ein grauer
-  Hauch), Moor gar nicht. Rohstoff-Abzeichen (Figur steht auf dem Vorkommen) ruecken dafuer rechts neben den Kreis. Die Legende hat
+  Hintergrund ist nach Wert **schraffiert**, seit dem 18.11. (Wunsch am Nachmittag) **umgekehrt**: Feld gar nicht, Erde einfach (eine
+  Richtung, dazu ein grauer Hauch), Moor am staerksten (gekreuzt), und beide mit **halb so vielen Linien** wie vorher (doppelter
+  Linienabstand). Rohstoff-Abzeichen (Figur steht auf dem Vorkommen) ruecken dafuer rechts neben den Kreis. Die Legende hat
   eine Zeile dazu, die Feldinfo (Maus oder Antippen) nennt Art und Wert. Das Gelaende steht im Replay-Kopf als `terrain`
   (0 Feld, 1 Erde, 2 Moor je Feld).
 - **Bots** werten Land nach seinem Flaechenwert (`Game::land_quarters` in `area_bot.rs` und `ai.rs`); ohne Schalter ist alles wie vorher.
@@ -979,6 +980,11 @@ fest, nicht den Wert: Die Werte bleiben 1, 1/2 und 1/4, aber **Moor ist ein Vier
   einen Weg (`tapRoute`, die vorhandene Route wie Shift/Strg am PC); jedes weitere Feld verlaengert ihn, **dasselbe Feld nochmal
   tippen startet ihn** (ein Schritt je eigener Zug, von selbst), ein Tipp auf die Figur verwirft ihn oder **unterbricht** die
   laufende Route (auch ausser der Reihe). Ein Feld, das die Figur in einem Zug erreicht, bleibt das Zweimal-Tippen-Ziehen.
+  **Eigene Fabrik antippen (Wunsch 18.11.)**: Ist eine Figur gewaehlt, plant der Tipp auf die eigene Fabrik **keinen Weg** und zieht
+  auch nicht sofort hin, sondern waehlt die Fabrik: ihr Menue geht auf, die Figur bleibt gewaehlt. Ganz oben im Menue steht dann
+  **Hierher ziehen** (`factoryGoto`/`facGoto`): ein direkt erlaubter Zug wird gespielt, sonst startet der Weg (ein schon angetippter
+  Weg wird bis zur Fabrik verlaengert). Eine andere eigene Figur antippen wechselt die Auswahl und verwirft den angetippten Weg.
+  Das gilt in der 2D-Ansicht mit Fingerbedienung (`touchUi`); am PC und in 3D zieht der Klick auf ein erreichbares Feld wie bisher.
 - **Koenig antippen**: die Blase zeigt **Fabrik hier bauen** (Neubau nach Zerstoerung oder Umzug auf das Feld des Koenigs, mit Dauer
   und Kosten) und, wenn moeglich, **Koenig verbessern**.
 
