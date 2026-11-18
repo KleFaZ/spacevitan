@@ -631,7 +631,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_fort,
         c.terr_terrain
     );
-    // Gelaende (`terr_terrain`): 0 Feld, 1 Wald, 2 Moor je Feld; ohne Schalter fehlt das Feld.
+    // Gelaende (`terr_terrain`): 0 Feld, 1 Erde, 2 Moor je Feld; ohne Schalter fehlt das Feld.
     let terrain = if c.terr_terrain {
         format!(
             r#","terrain":{}"#,

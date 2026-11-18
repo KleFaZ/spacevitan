@@ -3475,19 +3475,19 @@ fn terrain_does_not_move_a_single_deposit() {
         a.deposits, b.deposits,
         "gleiche Rohstoffe mit und ohne Gelaende"
     );
-    assert!(b.terrain.contains(&Terrain::Forest));
+    assert!(b.terrain.contains(&Terrain::Earth));
     assert!(b.terrain.contains(&Terrain::Bog));
 }
 
 #[test]
-fn forest_counts_half_and_bog_a_quarter_in_the_income() {
+fn earth_counts_half_and_bog_a_quarter_in_the_income() {
     let mut g = terrain_game();
-    // Fabrikfeld und drei Felder daneben: Feld 4 + Wald 2 + Moor 1 + Moor 1 = 8 Viertel = 2 Flaeche
+    // Fabrikfeld und drei Felder daneben: Feld 4 + Erde 2 + Moor 1 + Moor 1 = 8 Viertel = 2 Flaeche
     strip(&mut g, P0, 3);
     set_terrain(
         &mut g,
         &[
-            ((1, 0), Terrain::Forest),
+            ((1, 0), Terrain::Earth),
             ((2, 0), Terrain::Bog),
             ((3, 0), Terrain::Bog),
         ],
@@ -3506,9 +3506,9 @@ fn a_remainder_below_one_area_is_carried_into_the_next_round() {
     set_terrain(
         &mut g,
         &[
-            ((1, 0), Terrain::Forest),
+            ((1, 0), Terrain::Earth),
             ((2, 0), Terrain::Bog),
-            ((3, 0), Terrain::Forest),
+            ((3, 0), Terrain::Earth),
         ],
     );
     let start = g.state.area[0];
@@ -3547,7 +3547,7 @@ fn only_connected_land_counts_by_its_terrain_value() {
 fn losing_the_factory_clears_the_remainder() {
     let mut g = terrain_game();
     strip(&mut g, P0, 0);
-    set_terrain(&mut g, &[((0, 0), Terrain::Forest)]);
+    set_terrain(&mut g, &[((0, 0), Terrain::Earth)]);
     income(&mut g, P0); // 2 Viertel: Rest 2
     assert_eq!(g.state.area_rest[0], 2);
     g.territory_forget(P0);

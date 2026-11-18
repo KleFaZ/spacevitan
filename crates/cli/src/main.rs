@@ -71,7 +71,7 @@ Optionen:
                  Version 3.3: terr_bread=N (Standard 3 = wie Eisen: Brot wird alle N Runden mit
                  einer Figur auf dem Feld geerntet und liegt im Lager; die Karten kosten Eisen,
                  Gold und Brot); terr_bread=0 = der alte 2^k-Flaechenbonus
-                 terr_terrain (Standard aus): Gelaende, jedes Feld ist Feld (Flaechenwert 1), Wald (1/2)
+                 terr_terrain (Standard aus): Gelaende, jedes Feld ist Feld (Flaechenwert 1), Erde (1/2)
                  oder Moor (1/4); gleich viele je Gebiet, Rest in der naechsten Runde;
                  terr_fort (Standard aus): die Karte Fort liegt im Markt; eine Figur auf dem Fort
                  zieht n oder n+1 Felder, das Fort verschwindet, wenn das Feld nicht mehr dir gehoert

@@ -257,7 +257,7 @@ pub struct State {
     /// Gebietsmodus: gesammelte Flaeche je Spieler (wird fuer Figuren ausgegeben).
     pub area: Vec<u32>,
     /// Version 3.4 (`terr_terrain`): Rest des Flaechenwerts in Vierteln (0 bis 3), der in die naechste
-    /// Runde uebertragen wird, weil Wald und Moor weniger als eine ganze Flaeche zaehlen.
+    /// Runde uebertragen wird, weil Erde und Moor weniger als eine ganze Flaeche zaehlen.
     pub area_rest: Vec<u8>,
     /// Gebietsmodus: die Karte neben der Fabrik, die auf die naechste Figur wirkt.
     pub stored_card: Vec<Option<Card>>,

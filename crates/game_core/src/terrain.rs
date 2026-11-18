@@ -1,12 +1,14 @@
-//! Version 3.4: Gelaende (`terr_terrain`). Jedes Feld ist Feld, Wald oder Moor. Das Gelaende aendert
-//! nur den **Flaechenwert**, den ein Feld im Einkommen bringt: Feld = 1, Wald = 1/2, Moor = 1/4.
+//! Version 3.4: Gelaende (`terr_terrain`). Jedes Feld ist Feld, Erde oder Moor. Das Gelaende aendert
+//! nur den **Flaechenwert**, den ein Feld im Einkommen bringt: Feld = 1, Erde = 1/2, Moor = 1/4.
 //! Gerechnet wird in Vierteln (4 / 2 / 1); ein Rest unter einer ganzen Flaeche wird in die naechste
 //! Runde uebertragen (`State::area_rest`), damit nichts verloren geht.
 //!
-//! Die Verteilung ist fair: Jedes Gebiet (Ecke) bekommt **genau gleich viele** Wald- und
-//! Moorfelder, die Umgebung des Starts bleibt Feld, und von mehreren Versuchen gewinnt der mit dem
-//! geringsten Unterschied im Flaechenwert rund um die Startecken. Das Gelaende kommt aus einem
-//! eigenen Zufallsstrom: Rohstoffe liegen mit und ohne Gelaende an denselben Stellen.
+//! Die Verteilung folgt Zonen (Wunsch vom 18.11.2026): **Erde liegt in der Mitte** des Bretts,
+//! **Moor in den Eckbereichen**, alles andere bleibt Feld. Es sind wenige Felder. Jeder Eckbereich
+//! bekommt **genau gleich viele** Moorfelder, die Umgebung des Starts bleibt Feld, und von mehreren
+//! Versuchen gewinnt der mit dem geringsten Unterschied im Flaechenwert rund um die Startecken.
+//! Das Gelaende kommt aus einem eigenen Zufallsstrom: Rohstoffe liegen mit und ohne Gelaende an
+//! denselben Stellen.
 
 use crate::board::Board;
 use crate::config::Config;
@@ -20,26 +22,26 @@ pub enum Terrain {
     #[default]
     Field,
     /// Halber Flaechenwert (1/2).
-    Forest,
+    Earth,
     /// Viertel Flaechenwert (1/4).
     Bog,
 }
 
 impl Terrain {
-    /// Flaechenwert in Vierteln: Feld 4, Wald 2, Moor 1.
+    /// Flaechenwert in Vierteln: Feld 4, Erde 2, Moor 1.
     pub fn quarters(self) -> u32 {
         match self {
             Terrain::Field => 4,
-            Terrain::Forest => 2,
+            Terrain::Earth => 2,
             Terrain::Bog => 1,
         }
     }
 
-    /// Ziffer fuer die JSON-Ausgabe und die Kartenansicht: 0 Feld, 1 Wald, 2 Moor.
+    /// Ziffer fuer die JSON-Ausgabe und die Kartenansicht: 0 Feld, 1 Erde, 2 Moor.
     pub fn code(self) -> u8 {
         match self {
             Terrain::Field => 0,
-            Terrain::Forest => 1,
+            Terrain::Earth => 1,
             Terrain::Bog => 2,
         }
     }
@@ -47,15 +49,19 @@ impl Terrain {
     pub fn name(self) -> &'static str {
         match self {
             Terrain::Field => "Feld",
-            Terrain::Forest => "Wald",
+            Terrain::Earth => "Erde",
             Terrain::Bog => "Moor",
         }
     }
 }
 
-/// Anteil Wald und Moor je Gebiet in Prozent der freien Felder.
-const FOREST_PERCENT: usize = 24;
-const BOG_PERCENT: usize = 12;
+/// Anteil Erde an den Feldern der Mitte, in Prozent.
+const EARTH_PERCENT: usize = 30;
+/// Anteil Moor an den freien Feldern eines Eckbereichs, in Prozent.
+const BOG_PERCENT: usize = 16;
+/// Zur Mitte zaehlt ein Feld, dessen Abstand zur naechsten Ecke mindestens so viel Prozent des
+/// groessten solchen Abstands auf dem Brett betraegt.
+const MID_PERCENT: u32 = 70;
 /// Felder bis zu diesem Abstand vom Start bleiben Feld (die Startumgebung ist fuer alle gleich).
 const START_CLEAR: u32 = 2;
 /// Wie viele Verteilungen der Generator vergleicht.
@@ -80,7 +86,7 @@ pub fn make_terrain(config: &Config, board: &Board, territories: &[Option<usize>
     let mut best: Option<(u32, Vec<Terrain>)> = None;
     for attempt in 1..=ATTEMPTS {
         let mut rng = base.fork(attempt);
-        let terrain = one_attempt(board, territories, &dist, &mut rng);
+        let terrain = one_attempt(board, territories, &dist, radius, &mut rng);
         // Unterschied im Flaechenwert rund um die Startecken der Spieler
         let sums: Vec<u32> = player_corners
             .iter()
@@ -114,54 +120,103 @@ pub fn quarters_within(board: &Board, terrain: &[Terrain], corner: CellId, radiu
         .sum()
 }
 
+/// Die Zonen des Bretts: die Mitte und je Ecke der Eckbereich. Felder nahe an einer Startecke
+/// (bis `START_CLEAR`) gehoeren zu keiner Zone und bleiben Feld; ebenso die Felder genau zwischen
+/// zwei Eckbereichen.
+fn zones(
+    board: &Board,
+    territories: &[Option<usize>],
+    dist: &[Vec<u32>],
+) -> (Vec<CellId>, Vec<Vec<CellId>>) {
+    let corners = board.corners().len();
+    let nearest = |c: CellId| dist.iter().map(|d| d[c.idx()]).min().unwrap_or(0);
+    let far = board.cells().map(nearest).max().unwrap_or(0);
+    let mid_from = (far * MID_PERCENT).div_ceil(100).max(START_CLEAR + 1);
+    let mut mid = Vec::new();
+    let mut corner_zones: Vec<Vec<CellId>> = vec![Vec::new(); corners];
+    for cell in board.cells() {
+        let d = nearest(cell);
+        if d <= START_CLEAR {
+            continue;
+        }
+        if d >= mid_from {
+            mid.push(cell);
+        } else if let Some(g) = territories[cell.idx()] {
+            corner_zones[g].push(cell);
+        }
+    }
+    (mid, corner_zones)
+}
+
+/// `percent` Prozent von `size`, auf ganze Felder gerundet.
+fn share(size: usize, percent: usize) -> usize {
+    (size * percent + 50) / 100
+}
+
 fn one_attempt(
     board: &Board,
     territories: &[Option<usize>],
     dist: &[Vec<u32>],
+    radius: u32,
     rng: &mut Rng,
 ) -> Vec<Terrain> {
     let n = board.len();
-    let corners = board.corners().len();
     let mut terrain = vec![Terrain::Field; n];
-    // Gruppen: je Ecke ein Gebiet, dazu die neutrale Mitte (Index `corners`).
-    let mut groups: Vec<Vec<CellId>> = vec![Vec::new(); corners + 1];
-    for cell in board.cells() {
-        let g = territories[cell.idx()].unwrap_or(corners);
-        // frei = weiter als START_CLEAR von jeder Startecke
-        if dist.iter().all(|d| d[cell.idx()] > START_CLEAR) {
-            groups[g].push(cell);
-        }
+    let (mid, corner_zones) = zones(board, territories, dist);
+    // Erde in der Mitte, in zusammenhaengenden Flecken
+    let mut free = vec![false; n];
+    for c in &mid {
+        free[c.idx()] = true;
     }
-    // Gleich viele Felder je Ecken-Gebiet: der kleinste Wert gibt die Zahl vor.
-    let smallest = groups[..corners].iter().map(Vec::len).min().unwrap_or(0);
-    for (g, cells) in groups.iter().enumerate() {
-        let size = if g < corners { smallest } else { cells.len() };
-        let forest = size * FOREST_PERCENT / 100;
-        let bog = size * BOG_PERCENT / 100;
-        let mut free: Vec<bool> = vec![false; n];
-        for c in cells {
-            free[c.idx()] = true;
+    let earth = share(mid.len(), EARTH_PERCENT);
+    grow(
+        board,
+        rng,
+        &mid,
+        &mut free,
+        &mut terrain,
+        Terrain::Earth,
+        earth,
+        5,
+    );
+    // Moor in den Eckbereichen: gleich viele je Ecke. Der Eckbereich teilt sich in "nah" (bis zum
+    // Fairnessradius um die Ecke) und "fern"; in beiden Teilen bekommt jede Ecke gleich viele
+    // Moorfelder, damit der Flaechenwert rund um jede Startecke fast gleich bleibt.
+    let split: Vec<(Vec<CellId>, Vec<CellId>)> = corner_zones
+        .iter()
+        .enumerate()
+        .map(|(g, cells)| {
+            cells
+                .iter()
+                .copied()
+                .partition(|c| dist[g][c.idx()] <= radius)
+        })
+        .collect();
+    let near_quota = share(
+        split.iter().map(|(near, _)| near.len()).min().unwrap_or(0),
+        BOG_PERCENT,
+    );
+    let far_quota = share(
+        split.iter().map(|(_, far)| far.len()).min().unwrap_or(0),
+        BOG_PERCENT,
+    );
+    for (near, far) in &split {
+        for (cells, quota) in [(near, near_quota), (far, far_quota)] {
+            free.fill(false);
+            for c in cells {
+                free[c.idx()] = true;
+            }
+            grow(
+                board,
+                rng,
+                cells,
+                &mut free,
+                &mut terrain,
+                Terrain::Bog,
+                quota,
+                3,
+            );
         }
-        grow(
-            board,
-            rng,
-            cells,
-            &mut free,
-            &mut terrain,
-            Terrain::Forest,
-            forest,
-            6,
-        );
-        grow(
-            board,
-            rng,
-            cells,
-            &mut free,
-            &mut terrain,
-            Terrain::Bog,
-            bog,
-            4,
-        );
     }
     terrain
 }
@@ -234,7 +289,7 @@ mod tests {
     #[test]
     fn values_are_four_two_one_quarters() {
         assert_eq!(Terrain::Field.quarters(), 4);
-        assert_eq!(Terrain::Forest.quarters(), 2);
+        assert_eq!(Terrain::Earth.quarters(), 2);
         assert_eq!(Terrain::Bog.quarters(), 1);
     }
 
@@ -254,34 +309,78 @@ mod tests {
     }
 
     #[test]
-    fn every_territory_gets_exactly_the_same_number_of_forest_and_bog_cells() {
-        for players in [2u8, 3, 4, 5, 6] {
+    fn every_corner_area_gets_exactly_the_same_number_of_bog_cells() {
+        for players in [2u8, 3, 4, 5, 6, 8] {
             for seed in 1..=12u64 {
                 let c = config(players, seed, true);
                 let (board, territories, t) = terrain_of(&c);
                 let corners = board.corners().len();
-                let count = |g: usize, kind: Terrain| {
+                let bog = |g: usize| {
                     board
                         .cells()
-                        .filter(|cell| territories[cell.idx()] == Some(g) && t[cell.idx()] == kind)
+                        .filter(|cell| {
+                            territories[cell.idx()] == Some(g) && t[cell.idx()] == Terrain::Bog
+                        })
                         .count()
                 };
-                for kind in [Terrain::Forest, Terrain::Bog] {
-                    let first = count(0, kind);
-                    assert!(
-                        first > 0,
-                        "{players} Spieler, Seed {seed}: kein {}",
-                        kind.name()
+                let first = bog(0);
+                assert!(first > 0, "{players} Spieler, Seed {seed}: kein Moor");
+                for g in 1..corners {
+                    assert_eq!(
+                        bog(g),
+                        first,
+                        "{players} Spieler, Seed {seed}: Eckbereich {g} hat eine andere Zahl Moor"
                     );
-                    for g in 1..corners {
-                        assert_eq!(
-                            count(g, kind),
-                            first,
-                            "{players} Spieler, Seed {seed}: Gebiet {g} hat andere Zahl {}",
-                            kind.name()
-                        );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn earth_lies_in_the_middle_and_bog_in_the_corner_areas() {
+        for players in [2u8, 3, 4, 5, 6, 8] {
+            for seed in 1..=12u64 {
+                let c = config(players, seed, true);
+                let (board, territories, t) = terrain_of(&c);
+                let dist: Vec<Vec<u32>> = board
+                    .corners()
+                    .iter()
+                    .map(|&k| board.distances_from(k))
+                    .collect();
+                let (mid, corner_zones) = zones(&board, &territories, &dist);
+                let earth = |cell: &CellId| t[cell.idx()] == Terrain::Earth;
+                assert!(
+                    mid.iter().any(earth),
+                    "{players} Spieler, Seed {seed}: keine Erde"
+                );
+                // Erde nur in der Mitte, Moor nur in den Eckbereichen
+                for cell in board.cells() {
+                    match t[cell.idx()] {
+                        Terrain::Earth => assert!(mid.contains(&cell), "Erde ausserhalb der Mitte"),
+                        Terrain::Bog => assert!(
+                            corner_zones.iter().any(|z| z.contains(&cell)),
+                            "Moor ausserhalb der Eckbereiche"
+                        ),
+                        Terrain::Field => {}
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_minority_of_the_board_is_not_field() {
+        // Wunsch vom 18.11.2026: deutlich weniger Gelaendefelder (hoechstens ein Fuenftel)
+        for players in [2u8, 3, 4, 5, 6, 8] {
+            for seed in 1..=12u64 {
+                let c = config(players, seed, true);
+                let (board, _, t) = terrain_of(&c);
+                let special = t.iter().filter(|&&x| x != Terrain::Field).count();
+                assert!(
+                    special * 5 <= board.len(),
+                    "{players} Spieler, Seed {seed}: {special} von {} Feldern",
+                    board.len()
+                );
             }
         }
     }
@@ -303,24 +402,30 @@ mod tests {
     }
 
     #[test]
-    fn the_land_value_around_each_start_is_nearly_equal() {
-        // Unterschied (in Vierteln) im Umkreis um die Startecken der Spieler, ueber viele Karten
-        let mut worst = 0;
-        for players in [2u8, 3, 4, 5, 6] {
+    fn the_terrain_adds_at_most_one_field_of_unfairness_around_the_starts() {
+        // Unterschied (in Vierteln) im Umkreis um die Startecken der Spieler. Die Bretter fuer 5, 7
+        // und 8 Spieler sind selbst nicht ganz gleich; das Gelaende darf dazu hoechstens ein
+        // volles Feld (4 Viertel) an Unterschied bringen.
+        for players in [2u8, 3, 4, 5, 6, 7, 8] {
             for seed in 1..=20u64 {
                 let c = config(players, seed, true);
                 let (board, _, t) = terrain_of(&c);
                 let radius = c.effective_fairness_radius().max(4);
-                let sums: Vec<u32> = c
-                    .player_corners()
-                    .iter()
-                    .map(|&k| quarters_within(&board, &t, board.corners()[k], radius))
-                    .collect();
-                let spread = sums.iter().max().unwrap() - sums.iter().min().unwrap();
-                worst = worst.max(spread);
+                let spread = |terrain: &[Terrain]| {
+                    let sums: Vec<u32> = c
+                        .player_corners()
+                        .iter()
+                        .map(|&k| quarters_within(&board, terrain, board.corners()[k], radius))
+                        .collect();
+                    sums.iter().max().unwrap() - sums.iter().min().unwrap()
+                };
+                let base = spread(&vec![Terrain::Field; board.len()]);
+                let with = spread(&t);
+                assert!(
+                    with <= base + 4,
+                    "{players} Spieler, Seed {seed}: Unterschied {with} statt {base} Vierteln"
+                );
             }
         }
-        // Gemessen: hoechstens 4 Viertel (ein volles Feld) bei rund 90 Vierteln im Umkreis.
-        assert!(worst <= 6, "groesster Unterschied {worst} Viertel");
     }
 }

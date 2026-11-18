@@ -214,7 +214,7 @@ pub struct Config {
     /// eigenen Figur; eine eigene Figur (nie der Koenig) auf dem Fort zieht `n` oder `n + 1` Felder.
     /// Braucht `terr_cardset3` und `terr_cardany`. Standard aus.
     pub terr_fort: bool,
-    /// Version 3.4: Gelaende. Jedes Feld ist Feld (Flaechenwert 1), Wald (1/2) oder Moor (1/4); das
+    /// Version 3.4: Gelaende. Jedes Feld ist Feld (Flaechenwert 1), Erde (1/2) oder Moor (1/4); das
     /// zaehlt im Einkommen an Flaeche (siehe `terrain`). Standard aus.
     pub terr_terrain: bool,
     /// Eigene Preise, Karten, die nicht gezogen werden, und selbst gebaute Karten (Version 3).

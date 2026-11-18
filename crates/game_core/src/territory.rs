@@ -1786,7 +1786,7 @@ impl Game {
         let worked_cells = self.config.terr_occupy.then(|| self.worked_cells(actor));
         let mut gained = Inventory::new();
         let mut area = 0u32;
-        // Mit Gelaende zaehlt jedes Feld nach seinem Flaechenwert in Vierteln (Feld 4, Wald 2, Moor 1).
+        // Mit Gelaende zaehlt jedes Feld nach seinem Flaechenwert in Vierteln (Feld 4, Erde 2, Moor 1).
         let terrain_on = self.config.terr_terrain;
         let mut quarters = 0u32;
         let mut kat3 = 0u32;
