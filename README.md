@@ -886,7 +886,7 @@ aendern, und man kann eigene Karten bauen.
   - **Offen / ehrlich**: Der Vorteil haengt an der Karte (Kosten 3 Eisen der eigenen Farbe, kommt aus dem Lager der Fabrik und ist frueh
     knapp); die Fabrik **ohne** Karte umzuziehen (Umzug mit Bauzeit) kann er nicht gezielt. Dass die Mitte-Fabrik die Ursache des
     Vorsprungs ist, zeigt der Vergleich mit dem Kontrollbot (Land-Gewicht allein: 24:24), aber nicht, *warum* sie hilft (kuerzere Wege,
-    mehr Land um die Fabrik, schnellere Verbindung?). Bots mit 20000 Stellungen (Standardbudget) wurden nur an wenigen Partien geprueft (siehe unten).
+    mehr Land um die Fabrik, schnellere Verbindung?). Mit dem Standardbudget (20000 Stellungen, Karte im Markt, Seeds 101 bis 110, beide Sitzordnungen) **15:5**, also dasselbe Bild wie bei 5000.
 - **Bot-Duelle am 19.11.**: Der erste Zug ist ein starker, aber schwankender Vorteil (Seeds 1 bis 12: Erster gewinnt 67 %, Seeds 13 bis 36: 40 %),
   darum immer beide Sitzordnungen messen und mindestens 48 Partien je Variante nehmen; 24 Partien zeigen nur Unterschiede ab etwa 20 Prozentpunkten.
 
