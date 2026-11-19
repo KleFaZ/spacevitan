@@ -155,6 +155,23 @@ pub enum Event {
         owner: PlayerId,
         cell: CellId,
     },
+    /// Version 3.6: eine brennende Figur hat angegriffen und ist dabei gestorben. `path` sind die
+    /// Felder ihres Weges (ohne Startfeld, mit dem Zielfeld) und werden neutral, `killed` die
+    /// gegnerischen Figuren auf dem Weg (die Zielfigur zuletzt).
+    KamikazeStrike {
+        piece: PieceId,
+        owner: PlayerId,
+        from: CellId,
+        to: CellId,
+        path: Vec<CellId>,
+        killed: Vec<PieceId>,
+    },
+    /// Version 3.6: eine brennende Figur wurde nicht gezogen und ist weg.
+    KamikazeGone {
+        piece: PieceId,
+        owner: PlayerId,
+        cell: CellId,
+    },
     /// Version 2: die Fabrik ist mit der Karte auf ein anderes Feld gerueckt.
     FactoryShifted {
         factory: FactoryId,

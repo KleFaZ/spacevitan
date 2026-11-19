@@ -447,7 +447,7 @@ impl SearchBot {
 
         // Version 3: Kat 3 tauschen und die zerstoerte Fabrik neu bauen entscheidet eine Faustregel.
         let me = game.current_player();
-        let legal = game.legal_actions();
+        let legal = game.legal_actions_for_bot();
         if game.home_factory(me).is_none() && legal.contains(&Action::RebuildFactory) {
             return Action::RebuildFactory;
         }
@@ -1498,7 +1498,7 @@ impl Bot for SearchBot {
     }
 
     fn choose(&mut self, game: &Game) -> Action {
-        let legal = game.legal_actions();
+        let legal = game.legal_actions_for_bot();
         if legal.len() == 1 {
             self.stats = SearchStats::default();
             return legal[0];

@@ -507,7 +507,7 @@ impl Bot for AreaBot {
     }
 
     fn choose(&mut self, game: &Game) -> Action {
-        let legal = game.legal_actions();
+        let legal = game.legal_actions_for_bot();
         if legal.len() == 1 || !game.config.territory {
             return legal[0];
         }

@@ -551,7 +551,7 @@ mod tests {
         let json = out();
         assert!(json.contains("\"regrow_rounds\":[20,5,3,2]"));
         assert!(json.contains("\"market_size\":4"));
-        assert!(json.contains("\"score_after\":100"));
+        assert!(json.contains("\"score_after\":250"));
     }
 
     #[test]

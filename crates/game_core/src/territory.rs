@@ -655,6 +655,10 @@ impl Game {
         if card == Card::Fort {
             return self.fort_fits(piece);
         }
+        // Kamikaze: auf jede eigene Einheit, die noch nicht brennt.
+        if card == Card::Kamikaze {
+            return self.config.terr_kamikaze && piece.perks.kamikaze == 0;
+        }
         // Diagonalzug: nur auf einem Bauern (Stufe 1) und nur einmal je Figur.
         if card == Card::PawnDiagonal {
             return *level == 1 && !piece.perks.pawn_diag;
@@ -1188,11 +1192,179 @@ impl Game {
         best.into_iter().map(|(to, (_, path))| (to, path)).collect()
     }
 
+    // ----- Version 3.6: Kamikaze ------------------------------------------------------------------
+
+    /// Alle Angriffe einer brennenden Figur: das Feld einer gegnerischen Figur, die genau in
+    /// Reichweite liegt (wie `exact_walk`, eine gegnerische Figur davor darf uebersprungen werden),
+    /// mit dem Weg. Fuehren mehrere Wege zum selben Ziel, gilt der mit den meisten gegnerischen
+    /// Figuren, bei Gleichstand der mit den kleineren Feldnummern. Wehrlose Figuren (nicht auf
+    /// verbundenem Land) greifen nicht an.
+    pub fn kamikaze_strikes(&self, piece: &Piece) -> Vec<(CellId, Vec<CellId>)> {
+        if piece.perks.kamikaze != 2 || !self.piece_connected(piece) {
+            return Vec::new();
+        }
+        let owner = piece.owner;
+        let kills = |path: &[CellId]| {
+            path.iter()
+                .filter(|&&c| self.state.piece_at(c).is_some_and(|p| p.owner != owner))
+                .count()
+        };
+        let mut best: std::collections::BTreeMap<CellId, Vec<CellId>> =
+            std::collections::BTreeMap::new();
+        self.exact_walk_with(piece, true, &mut |to, path| {
+            if !self.state.piece_at(to).is_some_and(|p| p.owner != owner) {
+                return;
+            }
+            match best.get(&to) {
+                Some(old)
+                    if (std::cmp::Reverse(kills(old)), old.as_slice())
+                        <= (std::cmp::Reverse(kills(path)), path) => {}
+                _ => {
+                    best.insert(to, path.to_vec());
+                }
+            }
+        });
+        best.into_iter().collect()
+    }
+
+    /// Der Angriff der brennenden Figur `id` auf das Feld `to` (aus `kamikaze_strikes`): alle
+    /// gegnerischen Figuren auf dem Weg sterben, die Figur selbst auch, alle Felder des Weges
+    /// werden neutral (eine gegnerische Fabrik dort ist zerstoert, eigene Fabriken bleiben) und
+    /// die Folgen laufen wie bei jedem Zug: abgetrenntes Land wird neutral, Umschliessen faerbt.
+    pub(crate) fn do_kamikaze(
+        &mut self,
+        actor: PlayerId,
+        id: PieceId,
+        to: CellId,
+        events: &mut Vec<Event>,
+    ) {
+        let piece = self.state.pieces[&id].clone();
+        let path = self
+            .kamikaze_strikes(&piece)
+            .into_iter()
+            .find(|(cell, _)| *cell == to)
+            .map(|(_, path)| path)
+            .expect("Angriff in kamikaze_strikes");
+        let victims: Vec<(PieceId, PlayerId, CellId)> = path
+            .iter()
+            .filter_map(|&c| {
+                self.state
+                    .piece_at(c)
+                    .filter(|p| p.owner != actor)
+                    .map(|p| (p.id, p.owner, c))
+            })
+            .collect();
+        self.state.remove_piece(id);
+        events.push(Event::KamikazeStrike {
+            piece: id,
+            owner: actor,
+            from: piece.cell,
+            to,
+            path: path.clone(),
+            killed: victims.iter().map(|v| v.0).collect(),
+        });
+        for (victim, owner, at) in victims {
+            let Some(gone) = self.state.remove_piece(victim) else {
+                continue;
+            };
+            events.push(Event::Captured {
+                piece: victim,
+                owner,
+                at,
+                by: actor,
+            });
+            if gone.is_king() {
+                self.eliminate(owner, events);
+            }
+        }
+        // Der Weg wird neutral; eigene Fabriken behalten ihr Land, gegnerische sind zerstoert.
+        for &cell in &path {
+            if let Some(fid) = self.state.factory_at[cell.idx()] {
+                if self.state.factories[&fid].owner == actor {
+                    continue;
+                }
+                self.destroy_factory(fid, actor, events);
+            }
+            self.set_land(cell, None);
+        }
+        // Wer durch die Luecke vom eigenen Land abgeschnitten ist, verliert es, auch der Angreifer.
+        if self.alive_players().len() > 1 {
+            self.cut_off_neutral(events);
+            self.territory_settle(actor, events);
+        }
+    }
+
+    /// Land, das nicht mehr mit der Fabrik seines Besitzers zusammenhaengt, wird neutral, bei
+    /// allen Spielern (auch dem Ziehenden).
+    fn cut_off_neutral(&mut self, events: &mut Vec<Event>) {
+        for p in 0..self.config.players {
+            let player = PlayerId(p);
+            if !self.state.alive[player.idx()] || self.rebuilding(player) {
+                continue;
+            }
+            let Some(connected) = self.connected_land(player) else {
+                continue;
+            };
+            let cells: Vec<CellId> = self
+                .map
+                .board
+                .cells()
+                .filter(|c| self.state.land[c.idx()] == Some(player) && !connected[c.idx()])
+                .collect();
+            if cells.is_empty() {
+                continue;
+            }
+            for c in &cells {
+                self.set_land(*c, None);
+            }
+            events.push(Event::CutOff {
+                from: player,
+                to: None,
+                cells,
+            });
+        }
+    }
+
+    /// Am Ende des Zuges von `actor`: die brennende Figur, die nicht angegriffen hat, ist weg;
+    /// eine frisch gekaufte (Pause) fängt Feuer.
+    pub(crate) fn kamikaze_end_of_turn(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
+        if !self.config.terr_kamikaze {
+            return;
+        }
+        let ids: Vec<PieceId> = self
+            .pieces_of(actor)
+            .filter(|p| p.perks.kamikaze > 0)
+            .map(|p| p.id)
+            .collect();
+        for id in ids {
+            let (state, cell) = {
+                let p = &self.state.pieces[&id];
+                (p.perks.kamikaze, p.cell)
+            };
+            if state >= 2 {
+                self.state.remove_piece(id);
+                events.push(Event::KamikazeGone {
+                    piece: id,
+                    owner: actor,
+                    cell,
+                });
+            } else if let Some(p) = self.state.pieces.get_mut(&id) {
+                p.perks.kamikaze = 2;
+            }
+        }
+    }
+
     /// Geht alle Wege einer Einheit im Modus "genau n Felder" ab und meldet jedes Ziel samt Weg
     /// (Felder ohne Startfeld). Eine Figur der Stufe n zieht geradeaus genau n Felder; Karten
     /// erlauben einen Schritt weniger (`shorten`), eine Ecke (`bend`) oder einen Sprung ueber
     /// eine Figur (`hop`). Ziel darf ein Gegner sein (wird geschlagen), nie eine eigene Figur.
     pub(crate) fn exact_walk(&self, piece: &Piece, emit: &mut dyn FnMut(CellId, &[CellId])) {
+        self.exact_walk_with(piece, false, emit);
+    }
+
+    /// Wie `exact_walk`; mit `skip` darf der Weg zusaetzlich einmal eine gegnerische Figur
+    /// ueberspringen (Kamikaze).
+    fn exact_walk_with(&self, piece: &Piece, skip: bool, emit: &mut dyn FnMut(CellId, &[CellId])) {
         let PieceKind::Unit { range, .. } = &piece.kind else {
             return;
         };
@@ -1214,6 +1386,7 @@ impl Game {
                 piece.perks.bend,
                 piece.perks.hop,
                 piece.perks.pass > 0,
+                skip,
                 &mut path,
                 emit,
             );
@@ -1230,6 +1403,7 @@ impl Game {
         bends: u8,
         hops: u8,
         pass: bool,
+        skip: bool,
         path: &mut Vec<CellId>,
         emit: &mut dyn FnMut(CellId, &[CellId]),
     ) {
@@ -1266,42 +1440,33 @@ impl Game {
             } else {
                 // Mit der Schwanz-Regel verbraucht eine Ecke nichts: die letzten `bends` Felder duerfen alle abbiegen.
                 let bends_left = if turning && !tail { bends - 1 } else { bends };
+                let mut go = |hops: u8, skip: bool, path: &mut Vec<CellId>| {
+                    self.walk_from(
+                        owner,
+                        next,
+                        Some(d),
+                        left - 1,
+                        bends_left,
+                        hops,
+                        pass,
+                        skip,
+                        path,
+                        emit,
+                    )
+                };
                 match occupant {
-                    None => self.walk_from(
-                        owner,
-                        next,
-                        Some(d),
-                        left - 1,
-                        bends_left,
-                        hops,
-                        pass,
-                        path,
-                        emit,
-                    ),
+                    None => go(hops, skip, path),
                     // Durchzug: eigene Figuren versperren den Weg nicht.
-                    Some(p) if pass && p.owner == owner => self.walk_from(
-                        owner,
-                        next,
-                        Some(d),
-                        left - 1,
-                        bends_left,
-                        hops,
-                        pass,
-                        path,
-                        emit,
-                    ),
-                    Some(_) if hops > 0 => self.walk_from(
-                        owner,
-                        next,
-                        Some(d),
-                        left - 1,
-                        bends_left,
-                        hops - 1,
-                        pass,
-                        path,
-                        emit,
-                    ),
-                    Some(_) => {}
+                    Some(p) if pass && p.owner == owner => go(hops, skip, path),
+                    Some(p) => {
+                        // Kamikaze: eine gegnerische Figur darf einmal frei uebersprungen werden.
+                        if skip && p.owner != owner {
+                            go(hops, false, path);
+                        }
+                        if hops > 0 {
+                            go(hops - 1, skip, path);
+                        }
+                    }
                 }
             }
             path.pop();

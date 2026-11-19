@@ -335,6 +335,26 @@ pub fn event_json(event: &Event) -> String {
             to.map_or("null".to_string(), |p| p.0.to_string()),
             list(cells.iter(), |c| c.0.to_string())
         ),
+        Event::KamikazeStrike {
+            piece,
+            owner,
+            from,
+            to,
+            path,
+            killed,
+        } => format!(
+            r#"{{"type":"kamikaze_strike","piece":{},"owner":{},"from":{},"to":{},"path":{},"killed":{}}}"#,
+            piece.0,
+            owner.0,
+            from.0,
+            to.0,
+            list(path.iter(), |c| c.0.to_string()),
+            list(killed.iter(), |p| p.0.to_string())
+        ),
+        Event::KamikazeGone { piece, owner, cell } => format!(
+            r#"{{"type":"kamikaze_gone","piece":{},"owner":{},"cell":{}}}"#,
+            piece.0, owner.0, cell.0
+        ),
         Event::FactoryShifted {
             factory,
             owner,
@@ -409,7 +429,7 @@ pub fn state_json(game: &Game) -> String {
     let st = &game.state;
     let perks = |pk: &crate::state::Perks| {
         format!(
-            r#""perks":{{"diagonal":{},"extra_range":{},"card_levels":{},"lance":{},"spring":{},"horse":{},"shorten":{},"bend":{},"hop":{},"pass":{},"pawn_diag":{}}}"#,
+            r#""perks":{{"diagonal":{},"extra_range":{},"card_levels":{},"lance":{},"spring":{},"horse":{},"shorten":{},"bend":{},"hop":{},"pass":{},"pawn_diag":{},"kamikaze":{}}}"#,
             pk.diagonal,
             pk.extra_range,
             pk.card_levels,
@@ -420,7 +440,8 @@ pub fn state_json(game: &Game) -> String {
             pk.bend,
             pk.hop,
             pk.pass,
-            pk.pawn_diag
+            pk.pawn_diag,
+            pk.kamikaze
         )
     };
     let pieces = list(st.pieces.values(), |p| match &p.kind {
@@ -571,7 +592,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_rebuild_dist":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{},"terr_bend_tail":{},"terr_cardset3":{},"terr_delay":{},"terr_upkeep_sq":{},"terr_yield_lvl":{},"terr_bread":{},"terr_fort":{},"terr_terrain":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_rebuild_dist":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{},"terr_bend_tail":{},"terr_cardset3":{},"terr_delay":{},"terr_upkeep_sq":{},"terr_yield_lvl":{},"terr_bread":{},"terr_fort":{},"terr_kamikaze":{},"terr_terrain":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -629,6 +650,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_yield_lvl,
         c.terr_bread,
         c.terr_fort,
+        c.terr_kamikaze,
         c.terr_terrain
     );
     // Gelaende (`terr_terrain`): 0 Feld, 1 Erde, 2 Moor je Feld; ohne Schalter fehlt das Feld.

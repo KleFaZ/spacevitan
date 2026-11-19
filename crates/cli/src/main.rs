@@ -30,7 +30,7 @@ Optionen:
                  (Standard: jedes Mal neu, der Wert wird angezeigt)
   --side N       Kantenlaenge der Karte (Standard 10)
   --rounds N     Unentschieden nach N Runden (Standard 300; vorher entscheidet meist die
-                 Wertung nach score_after = 100 Runden)
+                 Wertung nach score_after = 250 Runden)
   --stock N      Vorrat je Rohstoffvorkommen in Einheiten (Standard 0 = unerschoepflich)
   --kat1 N       eigene Kat-1-Vorkommen je Ecke, der Koenig erntet sie zum Bauen (Standard 1)
   --cards LISTE  Markt fest vorgeben, z. B. training,lance (leer = ohne Karten)

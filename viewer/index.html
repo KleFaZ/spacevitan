@@ -398,6 +398,21 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .cardpop .cp-info .cp-st { font-weight: 700; color: var(--muted); }
 .cardpop .cp-info .cp-st.ok { color: #2b7a3f; }
 .cardpop .cp-need { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 6px; font-size: 0.9rem; }
+.endpop { z-index: 70; }
+.endpop .ep-box { width: min(380px, 100%); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-top: 8px solid var(--muted); border-radius: 16px; padding: 20px 18px 16px; text-align: center; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 18px 50px rgb(0 0 0 / 0.6); }
+.endpop .ep-box.win { border-top-color: #2fa35b; }
+.endpop .ep-box.lose { border-top-color: #d64545; }
+.endpop .ep-title { margin: 0; font-family: var(--font-display); font-size: 2.1rem; line-height: 1.1; }
+.endpop .ep-box.win .ep-title { color: #2b8a4d; }
+.endpop .ep-box.lose .ep-title { color: #cf3f3f; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .endpop .ep-box.win .ep-title { color: #6fcf8a; } :root:not([data-theme="light"]) .endpop .ep-box.lose .ep-title { color: #ff8a7a; } }
+:root[data-theme="dark"] .endpop .ep-box.win .ep-title { color: #6fcf8a; }
+:root[data-theme="dark"] .endpop .ep-box.lose .ep-title { color: #ff8a7a; }
+.endpop .ep-why { margin: 0; font-size: 0.98rem; line-height: 1.4; }
+.endpop .ep-scores { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: center; font-size: 0.9rem; color: var(--muted); }
+.endpop .ep-scores b { color: var(--ink); }
+.endpop .ep-btns { display: flex; gap: 8px; margin-top: 4px; }
+.endpop .ep-btns .btn { flex: 1; min-height: 46px; font-weight: 700; cursor: pointer; }
 .cardpop .cp-btns { display: flex; gap: 8px; }
 .cardpop .cp-btns .btn { flex: 1; min-height: 44px; font-weight: 700; cursor: pointer; }
 .cardpop .cp-btns .btn:disabled { cursor: default; opacity: 0.5; }
@@ -669,6 +684,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   </aside>
 </main>
 <div id="cardPop" class="cardpop" hidden role="dialog" aria-modal="true" aria-label="Karte"></div>
+<div id="endPop" class="cardpop endpop" hidden role="dialog" aria-modal="true" aria-label="Spielende"></div>
 
 <script type="application/json" id="samples">[]</script>
 <script type="application/octet-stream" id="wasm"></script>
@@ -1042,6 +1058,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     if (pk.hop) out.push(pkn(pk.hop) > 1 ? `darf über bis zu ${pkn(pk.hop)} Figuren springen` : "darf über eine Figur springen");
     if (pk.pass) out.push(pkn(pk.pass) > 1 ? `darf durch bis zu ${pkn(pk.pass)} eigene Figuren hindurchziehen` : "darf durch eine eigene Figur hindurchziehen");
+    if (pk.kamikaze === 1) out.push("BRENNT: setzt eine Runde aus, greift in deinem nächsten Zug an");
+    if (pk.kamikaze === 2) out.push("BRENNT: darf jetzt einmal angreifen (eine Figur genau in Reichweite, eine gegnerische davor wird übersprungen und stirbt auch); sie stirbt dabei, der Weg wird neutral. Zieht man sie nicht, ist sie am Zugende weg");
     if (pk.diagonal) out.push("schlägt diagonal");
     if (pk.lance) out.push("schlägt 2 Felder geradeaus");
     if (pk.spring) out.push("springt über Nachbarfiguren");
@@ -1061,6 +1079,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (pk.bend) out.push(pkn(pk.bend) > 1 ? `Ecke ×${pkn(pk.bend)}` : "Ecke");
     if (pk.hop) out.push(pkn(pk.hop) > 1 ? `Sprung ×${pkn(pk.hop)}` : "Sprung");
     if (pk.pass) out.push(pkn(pk.pass) > 1 ? `Durchzug ×${pkn(pk.pass)}` : "Durchzug");
+    if (pk.kamikaze) out.push(pk.kamikaze === 1 ? "Kamikaze (brennt, setzt aus)" : "Kamikaze (brennt, greift an)");
     if (pk.pawn_diag) out.push("Diagonalzug");
     if (pk.diagonal) out.push("Läuferschlag");
     if (pk.lance) out.push("Lanze");
@@ -2611,14 +2630,72 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
 
   function drawPiece(p, x, y) {
+    const burn = !p.king && p.perks && p.perks.kamikaze;
+    if (burn) { const [bx, by] = iso(x, y); drawBurn(p, bx, by, false); }
     if (isTerr() && helpless(R.frames[fi], p)) {
       ctx.save();
       ctx.globalAlpha *= 0.5;
       drawPieceBody(p, x, y);
       ctx.restore();
-      return;
+    } else {
+      drawPieceBody(p, x, y);
     }
-    drawPieceBody(p, x, y);
+    if (burn) { const [bx, by] = iso(x, y); drawBurn(p, bx, by, true); }
+  }
+  /**
+   * Version 3.6, Kamikaze: die Figur brennt von dem Moment an, in dem die Karte gekauft ist. Ein orange-roter
+   * Schein blinkt unter ihr (`under`), Flammen zuengeln darueber (`over`). Frisch gekauft (Pause) flackert
+   * es ruhiger, brennend und angriffsbereit schneller und mit rotem Ring: "als Naechstes kommt sie".
+   */
+  function drawBurn(p, cx, cy, over) {
+    const st = (p.perks && p.perks.kamikaze) || 0;
+    if (!st) return;
+    kingGlowDrawn = true; // der Zeitgeber der Leuchtkoenig-Animation haelt auch die Flammen in Bewegung
+    const W = geo.W, flat = geo.flat;
+    const now = reduceMotion ? 0 : performance.now();
+    const speed = st === 2 ? 95 : 160;
+    const pulse = reduceMotion ? 0.7 : 0.5 + 0.5 * Math.sin(now / speed);
+    const lvl = Math.min(p.level || 1, 4);
+    const rad = flat ? W * [0, 0.31, 0.335, 0.36, 0.385][lvl] : W * [0, 0.14, 0.165, 0.185, 0.2][lvl] * 1.4;
+    const top = flat ? cy - rad : cy - W * [0, 0.26, 0.33, 0.39, 0.43][lvl];
+    const mid = flat ? cy : cy - W * [0, 0.26, 0.33, 0.39, 0.43][lvl] * 0.55;
+    ctx.save();
+    if (!over) {
+      const r = rad * (2.1 + 0.5 * pulse);
+      const g = ctx.createRadialGradient(cx, mid, rad * 0.2, cx, mid, r);
+      g.addColorStop(0, `rgba(255,214,90,${0.75 + 0.2 * pulse})`);
+      g.addColorStop(0.5, `rgba(255,110,20,${0.45 + 0.25 * pulse})`);
+      g.addColorStop(1, "rgba(255,60,0,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(cx, mid, r, 0, Math.PI * 2); ctx.fill();
+      if (st === 2) {
+        ctx.strokeStyle = `rgba(255,70,40,${0.55 + 0.45 * pulse})`;
+        ctx.lineWidth = Math.max(2.5, W * 0.05);
+        ctx.setLineDash([W * 0.09, W * 0.06]);
+        ctx.beginPath(); ctx.arc(cx, mid, rad * (1.35 + 0.15 * pulse), 0, Math.PI * 2); ctx.stroke();
+      }
+    } else {
+      // Drei Flammenzungen auf der Figur, jede mit eigenem Takt.
+      const flames = [[-0.55, 0.0, 1.0], [0.0, 0.5, 1.35], [0.55, 1.1, 0.95]];
+      for (const [dx, ph, size] of flames) {
+        const flick = reduceMotion ? 0.8 : 0.75 + 0.25 * Math.sin(now / (speed * 0.6) + ph * 3);
+        const fh = W * 0.3 * size * flick, fw = W * 0.085 * size;
+        const fx = cx + dx * rad * 0.8, fy = top + rad * 0.15;
+        ctx.beginPath();
+        ctx.moveTo(fx - fw, fy);
+        ctx.quadraticCurveTo(fx - fw * 1.1, fy - fh * 0.55, fx + (reduceMotion ? 0 : Math.sin(now / 130 + ph) * fw * 0.5), fy - fh);
+        ctx.quadraticCurveTo(fx + fw * 1.1, fy - fh * 0.55, fx + fw, fy);
+        ctx.closePath();
+        ctx.fillStyle = "#ff7a1c"; ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(fx - fw * 0.5, fy);
+        ctx.quadraticCurveTo(fx - fw * 0.55, fy - fh * 0.3, fx, fy - fh * 0.62);
+        ctx.quadraticCurveTo(fx + fw * 0.55, fy - fh * 0.3, fx + fw * 0.5, fy);
+        ctx.closePath();
+        ctx.fillStyle = "#ffe27a"; ctx.fill();
+      }
+    }
+    ctx.restore();
   }
   /** Der Koenig kann mit Gold verbessert werden: goldener Schein und Ring, die langsam pulsieren. */
   function drawKingGlow(cx, cy) {
@@ -2675,6 +2752,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (a.type === "move") {
       const piece = prev.byId.get(a.piece);
       text = `${pieceLabel(piece)} ${cellName(piece.cell)} → ${cellName(a.to)}`;
+      const ks = f.events.find((e) => e.type === "kamikaze_strike");
+      if (ks) {
+        text = `Kamikaze ${cellName(ks.from)} → ${cellName(ks.to)}: ${ks.killed.length} gegnerische Figur${ks.killed.length === 1 ? "" : "en"} sterben, die eigene auch; ${ks.path.length} Feld${ks.path.length === 1 ? "" : "er"} werden neutral`;
+        const fdk = f.events.find((e) => e.type === "factory_destroyed");
+        if (fdk) text += `, zerstört die Fabrik von ${playerName(fdk.owner)}`;
+        const cutk = f.events.find((e) => e.type === "cut_off");
+        if (cutk) text += `, trennt ${cutk.cells.length} Feld${cutk.cells.length === 1 ? "" : "er"} von ${playerName(cutk.from)} ab`;
+        return { who, text };
+      }
       const cap = f.events.find((e) => e.type === "captured");
       if (cap) {
         const victim = prev.byId.get(cap.piece);
@@ -2736,6 +2822,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function eventText(e) {
     switch (e.type) {
       case "card_bought": return `${playerName(e.player)} kauft „${CARD(e.card).name}“ und zahlt ${invText(e.paid)}.`;
+      case "kamikaze_strike": return `Kamikaze von ${playerName(e.owner)}: Angriff von ${cellName(e.from)} auf ${cellName(e.to)}, ${e.killed.length === 1 ? "1 gegnerische Figur stirbt" : `${e.killed.length} gegnerische Figuren sterben`}, die Figur selbst auch. Der Weg (${e.path.length} Feld${e.path.length === 1 ? "" : "er"}) wird neutral.`;
+      case "kamikaze_gone": return `Die brennende Figur von ${playerName(e.owner)} auf ${cellName(e.cell)} wurde nicht gezogen und ist weg.`;
       case "fort_lost": return `Fort von ${playerName(e.player)} auf ${cellName(e.cell)} ist zerstört: das Feld gehört ihm nicht mehr.`;
       case "shield_blocked": return `Schild hält: ${playerName(e.by)} prallt auf ${cellName(e.at)} ab.`;
       case "recruited": return `${playerName(e.owner)} bekommt einen Rekruten auf ${cellName(e.cell)}.`;
@@ -3622,6 +3710,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     smelter: { h: 14, fx: "+1 Eisen je Ernte" },
     king_boost: { h: 52, fx: "König zieht weiter" },
     fort: { h: 200, fx: "n oder n+1 Felder" },
+    kamikaze: { h: 8, fx: "Brennt, greift an, stirbt" },
   };
   const ART_TXT = (x, y, size, t) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="${size}" font-weight="800" fill="#fff" stroke="none" font-family="sans-serif">${t}</text>`;
   const CARD_ART = {
@@ -3638,6 +3727,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     smelter: `<path d="M10 38L17 26H47L54 38z" fill="#c4ccd6" stroke="#fff"/><path d="M32 4C38 11 40 15 36 20 35 17 33 16 32 17 29 15 27 18 28 21 24 17 28 9 32 4z" fill="#ff9a3c" stroke="#ffe0a8" stroke-width="1.2"/>`,
     king_boost: `<path d="M10 38V18l9 9 11-15 11 15 9-9v20z" fill="#ffd23f" stroke="#fff6c8"/><path d="M54 14V4M49 9l5-5 5 5"/>`,
     fort: `<path d="M12 40V14h8v6h6v-6h12v6h6v-6h8v26z" fill="#fff" fill-opacity=".92" stroke="none"/><path d="M27 40V31a5 5 0 0110 0v9" stroke="#2a2f3a" stroke-width="2.2"/>${ART_TXT(32, 12, 10, "n+1")}`,
+    kamikaze: `<path d="M32 3C41 13 47 20 43 29 41 25 38 24 36 26 38 31 34 37 30 38 24 38 20 32 22 25 18 27 17 31 17 31 12 22 20 14 24 9 27 12 29 9 32 3z" fill="#ff7a1c" stroke="#ffe0a8" stroke-width="1.4"/><path d="M32 17C36 23 38 27 35 32 33 30 31 30 30 32 27 31 26 26 28 22 30 22 31 20 32 17z" fill="#ffd23f" stroke="none"/>`,
   };
   const CARD_ART_DEFAULT = `<path d="M32 5l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#ffe27a" stroke="#fff6c8" stroke-width="1.3"/>`;
   const cardArt = (key) => `<svg viewBox="0 0 64 44" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CARD_ART[key] || CARD_ART_DEFAULT}</svg>`;
@@ -3673,6 +3763,53 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (b && !$("cardPop").hidden) b.focus({ preventScroll: true });
   }
   function closeCardPop() { cardPopKey = null; $("cardPop").hidden = true; }
+  // ----- Spielende: Fenster "Gewonnen / Verloren" (wird sonst leicht uebersehen) ----------------------------
+  let endPopFor = null, endPopTimer = 0, endPopOpen = false;
+  /** Was das Fenster am Ende der Partie sagt: { tone: win|lose|draw|info, title, why, scores }. */
+  function endInfo() {
+    if (!live || !live.outcome || !liveR) return null;
+    const o = live.outcome;
+    const f = liveR.frames[liveR.frames.length - 1];
+    const humans = (live.seats || []).map((x, i) => (x === "mensch" ? i : -1)).filter((i) => i >= 0);
+    const single = !live.watch && humans.length === 1 ? humans[0] : null;
+    const scored = f.events.find((e) => e.type === "scored");
+    const scores = scored ? scored.scores.map((n, p) => ({ p, n })) : [];
+    const round = Math.max(1, (liveR.frames.length > 1 ? liveR.frames[liveR.frames.length - 2].round : 1));
+    if (o.type === "draw") return { tone: "draw", title: "Unentschieden", why: `Nach ${round} Runden steht die Wertung gleich.`, scores };
+    const w = o.player;
+    const byPoints = o.type === "points";
+    const win = single !== null ? w === single : null;
+    const whoWon = `Spieler ${playerName(w)}`;
+    let why;
+    if (byPoints) why = `Wertung nach Runde ${(liveR.config || {}).score_after || round}: ${win === null ? `${whoWon} hat die meisten Punkte` : win ? "du hast die meisten Punkte" : `${whoWon} hat mehr Punkte als du`} (${scoreNote()}).`;
+    else why = win === null ? `${whoWon} hat den letzten gegnerischen König geschlagen.` : win ? "Du hast den letzten gegnerischen König geschlagen." : `${whoWon} hat deinen König geschlagen.`;
+    if (win === null) return { tone: "info", title: `${whoWon} gewinnt`, why, scores };
+    return { tone: win ? "win" : "lose", title: win ? "Gewonnen!" : "Verloren", why, scores };
+  }
+  function closeEndPop() { endPopOpen = false; clearTimeout(endPopTimer); $("endPop").hidden = true; }
+  function showEndPop() {
+    clearTimeout(endPopTimer);
+    const info = mode === "play" && R === liveR ? endInfo() : null;
+    if (!info) { closeEndPop(); return; }
+    const box = $("endPop");
+    const list = info.scores.length ? `<ul class="ep-scores">${info.scores.map((x) => `<li>${escapeHtml(playerName(x.p))}: <b>${x.n}</b></li>`).join("")}</ul>` : "";
+    box.innerHTML = `<div class="ep-box ${info.tone}"><h2 class="ep-title">${escapeHtml(info.title)}</h2><p class="ep-why">${escapeHtml(info.why)}</p>${list}` +
+      `<div class="ep-btns"><button type="button" class="btn" data-ep="close">Brett ansehen</button><button type="button" class="btn go" data-ep="new">Neue Partie</button></div></div>`;
+    box.hidden = false; endPopOpen = true;
+    const b = box.querySelector("[data-ep='new']"); if (b) b.focus({ preventScroll: true });
+  }
+  /** Nach dem letzten Zug kurz warten (die Figur soll noch zu Ende ziehen), dann das Fenster oeffnen; je Partie einmal. */
+  function scheduleEndPop() {
+    if (!live || !live.outcome || endPopFor === liveR) return;
+    endPopFor = liveR;
+    clearTimeout(endPopTimer);
+    endPopTimer = setTimeout(showEndPop, reduceMotion ? 50 : 900);
+  }
+  $("endPop").addEventListener("click", (ev) => {
+    const box = $("endPop"), t = ev.target.closest("[data-ep]");
+    if (ev.target === box || (t && t.dataset.ep === "close")) { closeEndPop(); return; }
+    if (t && t.dataset.ep === "new") { closeEndPop(); $("newGame").click(); }
+  });
   /** Fenster zu einer Karte: grosse Karte, Erklaerung, Preis mit Lager, Kaufen. */
   function renderCardPop() {
     const box = $("cardPop");
@@ -3872,6 +4009,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           c.terr_yield_lvl ? "Ertrag je Stufe: eine Figur der Stufe n erntet n Stück je Ernte" : "",
           c.terr_delay ? "Sturmangriff und Doppelzug wirken erst im nächsten eigenen Zug" : "",
           c.terr_terrain ? "Gelände: Feld zählt 1 Fläche (meist in der Mitte), Erde ½ (⅓ der Felder, zwischen Mitte und Ecke), Moor ¼ (¼ der Felder, meist in den Ecken)" : "",
+          c.terr_kamikaze ? "Kamikaze-Karte: die gewählte Figur brennt, setzt eine Runde aus und greift dann einmal an (Ziel genau in Reichweite, eine Figur davor wird übersprungen und stirbt auch); sie stirbt dabei, der Weg wird neutral" : "",
           c.terr_fort ? "Fort-Karte: eine Figur auf dem Fort zieht n oder n+1 Felder; es verschwindet, wenn das Feld nicht mehr dem Besitzer gehört" : "",
           c.terr_kingup ? `König-Upgrade mit Gold (${c.terr_kingup_price || 1} je Zugfeld)` : "",
           c.terr_cardlock === 1 ? "Karte: die verbesserte Figur ruht in diesem Zug" : c.terr_cardlock === 2 ? "Karte: der Kauf ist der ganze Zug" : "Karte kostet keinen Zug",
@@ -4482,7 +4620,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Kartentext; mit Karten auf gebaute Figuren gilt "die naechste Figur" nicht mehr. */
   function cardText(c) {
-    if (c.key === "pawn_diagonal" || c.key === "fort") return c.text; // nur einmal je Figur: der Satz zum Stapeln gilt hier nicht
+    if (c.key === "pawn_diagonal" || c.key === "fort" || c.key === "kamikaze") return c.text; // nur einmal je Figur: der Satz zum Stapeln gilt hier nicht
     if (!(cardAnyOn() && c.target === "unit")) return c.text;
     const base = c.text.replace(/^Die nächste Figur/, "Eine Figur deiner Wahl (auch eine schon gebaute, ab Stufe 2)");
     return stackOn() ? `${base} Auch mehrmals auf dieselbe Figur: Stufe n höchstens n−1 mal.` : base;
@@ -4494,6 +4632,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function cardMissText(c, piece) {
     const why = piece.king ? "Der König bekommt keine Figurenkarten (für ihn gibt es den Königs-Boost)."
       : c.key === "fort" ? "Ein Fort braucht eigenes Land, das mit deiner Fabrik verbunden ist (nicht das Fabrikfeld), und steht dort noch nicht."
+      : c.key === "kamikaze" ? "Diese Figur brennt schon."
       : c.key === "pawn_diagonal" ? (piece.perks && piece.perks.pawn_diag ? "Dieser Bauer kann schon diagonal ziehen." : "Diese Karte gibt es nur für Bauern (Stufe 1).")
       : piece.range < 2 ? "Eine Figur der Stufe 1 zieht nur ein Feld: da gibt es nichts zu kürzen, keine Ecke und keinen Sprung."
       : piece.perks && pkn(piece.perks[c.key]) && stackOn() ? `Mehr bringt nichts: eine Figur der Stufe ${piece.range} trägt „${c.name}“ höchstens ${piece.range - 1}-mal (der letzte Schritt ist das Ziel).`
@@ -4868,7 +5007,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "side", label: "Seitenlänge", ph: () => "10", hint: () => { const [a, b] = sideRange(menuBoard()); return `Felder je Kante, auf dem ${BOARD_NAME[menuBoard()]} ${a} bis ${b}.`; } },
     ] },
     { title: "Ende und Wertung", fields: [
-      { key: "score_after", label: "Wertung nach Runde", ph: () => "100", hint: () => "Hat bis dahin kein König gewonnen, zählen eigene Felder + Summe der Figurenstufen. 0 = keine Wertung." },
+      { key: "score_after", label: "Wertung nach Runde", ph: () => "250", hint: () => "Hat bis dahin kein König gewonnen, zählen eigene Felder + Summe der Figurenstufen. 0 = keine Wertung." },
       { key: "max_rounds", label: "Unentschieden nach Runde", ph: () => "300", hint: () => "Nur wichtig, wenn die Wertung ausgeschaltet ist." },
     ] },
     { title: "Karten", fields: [
@@ -4924,6 +5063,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "terr_delay", label: "Verzögerung: Sturmangriff und Doppelzug", ph: () => "0", hint: () => "1 = beide Karten wirken erst in deinem nächsten Zug. Der Gegner sieht sie bereitliegen und kann reagieren. 0 = sie wirken sofort." },
       { key: "terr_upkeep_sq", label: "Unterhalt: Stufe im Quadrat", ph: () => "0", hint: () => "1 = eine Figur der Stufe n kostet je Runde n×n Fläche (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16). Braucht den Unterhalt." },
       { key: "terr_terrain", label: "Gelände (Feld, Erde, Moor)", ph: () => "0", hint: () => "1 = jedes Feld ist Feld (zählt 1 Fläche, rund 42 % der Felder, eher in der Mitte), Erde (½, ein Drittel, eher zwischen Mitte und Ecke) oder Moor (¼, ein Viertel, eher in den Ecken). Jede Ecke bekommt gleich viele Erd- und Moorfelder, die Umgebung des Starts bleibt Feld. Das Gelände ändert nur die Fläche je Runde, nicht Rohstoffe oder Zugweite; ein Rest unter einer ganzen Fläche geht in die nächste Runde." },
+      { key: "terr_kamikaze", label: "Kamikaze-Karte", ph: () => "1", hint: () => "1 (Standard) = die Karte „Kamikaze“ liegt immer im Markt: Die gewählte eigene Figur (nie der König) brennt, setzt eine Runde aus und greift dann in deinem nächsten Zug einmal an: eine gegnerische Figur genau in Reichweite, eine gegnerische davor darf sie überspringen und tötet sie auch. Sie stirbt dabei, alle Felder des Weges werden neutral. Wer sie nicht zieht, verliert sie am Zugende. Bots kaufen die Karte nicht. 0 = aus." },
       { key: "terr_fort", label: "Fort-Karte", ph: () => "0", hint: () => "1 = die Karte „Fort“ liegt immer im Markt: sie setzt ein Fort auf das Feld einer gewählten eigenen Figur (nicht der König, eigenes verbundenes Land, höchstens ein Fort je Spieler). Eine eigene Figur auf dem Fort zieht n oder n+1 Felder (der König nicht). Das Fort verschwindet, sobald das Feld nicht mehr dir gehört. Braucht den neuen Kartensatz und „Karten auf jede Figur“." },
       { key: "terr_yield_lvl", label: "Ertrag je Stufe", ph: () => "0", hint: () => "1 = eine Figur der Stufe n erntet n Stück je Ernte (Takt bleibt gleich; Schmiede und Bergbau addieren danach ihr +1). Der König erntet einfach. Braucht „Zähler nur mit eigener Figur“." },
       { key: "terr_bread", label: "Brot im Lager: Erntetakt (Runden)", ph: () => (menuVer() === 3 ? "3" : "0"), hint: () => "Standard in Version 3: 3 = Brot wird alle 3 Runden geerntet (gleicher Takt wie Eisen), solange eine eigene Figur darauf steht, und liegt im Lager. Die Karten kosten dann Eisen, Gold und Brot (Tempo und Nachschub vor allem Brot, Kampf und Bauten Eisen, der König Gold). 0 = aus: Brot bringt k verbundene Felder 2^k Fläche je Runde, die Karten kosten nur Eisen und Gold. Ohne den Brot-Bonus wächst die Fläche langsamer: Stufe 4 kommt in Bot-Partien um Runde 84 statt 57." },
@@ -5359,6 +5499,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       }
       parts.push(`${key}=${n}`);
     }
+    // Version 3.6: die Karte Kamikaze liegt standardmaessig im Markt (Feld "Kamikaze-Karte" = 0 schaltet sie aus);
+    // sie braucht Kartensatz 3, Karten auf Figuren und genaue Zuege, sonst bleibt sie weg.
+    if (ver === 3 && !parts.some((x) => x.startsWith("terr_kamikaze=")) && !parts.some((x) => /^(terr_cardany|terr_cardset3|terr_exact)=0$/.test(x))) parts.push("terr_kamikaze=1");
     // Karten-Editor: Preise, Pool und eigene Karten (nur Version 3)
     if (ver === 3) parts.push(...cardRuleParts());
     return ["territory=1", ...(ver === 3 ? ["terr_v3=1"] : ver === 2 ? ["terr_v2=1"] : []), ...parts].join(",");
@@ -5508,6 +5651,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
    *  (3 bis 8, 0 = nach Spielerzahl). */
   function startLive(seats, corners, seed) {
     clearTimeout(botTimer);
+    closeEndPop(); endPopFor = null;
     playing = false; clearTimeout(timer);
     const s = seed === null || seed === undefined ? randomSeed() : seed;
     const out = callWasm("sv_new_game_list", putInput(`${s}|0|${corners || 0}|${seats.join(",")}`));
@@ -5538,6 +5682,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     live.humanToMove = out.human_to_move;
     live.outcome = out.outcome;
     if (live.watch && out.outcome) playing = false;
+    if (out.outcome) scheduleEndPop();
     if (R !== liveR) return;
     if (follow) goTo(liveR.frames.length - 1, true);
     else renderPanel();
@@ -5710,6 +5855,18 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         ? `Premove über ${ctrlPath.cells.length - 1} ${ctrlPath.cells.length === 2 ? "Feld" : "Felder"}: weiteres Feld antippen verlängert ihn, dasselbe Feld nochmal startet ihn, die Figur antippen verwirft ihn.`
         : `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
+    }
+    if (canAct()) {
+      const burning = now.pieces.filter((q) => q.perks && q.perks.kamikaze);
+      const mineArmed = burning.filter((q) => q.owner === now.current && q.perks.kamikaze === 2);
+      const foes = burning.filter((q) => q.owner !== now.current);
+      if (foes.length) sub = `Achtung: ${foes.length === 1 ? "eine brennende Figur" : `${foes.length} brennende Figuren`} von ${[...new Set(foes.map((q) => playerName(q.owner)))].join(", ")} auf ${foes.map((q) => cellName(q.cell)).join(", ")}: ${foes.length === 1 ? "sie greift" : "sie greifen"} im nächsten Zug des Gegners an (Kamikaze). Schlagen oder ausweichen. ${sub}`;
+      for (const q of mineArmed) {
+        const n = destinations(q.id).length;
+        sub = n
+          ? `Deine brennende Figur auf ${cellName(q.cell)} greift jetzt an: wähle das rot markierte Ziel. Sonst ist sie am Ende dieses Zugs weg. ${sub}`
+          : `Deine brennende Figur auf ${cellName(q.cell)} hat kein Ziel in Reichweite (genau ${q.range} ${q.range === 1 ? "Feld" : "Felder"} weit) und ist am Ende dieses Zugs weg. ${sub}`;
+      }
     }
     if (canAct() && now.charge) sub = `Sturmangriff: in diesem Zug ziehen alle Figuren ein Feld weiter. ${sub}`;
     if (canAct() && now.extra_actions > 0) sub = `Doppelzug: du hast ${now.extra_actions === 1 ? "noch eine weitere Aktion" : `noch ${now.extra_actions} weitere Aktionen`} in diesem Zug. ${sub}`;
@@ -6002,7 +6159,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!R) return;
     if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
     if (e.key === "Escape") {
-      facClose(); closeCardPop(); hideKingPop();
+      facClose(); closeCardPop(); hideKingPop(); closeEndPop();
       if (shiftMode && !shiftForced()) { shiftMode = false; routeNote = ""; renderFactoryCard(); renderTurnBox(); }
       if (cardMode) { routeNote = ""; stopCardMode(); }
       if (inspect) { inspect = null; renderTurnBox(); requestAnimationFrame(draw); }
@@ -6074,7 +6231,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
     get cardMode() { return cardMode; }, get lockedId() { const f = R && R.frames[fi]; return f ? f.card_lock : null; }, get inspect() { return inspect; }, get hoverReach() { return hoverReachValid() ? hoverReach : null; }, get fx() { return fx; },
     get ready() { return wasm !== null; },
-    get ghost() { return ghostBuild(); }, get kingUp() { return kingUpIdx(); }, get cardPop() { return cardPopKey; }, get kingPopOpen() { return kingPopOpen; }, get facOpen() { return facOpen; },
+    get ghost() { return ghostBuild(); }, get kingUp() { return kingUpIdx(); }, get cardPop() { return cardPopKey; }, get endPop() { const b = $("endPop"); return { open: !b.hidden, html: b.textContent }; }, showEndPop, scheduleEndPop, get kingPopOpen() { return kingPopOpen; }, get facOpen() { return facOpen; },
     get shiftForced() { return shiftForced(); }, get shiftMode() { return shiftMode; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },

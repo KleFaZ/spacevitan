@@ -214,6 +214,11 @@ pub struct Config {
     /// eigenen Figur; eine eigene Figur (nie der Koenig) auf dem Fort zieht `n` oder `n + 1` Felder.
     /// Braucht `terr_cardset3` und `terr_cardany`. Standard aus.
     pub terr_fort: bool,
+    /// Version 3.6: die Karte Kamikaze liegt immer im Markt. Die gewaehlte Figur setzt nach dem Kauf
+    /// eine Runde aus, brennt und darf im naechsten eigenen Zug einmal angreifen (eine gegnerische
+    /// Figur genau in Reichweite, eine gegnerische davor darf sie ueberspringen); sie stirbt dabei,
+    /// der Weg wird neutral. Braucht `terr_cardset3`, `terr_cardany` und `terr_exact`. Standard aus.
+    pub terr_kamikaze: bool,
     /// Version 3.4: Gelaende. Jedes Feld ist Feld (Flaechenwert 1), Erde (1/2) oder Moor (1/4); das
     /// zaehlt im Einkommen an Flaeche (siehe `terrain`). Standard aus.
     pub terr_terrain: bool,
@@ -267,7 +272,7 @@ impl Config {
             stray_chance: 0.15,
             max_resources_per_cell: 2,
             max_rounds: 300,
-            score_after: 100,
+            score_after: 250,
             fairness_radius: 4,
             fairness_tolerance: 2,
             max_generator_attempts: 500,
@@ -329,6 +334,7 @@ impl Config {
             terr_yield_lvl: false,
             terr_bread: 0,
             terr_fort: false,
+            terr_kamikaze: false,
             terr_terrain: false,
             card_tweaks: crate::cards::CardTweaks::standard(),
             board_corners: 0,
@@ -492,6 +498,7 @@ impl Config {
             "terr_yield_lvl" => self.terr_yield_lvl = value != 0,
             "terr_bread" => self.terr_bread = as_u32(value)?,
             "terr_fort" => self.terr_fort = value != 0,
+            "terr_kamikaze" => self.terr_kamikaze = value != 0,
             "terr_terrain" => self.terr_terrain = value != 0,
             "board_corners" => self.board_corners = as_u32(value)?.min(255) as u8,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
@@ -672,6 +679,13 @@ impl Config {
         if self.terr_fort && !(self.territory && self.terr_cardset3 && self.terr_cardany) {
             return Err(ConfigError::Invalid(
                 "terr_fort braucht den Kartensatz von Version 3 (terr_cardset3) und Karten auf Figuren (terr_cardany)",
+            ));
+        }
+        if self.terr_kamikaze
+            && !(self.territory && self.terr_cardset3 && self.terr_cardany && self.terr_exact)
+        {
+            return Err(ConfigError::Invalid(
+                "terr_kamikaze braucht den Kartensatz von Version 3 (terr_cardset3), Karten auf Figuren (terr_cardany) und genaue Zuege (terr_exact)",
             ));
         }
         if self.terr_terrain && !self.territory {

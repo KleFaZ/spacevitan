@@ -76,6 +76,11 @@ impl Game {
             market.push(Card::Fort);
             market.sort();
         }
+        // Version 3.6: auch die Karte Kamikaze liegt immer aus, wenn der Schalter an ist.
+        if config.territory && config.terr_kamikaze && !market.contains(&Card::Kamikaze) {
+            market.push(Card::Kamikaze);
+            market.sort();
+        }
         state.market = market;
         Game {
             config,
@@ -189,6 +194,15 @@ impl Game {
         // Version 3: die Figur, die in diesem Zug eine Karte bekam, ruht bis zum Zugende.
         if self.state.card_lock == Some(id) {
             return out;
+        }
+        // Version 3.6: eine frisch gekaufte Kamikaze setzt aus; eine brennende greift nur an.
+        match piece.perks.kamikaze {
+            0 => {}
+            1 => return out,
+            _ => {
+                out.extend(self.kamikaze_strikes(piece).into_iter().map(|(to, _)| to));
+                return out;
+            }
         }
         let exact = self.config.territory && self.config.terr_exact;
         // Version 3: Der Koenig baut die Fabrik und darf sich dabei nicht bewegen.
@@ -452,6 +466,29 @@ impl Game {
 
     pub fn legal_actions(&self) -> Vec<Action> {
         self.legal_actions_for(self.state.current)
+    }
+
+    /// Die Aktionen, aus denen ein Bot waehlt: wie `legal_actions`, aber ohne den Kauf der Karte
+    /// Kamikaze (die Bots setzen sie nicht ein, ein Kauf waere nur Verlust).
+    pub fn legal_actions_for_bot(&self) -> Vec<Action> {
+        let mut actions = self.legal_actions();
+        let rest: Vec<Action> = actions
+            .iter()
+            .copied()
+            .filter(|a| {
+                !matches!(
+                    a,
+                    Action::BuyCard {
+                        card: Card::Kamikaze,
+                        ..
+                    }
+                )
+            })
+            .collect();
+        if !rest.is_empty() {
+            actions = rest;
+        }
+        actions
     }
 
     /// Was `player` tun duerfte, wenn er am Zug waere. Die KI fragt damit die Antworten der
@@ -923,6 +960,12 @@ impl Game {
     }
 
     fn do_move(&mut self, actor: PlayerId, id: PieceId, to: CellId, events: &mut Vec<Event>) {
+        // Version 3.6: eine brennende Figur greift an und stirbt dabei.
+        if self.state.pieces[&id].perks.kamikaze == 2 {
+            self.do_kamikaze(actor, id, to, events);
+            self.check_winner(events);
+            return;
+        }
         let from = self.state.pieces[&id].cell;
         // Gebietsmodus: Weg und Zusammenhang gelten vor dem Zug.
         let plan = self.config.territory.then(|| self.territory_plan(id, to));
@@ -1153,6 +1196,8 @@ impl Game {
                 self.state.forts[actor.idx()] = Some(cell);
             }
             Card::Settle => self.settle_around(actor, target, events),
+            // Die Figur setzt bis zum Zugende aus und brennt dann (`kamikaze_end_of_turn`).
+            Card::Kamikaze => self.target_mut(target).perks.kamikaze = 1,
             Card::Smelter => self.state.player_perks[actor.idx()].smelter = true,
             Card::Custom(_) => {
                 // Eine selbst gebaute Karte wirkt wie ihre Bausteine nacheinander; ein Baustein, der
@@ -1284,7 +1329,7 @@ impl Game {
     }
 
     /// Spieler scheidet aus: alle Figuren und Fabriken verschwinden samt Gepaeck und Lagern.
-    fn eliminate(&mut self, player: PlayerId, events: &mut Vec<Event>) {
+    pub(crate) fn eliminate(&mut self, player: PlayerId, events: &mut Vec<Event>) {
         let piece_ids: Vec<PieceId> = self.pieces_of(player).map(|p| p.id).collect();
         for id in piece_ids {
             self.state.remove_piece(id);
@@ -1303,7 +1348,7 @@ impl Game {
         events.push(Event::PlayerEliminated { player });
     }
 
-    fn check_winner(&mut self, events: &mut Vec<Event>) {
+    pub(crate) fn check_winner(&mut self, events: &mut Vec<Event>) {
         let alive = self.alive_players();
         if alive.len() == 1 && self.state.outcome.is_none() {
             let outcome = Outcome::Winner(alive[0]);
@@ -1404,6 +1449,10 @@ impl Game {
 
     /// Naechster lebender Spieler; nach dem letzten beginnt eine neue Runde.
     fn advance_turn(&mut self, events: &mut Vec<Event>) {
+        // Version 3.6: eine brennende Figur, die nicht angegriffen hat, verschwindet; eine frisch
+        // gekaufte fängt Feuer und greift im naechsten eigenen Zug an.
+        let finishing = self.state.current;
+        self.kamikaze_end_of_turn(finishing, events);
         self.state.bought_this_turn = false;
         self.state.card_lock = None;
         self.state.extra_actions = 0;

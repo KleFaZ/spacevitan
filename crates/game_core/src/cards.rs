@@ -78,6 +78,12 @@ pub enum Card {
     /// Version 3.3 (`terr_fort`), Figur: ein Fort entsteht auf dem Feld der gewaehlten Figur. Eine
     /// eigene Figur (nie der Koenig) auf dem Fort zieht `n` oder `n + 1` Felder. Ein Fort je Spieler.
     Fort,
+    /// Version 3.6 (`terr_kamikaze`), Figur (nie der Koenig): die Figur muss nach dem Kauf eine
+    /// Runde aussetzen, brennt dann und darf im naechsten eigenen Zug einmal angreifen: eine
+    /// gegnerische Figur in Reichweite (genau so weit, wie sie zieht), dazu darf sie eine
+    /// gegnerische Figur auf dem Weg ueberspringen; beide sterben, die Figur selbst auch, und alle
+    /// Felder des Weges werden neutral. Zieht man sie nicht, ist sie am Ende dieses Zuges weg.
+    Kamikaze,
     /// Version 3: eine selbst gebaute Karte, Platz 0 bis `MAX_CUSTOM - 1`; ihre Teile, ihr Name
     /// und ihr Preis stehen in `CardTweaks` (Regel `custom.<platz>`).
     Custom(u8),
@@ -179,6 +185,7 @@ impl Card {
             Card::Smelter => "smelter",
             Card::PawnDiagonal => "pawn_diagonal",
             Card::Fort => "fort",
+            Card::Kamikaze => "kamikaze",
             Card::Custom(i) => CUSTOM_KEYS[usize::from(i).min(CUSTOM_KEYS.len() - 1)],
         }
     }
@@ -194,12 +201,13 @@ impl Card {
 
     /// Die zusaetzlichen Karten von Version 3 (Kartensatz `terr_cardset3`); dazu kommen Karten aus
     /// Version 2 und die klassischen Doppelzug, Sturmangriff und Bergbau.
-    pub const V3_NEW: [Card; 5] = [
+    pub const V3_NEW: [Card; 6] = [
         Card::Pass,
         Card::Settle,
         Card::Smelter,
         Card::PawnDiagonal,
         Card::Fort,
+        Card::Kamikaze,
     ];
 
     /// Karten des erweiterten Satzes, die standardmaessig nicht im Markt liegen (Version 3.2):
@@ -280,6 +288,7 @@ impl Card {
             Card::Smelter => "Schmiede",
             Card::PawnDiagonal => "Diagonalzug",
             Card::Fort => "Fort",
+            Card::Kamikaze => "Kamikaze",
             Card::Custom(_) => "Eigene Karte",
         }
     }
@@ -330,6 +339,9 @@ impl Card {
             Card::Fort => {
                 "Ein Fort auf dem Feld einer eigenen Figur: wer darauf steht, zieht n oder n+1 Felder."
             }
+            Card::Kamikaze => {
+                "Die Figur brennt: eine Runde Pause, dann greift sie eine Figur in Reichweite an (und überspringt eine davor)."
+            }
             Card::Custom(_) => "Eine selbst gebaute Karte.",
         }
     }
@@ -369,6 +381,7 @@ impl Card {
             | Card::Smelter
             | Card::PawnDiagonal
             | Card::Fort
+            | Card::Kamikaze
             | Card::Custom(_) => cost(1, 0, 0, 0, 0),
         }
     }
@@ -470,6 +483,9 @@ impl Card {
             Card::Fort => {
                 "Ein Fort entsteht auf dem Feld einer eigenen Figur (nicht der König) auf eigenem, verbundenem Land. Jede eigene Figur auf dem Fort darf n oder n+1 Felder ziehen (der König nicht). Nur ein Fort je Spieler, ein neues versetzt es; es verschwindet, sobald das Feld nicht mehr dir gehört."
             }
+            Card::Kamikaze => {
+                "Eine eigene Figur (nie der König) brennt: Sie setzt eine Runde aus und darf dann in deinem nächsten Zug einmal angreifen. Ziel ist eine gegnerische Figur genau in Reichweite; eine gegnerische Figur davor darf sie überspringen, beide sterben. Die Figur stirbt auch, alle Felder des Weges werden neutral. Greift sie nicht an, ist sie am Ende dieses Zuges weg."
+            }
             Card::Mining => "Deine Fabrik erntet Gold (Kat 2) dauerhaft doppelt (+1 je Ernte).",
             Card::Smelter => "Deine Fabrik erntet Eisen (Kat 1) dauerhaft doppelt (+1 je Ernte).",
             other => other.text(),
@@ -484,6 +500,7 @@ impl Card {
             Card::Pass => [2, 0, 0],
             Card::PawnDiagonal => [3, 1, 0],
             Card::Fort => [4, 0, 0],
+            Card::Kamikaze => [2, 2, 0],
             Card::Settle => [3, 2, 0],
             Card::FactoryShift => [3, 0, 0],
             Card::Charge => [2, 2, 0],
@@ -508,6 +525,7 @@ impl Card {
             Card::Pass => [1, 0, 1],
             Card::PawnDiagonal => [3, 1, 0],
             Card::Fort => [3, 0, 1],
+            Card::Kamikaze => [2, 2, 0],
             Card::Settle => [1, 2, 2],
             Card::FactoryShift => [3, 0, 0],
             Card::Charge => [3, 1, 0],
@@ -533,6 +551,7 @@ impl Card {
             | Card::Pass
             | Card::PawnDiagonal
             | Card::Fort
+            | Card::Kamikaze
             | Card::Settle
             | Card::Runestone => CardTarget::Unit,
             _ => CardTarget::Player,

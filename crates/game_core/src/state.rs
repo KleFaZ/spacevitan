@@ -103,6 +103,10 @@ pub struct Perks {
     /// Version 3.2: Karte Diagonalzug (nur auf einem Bauern): darf zusaetzlich ein Feld diagonal
     /// ziehen und schlagen (nur Quadratgitter).
     pub pawn_diag: bool,
+    /// Version 3.6: Karte Kamikaze. 0 = keine, 1 = gerade gekauft, setzt aus (bis zum Ende des
+    /// Zuges des Besitzers), 2 = brennt: darf im Zug des Besitzers einmal angreifen, sonst ist die
+    /// Figur am Ende dieses Zuges weg.
+    pub kamikaze: u8,
 }
 
 impl Perks {

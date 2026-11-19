@@ -3620,3 +3620,493 @@ fn whole_games_with_terrain_keep_every_invariant_on_every_board() {
         }
     }
 }
+
+// ----- Version 3.6: die Karte Kamikaze (`terr_kamikaze`) ---------------------------------------
+
+/// Version 3 mit `terr_kamikaze`, viel Flaeche, ein eigener Streifen Land von der Fabrik bis (6,0).
+fn kamikaze_game() -> Game {
+    let mut cfg = v3_config(2);
+    cfg.set_all("terr_kamikaze=1").unwrap();
+    let mut g = with_deposits_cfg(cfg, &[]);
+    g.state.area = vec![10_000; 2];
+    strip(&mut g, P0, 6);
+    g
+}
+
+/// Zahlt der Spieler 0 die Kamikaze (2 Eisen + 2 Gold).
+fn kamikaze_money(g: &mut Game) {
+    let (k1, k2) = (typ(g, 0, 1), typ(g, 0, 2));
+    stock(g, P0, k1, 2);
+    stock(g, P0, k2, 2);
+}
+
+fn kamikaze_buy(g: &mut Game, piece: PieceId) {
+    let fid = g.home_factory(P0).unwrap().id;
+    g.apply(Action::BuyCard {
+        card: crate::cards::Card::Kamikaze,
+        from: crate::action::PaySource::Factory(fid),
+        target: Some(piece),
+    })
+    .unwrap();
+}
+
+/// Ein harmloser Zug fuer den Spieler am Zug (der Koenig macht einen Schritt; ohne Zug: Passen),
+/// denn ein Zug endet erst mit einem Zug oder, wenn es keinen gibt, mit Passen.
+fn idle(g: &mut Game) -> Vec<Event> {
+    let me = g.current_player();
+    let king = king_id(g, me);
+    let step = g
+        .legal_actions()
+        .into_iter()
+        .find(|a| matches!(a, Action::Move { piece, .. } if *piece == king));
+    g.apply(step.unwrap_or(Action::Pass)).unwrap()
+}
+
+/// Spieler 0 kauft die Karte auf `piece` und beide Spieler beenden ihren Zug: danach ist
+/// Spieler 0 wieder dran und die Figur brennt.
+fn kamikaze_ready(g: &mut Game, piece: PieceId) {
+    kamikaze_money(g);
+    kamikaze_buy(g, piece);
+    idle(g);
+    assert_eq!(g.current_player(), P1);
+    idle(g);
+    assert_eq!(g.current_player(), P0);
+}
+
+#[test]
+fn the_kamikaze_is_a_switch_that_is_off_by_default_and_needs_the_version_3_cards() {
+    use crate::cards::Card;
+    let plain = v3_game(&[]);
+    assert!(!plain.config.terr_kamikaze);
+    assert!(!plain.state.market.contains(&Card::Kamikaze));
+    let g = kamikaze_game();
+    assert!(
+        g.state.market.contains(&Card::Kamikaze),
+        "mit Schalter liegt sie immer aus"
+    );
+    assert_eq!(g.territory_card_price(Card::Kamikaze), [2, 2, 0]);
+    assert_eq!(Card::from_key("kamikaze"), Some(Card::Kamikaze));
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1,terr_kamikaze=1")
+        .unwrap();
+    assert!(cfg.validate().is_ok());
+    cfg.set_all("terr_cardany=0").unwrap();
+    assert!(
+        cfg.validate().is_err(),
+        "Kamikaze braucht Karten auf Figuren"
+    );
+    cfg.set_all("terr_cardany=1,terr_exact=0").unwrap();
+    assert!(cfg.validate().is_err(), "Kamikaze braucht genaue Zuege");
+}
+
+#[test]
+fn a_bought_kamikaze_rests_this_turn_and_the_next_round_and_burns_in_the_next_own_turn() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    kamikaze_money(&mut g);
+    kamikaze_buy(&mut g, unit);
+    assert_eq!(g.state.pieces[&unit].perks.kamikaze, 1);
+    assert!(g.piece_destinations(unit).is_empty(), "in diesem Zug Pause");
+    g.state.card_lock = None;
+    assert!(
+        g.piece_destinations(unit).is_empty(),
+        "auch ohne Kartensperre: Pause"
+    );
+    idle(&mut g);
+    assert_eq!(g.state.pieces[&unit].perks.kamikaze, 2, "jetzt brennt sie");
+    // Der Gegner ist dran: die Figur steht und brennt, ihr Besitzer kann sie nicht ziehen.
+    assert_eq!(g.current_player(), P1);
+    idle(&mut g);
+    assert!(g.state.pieces.contains_key(&unit));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_kamikaze_cannot_go_on_the_king_or_on_a_piece_that_already_burns() {
+    use crate::cards::Card;
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    kamikaze_money(&mut g);
+    let king = king_id(&g, P0);
+    assert!(!g.legal_actions().iter().any(|a| matches!(
+        a,
+        Action::BuyCard { card: Card::Kamikaze, target: Some(t), .. } if *t == king
+    )));
+    kamikaze_buy(&mut g, unit);
+    g.state.bought_this_turn = false;
+    g.state.card_lock = None;
+    kamikaze_money(&mut g);
+    assert!(
+        !g.legal_actions().iter().any(|a| matches!(
+            a,
+            Action::BuyCard { card: Card::Kamikaze, target: Some(t), .. } if *t == unit
+        )),
+        "brennt schon"
+    );
+}
+
+#[test]
+fn a_burning_piece_can_only_attack_an_enemy_piece_exactly_in_range() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    let target = g.setup_unit(P1, c(&g, 3, 2), 1, 1);
+    let near = g.setup_unit(P1, c(&g, 6, 3), 1, 1);
+    let _ = near;
+    kamikaze_ready(&mut g, unit);
+    assert_eq!(g.piece_destinations(unit), vec![c(&g, 3, 2)]);
+    let _ = target;
+    // Kein Zug auf leere Felder, auch keine normalen Zuege.
+    assert!(!g.legal_actions().contains(&Action::Move {
+        piece: unit,
+        to: c(&g, 3, 1),
+    }));
+    assert!(g.legal_actions().contains(&Action::Move {
+        piece: unit,
+        to: c(&g, 3, 2),
+    }));
+}
+
+#[test]
+fn the_strike_kills_the_target_and_the_piece_between_and_the_path_turns_neutral() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 3, 3);
+    let between = g.setup_unit(P1, c(&g, 3, 2), 1, 1);
+    let target = g.setup_unit(P1, c(&g, 3, 3), 2, 2);
+    let bystander = g.setup_unit(P1, c(&g, 5, 5), 1, 1);
+    // Land des Gegners auf dem Weg.
+    paint(&mut g, P1, &[(3, 1), (3, 2), (3, 3), (4, 3)]);
+    kamikaze_ready(&mut g, unit);
+    assert!(
+        g.piece_destinations(unit).contains(&c(&g, 3, 3)),
+        "Ziel in Reichweite, eine Figur davor wird uebersprungen"
+    );
+    let events = g
+        .apply(Action::Move {
+            piece: unit,
+            to: c(&g, 3, 3),
+        })
+        .unwrap();
+    assert!(!g.state.pieces.contains_key(&unit), "die Figur stirbt");
+    assert!(
+        !g.state.pieces.contains_key(&between),
+        "die uebersprungene stirbt"
+    );
+    assert!(!g.state.pieces.contains_key(&target), "das Ziel stirbt");
+    assert!(g.state.pieces.contains_key(&bystander), "andere bleiben");
+    for (x, y) in [(3, 1), (3, 2), (3, 3)] {
+        assert_eq!(g.state.land[c(&g, x, y).idx()], None, "({x},{y}) neutral");
+    }
+    assert_eq!(
+        g.state.land[c(&g, 3, 0).idx()],
+        Some(P0),
+        "das Startfeld bleibt"
+    );
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::KamikazeStrike { piece, killed, .. } if *piece == unit && killed.len() == 2
+    )));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::Captured { .. }))
+            .count(),
+        2
+    );
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn only_an_enemy_piece_can_be_skipped_and_an_own_piece_blocks_the_way() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 3, 3);
+    let _own = g.setup_unit(P0, c(&g, 3, 2), 1, 1);
+    let _target = g.setup_unit(P1, c(&g, 3, 3), 2, 2);
+    kamikaze_ready(&mut g, unit);
+    assert!(
+        !g.piece_destinations(unit).contains(&c(&g, 3, 3)),
+        "die eigene Figur versperrt"
+    );
+    // Zwei gegnerische Figuren davor sind eine zu viel.
+    let mut h = kamikaze_game();
+    let unit = h.setup_unit(P0, c(&h, 3, 0), 3, 3);
+    h.setup_unit(P1, c(&h, 3, 1), 1, 1);
+    h.setup_unit(P1, c(&h, 3, 2), 1, 1);
+    h.setup_unit(P1, c(&h, 3, 3), 1, 1);
+    kamikaze_ready(&mut h, unit);
+    assert!(h.piece_destinations(unit).is_empty());
+}
+
+#[test]
+fn a_target_in_range_is_enough_a_target_too_close_or_too_far_is_not() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 3, 3);
+    g.setup_unit(P1, c(&g, 3, 1), 1, 1);
+    g.setup_unit(P1, c(&g, 3, 4), 1, 1);
+    kamikaze_ready(&mut g, unit);
+    assert!(
+        g.piece_destinations(unit).is_empty(),
+        "genau 3 Felder: (3,1) zu nah, (3,4) zu weit"
+    );
+}
+
+#[test]
+fn an_unused_burning_piece_is_gone_at_the_end_of_the_turn() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    kamikaze_ready(&mut g, unit);
+    assert!(g.state.pieces.contains_key(&unit));
+    let events = idle(&mut g);
+    assert!(!g.state.pieces.contains_key(&unit), "ungenutzt: weg");
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::KamikazeGone { piece, .. } if *piece == unit
+    )));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn a_burning_piece_that_is_captured_in_the_rest_round_is_simply_captured() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    // Gegner mit einer Figur, die in einem Schritt zuschlagen kann.
+    paint(&mut g, P1, &[(3, 1), (3, 2)]);
+    for y in 0..=9 {
+        paint(&mut g, P1, &[(9, y)]);
+    }
+    for x in 3..=9 {
+        paint(&mut g, P1, &[(x, 9)]);
+    }
+    kamikaze_money(&mut g);
+    kamikaze_buy(&mut g, unit);
+    idle(&mut g);
+    let hunter = g.setup_unit(P1, c(&g, 3, 1), 1, 1);
+    let kill = Action::Move {
+        piece: hunter,
+        to: c(&g, 3, 0),
+    };
+    if g.legal_actions().contains(&kill) {
+        g.apply(kill).unwrap();
+        assert!(!g.state.pieces.contains_key(&unit));
+    }
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_strike_destroys_an_enemy_factory_on_the_path_and_keeps_its_own() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    g.setup_unit(P1, c(&g, 3, 2), 1, 1);
+    // Eine zweite eigene Fabrik auf dem Weg bleibt, eine gegnerische geht kaputt.
+    paint(&mut g, P1, &[(3, 1), (3, 2)]);
+    let f1 = g.setup_factory(P1, c(&g, 3, 1));
+    kamikaze_ready(&mut g, unit);
+    let events = g
+        .apply(Action::Move {
+            piece: unit,
+            to: c(&g, 3, 2),
+        })
+        .unwrap();
+    assert!(
+        !g.state.factories.contains_key(&f1),
+        "gegnerische Fabrik zerstoert"
+    );
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, Event::FactoryDestroyed { .. })));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn the_strike_cuts_off_land_that_hung_on_the_path_and_it_turns_neutral() {
+    let mut g = kamikaze_game();
+    // Eigener Streifen (0..6,0), dazu ein Arm (6,0)-(6,1)-(6,2), der nur ueber (5,0)/(6,0) haengt.
+    paint(&mut g, P0, &[(6, 1), (6, 2), (6, 3)]);
+    let unit = g.setup_unit(P0, c(&g, 4, 0), 2, 2);
+    g.setup_unit(P1, c(&g, 6, 0), 1, 1);
+    kamikaze_ready(&mut g, unit);
+    assert!(g.piece_destinations(unit).contains(&c(&g, 6, 0)));
+    let events = g
+        .apply(Action::Move {
+            piece: unit,
+            to: c(&g, 6, 0),
+        })
+        .unwrap();
+    // (5,0) und (6,0) sind neutral; der Arm (6,1..3) haengt nicht mehr an der Fabrik: neutral.
+    for (x, y) in [(5, 0), (6, 0), (6, 1), (6, 2), (6, 3)] {
+        assert_eq!(g.state.land[c(&g, x, y).idx()], None, "({x},{y})");
+    }
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::CutOff { from, to: None, .. } if *from == P0
+    )));
+    assert_eq!(g.state.land[c(&g, 3, 0).idx()], Some(P0));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn killing_the_enemy_king_wins_the_game_even_though_the_attacker_dies() {
+    let mut g = kamikaze_game();
+    let unit = g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    let enemy_king = king_id(&g, P1);
+    kamikaze_ready(&mut g, unit);
+    // Der gegnerische Koenig steht jetzt genau in Reichweite.
+    let old = g.state.pieces[&enemy_king].cell;
+    let new = c(&g, 3, 2);
+    g.state.occupant[old.idx()] = None;
+    g.state.pieces.get_mut(&enemy_king).unwrap().cell = new;
+    g.state.occupant[new.idx()] = Some(enemy_king);
+    assert!(g.piece_destinations(unit).contains(&new));
+    let events = g
+        .apply(Action::Move {
+            piece: unit,
+            to: new,
+        })
+        .unwrap();
+    assert!(events.iter().any(|e| matches!(e, Event::GameOver { .. })));
+    assert_eq!(g.outcome(), Some(crate::state::Outcome::Winner(P0)));
+}
+
+#[test]
+fn a_defenceless_burning_piece_cannot_attack() {
+    let mut g = kamikaze_game();
+    // Die Figur steht auf Land, das nicht mit der Fabrik zusammenhaengt.
+    let unit = g.setup_unit(P0, c(&g, 3, 5), 2, 2);
+    let cell = c(&g, 3, 5);
+    g.set_land(cell, Some(P0));
+    g.setup_unit(P1, c(&g, 3, 7), 1, 1);
+    kamikaze_money(&mut g);
+    let fid = g.home_factory(P0).unwrap().id;
+    g.state.pieces.get_mut(&unit).unwrap().perks.kamikaze = 2;
+    let _ = fid;
+    assert!(g.piece_destinations(unit).is_empty());
+}
+
+#[test]
+fn bots_never_buy_the_kamikaze_card() {
+    use crate::cards::Card;
+    let mut g = kamikaze_game();
+    g.setup_unit(P0, c(&g, 3, 0), 2, 2);
+    kamikaze_money(&mut g);
+    assert!(g.legal_actions().iter().any(|a| matches!(
+        a,
+        Action::BuyCard {
+            card: Card::Kamikaze,
+            ..
+        }
+    )));
+    assert!(!g.legal_actions_for_bot().iter().any(|a| matches!(
+        a,
+        Action::BuyCard {
+            card: Card::Kamikaze,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn whole_random_games_with_kamikaze_keep_every_invariant_and_really_use_the_card() {
+    use crate::cards::Card;
+    use crate::rng::Rng;
+    let mut strikes = 0;
+    let mut gone = 0;
+    let mut bought = 0;
+    for (players, corners, seed) in [
+        (2u8, 4u8, 41u64),
+        (3, 3, 42),
+        (2, 6, 43),
+        (4, 4, 44),
+        (2, 4, 45),
+    ] {
+        let mut cfg = Config::new(players, seed);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        cfg.board_corners = corners;
+        cfg.max_rounds = 80;
+        cfg.score_after = 80;
+        cfg.set_all("terr_kamikaze=1").unwrap();
+        let mut g = Game::new(cfg).unwrap_or_else(|e| panic!("{players}p {corners}e: {e:?}"));
+        let mut rng = Rng::new(seed);
+        let mut steps = 0;
+        while g.outcome().is_none() {
+            // Wer am Zug ist, hat Eisen und Gold fuer die Karte (Zufallsspiele sparen sonst nie).
+            let me = g.current_player();
+            if let Some(fid) = g.home_factory(me).map(|f| f.id) {
+                let corner = g.map.player_corners[me.idx()];
+                let (k1, k2) = (typ(&g, corner, 1), typ(&g, corner, 2));
+                g.setup_storage(fid, k1, 3);
+                g.setup_storage(fid, k2, 3);
+            }
+            // Steht eine brennende Figur ohne Ziel da, stellt der Test ihr einen Gegner in Reichweite.
+            let burning: Vec<PieceId> = g
+                .pieces_of(me)
+                .filter(|p| p.perks.kamikaze == 2)
+                .map(|p| p.id)
+                .collect();
+            for id in burning {
+                if !g.piece_destinations(id).is_empty() {
+                    continue;
+                }
+                let piece = g.state.pieces[&id].clone();
+                let crate::state::PieceKind::Unit { range, .. } = piece.kind else {
+                    continue;
+                };
+                let Some(foe) = g.alive_players().into_iter().find(|&p| p != me) else {
+                    continue;
+                };
+                for dir in 0..g.map.board.dir_count() {
+                    let line = g.map.board.line(piece.cell, dir, usize::from(range));
+                    if line.len() == usize::from(range)
+                        && line.iter().all(|&c| g.state.piece_at(c).is_none())
+                    {
+                        g.setup_unit(foe, line[line.len() - 1], 1, 1);
+                        g.territory_settle(foe, &mut Vec::new());
+                        break;
+                    }
+                }
+            }
+            let legal = g.legal_actions();
+            // Die Karte oft kaufen und brennende Figuren oft angreifen lassen, damit sie vorkommt.
+            let wanted: Vec<Action> = legal
+                .iter()
+                .copied()
+                .filter(|a| match a {
+                    Action::BuyCard { card, .. } => *card == Card::Kamikaze,
+                    Action::Move { piece, .. } => g.state.pieces[piece].perks.kamikaze == 2,
+                    _ => false,
+                })
+                .collect();
+            let a = if !wanted.is_empty() && rng.below(4) != 0 {
+                *rng.pick(&wanted).unwrap()
+            } else {
+                *rng.pick(&legal).expect("eine Aktion")
+            };
+            let events = g.apply(a).unwrap();
+            bought += events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e,
+                        Event::CardBought {
+                            card: Card::Kamikaze,
+                            ..
+                        }
+                    )
+                })
+                .count();
+            strikes += events
+                .iter()
+                .filter(|e| matches!(e, Event::KamikazeStrike { .. }))
+                .count();
+            gone += events
+                .iter()
+                .filter(|e| matches!(e, Event::KamikazeGone { .. }))
+                .count();
+            g.check_invariants()
+                .unwrap_or_else(|e| panic!("{players}p {corners}e seed {seed} Zug {steps}: {e}"));
+            steps += 1;
+            assert!(steps < 30_000);
+        }
+    }
+    println!("Angriffe {strikes}, verfallen {gone}, gekauft {bought}");
+    assert!(strikes > 0, "mindestens ein Angriff kommt vor");
+}

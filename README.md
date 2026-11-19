@@ -237,7 +237,7 @@ cargo test --workspace
 | `upgrade_step` | 10 | 10 Quader/Baelle im Lager: Stufe +1; 20 aus zwei Regionen: Stufe +2; 0 = aus |
 | `upgrade_region_min` | 3 | so viele Einheiten einer Farbe muessen im Lager liegen, damit die Region zaehlt |
 | `regrow_cat1` / `regrow_cat2` / `regrow_cat3` | 20 / 5 / 3 | nach dem Abbau so viele Runden weg; 0 = fuer immer, 1 = jede Runde wieder da |
-| `score_after` | 100 | ohne Sieger entscheidet nach so vielen Runden die Wertung (siehe unten); 0 = aus, dann Remis nach `max_rounds` |
+| `score_after` | 250 (bis 19.11.2026: 100) | ohne Sieger entscheidet nach so vielen Runden die Wertung (siehe unten); 0 = aus, dann Remis nach `max_rounds` |
 | `center_mix` | 1 | so oft liegt jede Regionsfarbe (Quader und Ball) zusaetzlich rund um die Mitte |
 | `max_upgrades` | 2 | hoechstens so viele Stufen durch Ausbau |
 | `market_size` | 2 je Spieler (ab 5 Spielern 1) | Karten im Markt, jede Partie zufaellig gezogen; 0 = ohne Karten |
@@ -264,9 +264,9 @@ Jede neue Fabrik ist Stufe 1. Stufe 2 braucht 10 Quader/Baelle, Stufe 3 braucht 
 Regionen (oder eine zweite Kat-1-Farbe). Gemessen mit `stark` gegen `stark`, 40 Partien, 2 Spieler:
 erste Stufe-2-Figur um Runde 9, Stufe 3 in 22 von 40 Partien (um Runde 15), im Schnitt 31 Runden.
 
-### Wertung nach 100 Runden
+### Wertung nach 250 Runden
 
-Hat nach `score_after` = 100 Runden niemand gewonnen, entscheidet die Wertung: Summe der
+Hat nach `score_after` = 250 Runden (Standard seit dem 19.11.2026, vorher 100) niemand gewonnen, entscheidet die Wertung: Summe der
 Figurenstufen (der Koenig zaehlt nicht) plus eine Einheit je Fabrik plus eine Einheit je Farbe
 (Region oder Zentrumsfarbe), von der man etwas im Gepaeck oder in einem Fabriklager hat. Bei
 Gleichstand gewinnt, wer mehr Rohstoffe besitzt, danach ist es Remis. Der Viewer zeigt die
@@ -853,6 +853,35 @@ aendern, und man kann eigene Karten bauen.
   neuen Karten nicht gezielt: `flaeche` nutzt nur Ecke, Sprung, Kuerzer und den Koenigs-Boost; `stark` und `sehr-stark`
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
+
+### Version 3.6 (Wuensche vom 19.11.2026, zweiter Teil)
+
+- **Karte Kamikaze** (`terr_kamikaze=1`; im Browser-Menue standardmaessig an, in der Engine standardmaessig aus; braucht
+  `terr_cardset3`, `terr_cardany`, `terr_exact`). Sie liegt dann immer im Markt, Preis **2 Eisen + 2 Gold** (aenderbar im Karten-Editor).
+  Ablauf (Zustand `Perks.kamikaze`: 0 keine, 1 gerade gekauft, 2 brennt):
+  1. Kauf auf eine eigene Einheit (nie der Koenig, nicht auf eine, die schon brennt). Die Figur **brennt ab dem Kauf** (im Viewer blinkt
+     sie orange/rot mit Flammen) und kann in diesem Zug nicht ziehen (`Zustand 1`).
+  2. Am Ende des eigenen Zuges faengt sie "richtig" Feuer (`Zustand 2`). Danach ist der Gegner dran: er sieht, dass sie kommt, und kann
+     sie schlagen oder ausweichen (eine Runde Pause, wie gewuenscht).
+  3. Im naechsten eigenen Zug darf sie **nur noch angreifen** (`Game::kamikaze_strikes`): Ziel ist eine gegnerische Figur **genau in
+     Reichweite** (so weit, wie die Figur zieht; Karten wie Kuerzer, Ecke und Sprung gelten weiter), und **eine gegnerische Figur auf dem
+     Weg darf uebersprungen werden** und stirbt mit. Eigene Figuren versperren den Weg wie sonst auch (ausser mit Durchzug). Wehrlose
+     Figuren (nicht auf verbundenem Land) greifen nicht an, wie sonst auch.
+  4. Der Angriff (`Game::do_kamikaze`): alle gegnerischen Figuren auf dem Weg sterben (ist es der Koenig, scheidet der Spieler aus),
+     die brennende Figur auch, **alle Felder des Weges werden neutral** (gegnerische Fabrik auf dem Weg zerstoert, eigene bleibt),
+     danach wie bei jedem Zug: Land, das nicht mehr an der Fabrik haengt, wird neutral (auch eigenes), Umschliessen und Wiederanbinden.
+  5. **Zieht man sie nicht, ist sie am Ende dieses Zuges weg** (Ereignis `kamikaze_gone`). Ein Zug endet nur mit einem Zug, also muss man
+     fuer "nicht ziehen" etwas anderes tun.
+  Annahmen, die du anders haben kannst: die Figur stirbt beim Angriff (Name!); nur gegnerische Figuren werden uebersprungen und getoetet;
+  der Koenig darf Ziel sein; es geht nur auf gegnerische Figuren (nicht auf leere Felder oder Fabriken); Bots **kaufen die Karte nicht**
+  (`Game::legal_actions_for_bot`), sie kennen aber die Gefahr, weil ihre Suche die Zuege des Gegners mitzaehlt.
+  Tests: `v3_tests` ab `kamikaze_game` (Kauf und Pause, Angriff mit Ueberspringen, Weg neutral, Abtrennen, Fabrik, Koenig, Verfall,
+  fuenf Zufalls-Ganzspiele mit 99 Kaeufen und 46 Angriffen, in denen alle Invarianten halten).
+- **Spielende-Fenster** im Viewer: am Ende einer Partie oeffnet sich nach einem Moment ein Fenster *Gewonnen!* / *Verloren* /
+  *Unentschieden* (bei mehreren Menschen und beim Zuschauen "Spieler X gewinnt"), mit dem Grund (Koenig geschlagen oder Wertung mit
+  den Punkten) und den Knoepfen *Brett ansehen* und *Neue Partie* (Esc und Klick daneben schliessen es). Je Partie einmal.
+- **Standard 250 Runden** (`score_after = 250`, vorher 100; `max_rounds` bleibt 300). Die Zahlen in den aelteren Messungen dieser Datei
+  stammen noch aus Partien mit 100 Runden.
 
 ### Version 3.5 (Wuensche vom 19.11.2026)
 
