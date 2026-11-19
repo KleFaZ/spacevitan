@@ -278,6 +278,19 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                             .with_name("super-stark");
                     Ok(Box::new(bot) as Box<dyn Bot>)
                 }
+                // Zum Abstimmen: zweiter "super-stark" mit eigenen Stellschrauben (SPACEVITAN_DRIVE_B),
+                // damit zwei Spielweisen in einer Partie gegeneinander antreten koennen.
+                "super-stark-b" => {
+                    let drive = match std::env::var("SPACEVITAN_DRIVE_B") {
+                        Ok(list) => game_core::area_bot::Drive::parse(&list)?,
+                        Err(_) => game_core::area_bot::Drive::DEFAULT,
+                    };
+                    let bot =
+                        SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes_very))
+                            .with_drive(drive)
+                            .with_name("super-stark-b");
+                    Ok(Box::new(bot) as Box<dyn Bot>)
+                }
                 "stark-pur" => {
                     let bot = SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes))
                         .without_cards();

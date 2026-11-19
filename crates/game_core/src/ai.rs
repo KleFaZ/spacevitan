@@ -29,6 +29,8 @@ const WIN: i32 = 1_000_000;
 const INF: i32 = 2_000_000;
 /// Hoechstens so viele Verlaengerungen pro Suchpfad, wenn ein Koenig angegriffen ist.
 const MAX_EXTENSIONS: u32 = 2;
+/// Schlaege auf Figuren von mindestens diesem Wert (der Koenig) bekommen keinen Zuschlag: dort entscheidet die Suche.
+const KING_BONUS_CAP: i64 = 100_000;
 /// Ab so vielen Zeilen speichert der Abstandsspeicher nichts mehr (riesige Karten).
 const DIST_ROW_LIMIT: usize = 2048;
 
@@ -332,6 +334,8 @@ pub struct SearchBot {
     area_eval: bool,
     /// "Super-stark": Bewertung mit Drang nach Land und Mitte (`area_bot::Drive`).
     drive: Option<crate::area_bot::Drive>,
+    /// Zuschlaege auf Wurzelzuege der laufenden Suche (sinnvolle Schlaege, `Drive::hunt`).
+    root_bonus: Vec<(Action, i32)>,
 }
 
 impl SearchBot {
@@ -357,6 +361,7 @@ impl SearchBot {
             stats: SearchStats::default(),
             area_eval: false,
             drive: None,
+            root_bonus: Vec::new(),
         }
     }
 
@@ -451,6 +456,12 @@ impl SearchBot {
         if game.home_factory(me).is_none() && legal.contains(&Action::RebuildFactory) {
             return Action::RebuildFactory;
         }
+        // Eroeffnung von "super-stark" (nur mit `open`): der Koenig verschiebt die Fabrik zur Mitte.
+        if let Some(d) = self.drive.filter(|d| d.open > 0) {
+            if let Some(a) = crate::area_bot::opening_move(game, me, &d, &legal) {
+                return a;
+            }
+        }
         if game.bot_should_trade(me) {
             if let Some(&t) = legal.iter().find(|a| matches!(a, Action::TradeKat3 { .. })) {
                 return t;
@@ -465,8 +476,22 @@ impl SearchBot {
         }
         // Gleich gute Zuege in zufaelliger, aber durch den Seed festgelegter Reihenfolge.
         self.rng.shuffle(&mut moves);
+        // Schlagen zuerst: gibt es einen sinnvollen Schlag, kommt kein Kauf und kein Fabrik-Rutschen
+        // davor (beides wuerde den Zug beenden oder verschieben); die Zugsuche entscheidet.
+        self.root_bonus.clear();
+        let hunt = self.drive.map_or(0, |d| d.hunt);
+        let mut sound_capture = false;
+        if hunt > 0 && game.config.territory {
+            for c in crate::area_bot::captures(game, me, &moves) {
+                sound_capture |= c.sound;
+                if c.sound && c.victim < KING_BONUS_CAP {
+                    let bonus = (c.victim * hunt / 100).clamp(0, 1000) as i32;
+                    self.root_bonus.push((c.action, bonus));
+                }
+            }
+        }
         // "Super-stark": die Fabrik Richtung Mitte rutschen lassen, sobald es geht und ruhig genug ist.
-        if let Some(d) = self.drive {
+        if let Some(d) = self.drive.filter(|_| !sound_capture) {
             if d.push > 0
                 && crate::area_bot::can_advance(game, me, &d)
                 && crate::area_bot::calm(game, me)
@@ -486,12 +511,18 @@ impl SearchBot {
         }
         // Kartenkauf zuerst: lohnt er sich (kurze Vorausrechnung mit und ohne Kauf), wird
         // gekauft; den eigentlichen Zug sucht der Bot danach (er bleibt am Zug).
-        if let Some(b) = self.pick_buy(game, &buys) {
-            return b;
+        // Kaeufe, die die Suche fuer die Abwehr noch will (Gefahr fuer Fabrik oder Koenig), bleiben erlaubt;
+        // bei ruhiger Lage geht der Schlag vor.
+        let may_buy = !sound_capture || !crate::area_bot::calm(game, me);
+        if may_buy {
+            if let Some(b) = self.pick_buy(game, &buys) {
+                return b;
+            }
         }
         self.limit = self.params.node_budget;
         self.aborted = false;
         let (best, best_score, depth_done) = self.root_search(game, moves, self.params.max_depth);
+        self.root_bonus.clear();
         self.stats = SearchStats {
             nodes: self.nodes,
             depth: depth_done,
@@ -520,10 +551,25 @@ impl SearchBot {
                 child.state.current = self.root;
                 child.apply_unchecked(a);
                 debug_check(&child);
-                let v = self.after_own_move(&child, depth - 1, alpha, INF, 1, MAX_EXTENSIONS);
+                // Zuschlag auf sinnvolle Schlaege: das Fenster wird um ihn verschoben, damit die
+                // Suche den Wert genau liefert, wenn er mit Zuschlag den bisher besten uebertrifft.
+                let bonus = self
+                    .root_bonus
+                    .iter()
+                    .find(|(m, _)| *m == a)
+                    .map_or(0, |&(_, b)| b);
+                let v = self.after_own_move(
+                    &child,
+                    depth - 1,
+                    alpha.saturating_sub(bonus),
+                    INF,
+                    1,
+                    MAX_EXTENSIONS,
+                );
                 if self.aborted {
                     break;
                 }
+                let v = v.saturating_add(bonus);
                 if iter_best.is_none_or(|(_, s)| v > s) {
                     iter_best = Some((a, v));
                 }

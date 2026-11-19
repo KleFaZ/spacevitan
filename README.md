@@ -55,7 +55,7 @@ neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
 |---|---|
 | `stark` | rechnet voraus: eigene Zuege und die gefaehrlichste Antwort der Gegner, mehrere Zuege tief (bei 2 Spielern Alpha-Beta wie bei Schachprogrammen, ab 3 Spielern Best-Reply-Search). Wirtschaft, Koenigssicherheit und das Einkesseln gegnerischer Koenige stecken in der Bewertung. Rechnet mit festem Budget (`--nodes`, Standard 20000 Stellungen pro Zug), also auf jedem Rechner gleich. |
 | `sehr-stark` | die Suche von `stark` (Alpha-Beta, Ruhesuche), aber mit der Land-Bewertung von `flaeche` an den Blaettern (`SearchBot::with_area_eval`, `area_bot::leaf_value`): verbundenes Land, Vorkommen, Figuren und duenne Verbindungen, die ein Gegner kappen koennte. Eigenes Budget (`--nodes-sehr`, Standard 20000), etwa 200 ms je Zug (hoechstens 0,5 s). Nur im Gebietsmodus anders als `stark`. |
-| `super-stark` | wie `sehr-stark` (gleiche Suche, gleiches Budget), aber die Blattbewertung zahlt mehr fuer Land, solange noch freier Platz ist, und belohnt eine Fabrik, die Richtung Brettmitte gerueckt ist (kauft deshalb "Fabrik ruecken"). Im Browser "Super schwer". |
+| `super-stark` | wie `sehr-stark` (gleiche Suche, gleiches Budget), aber die Blattbewertung zahlt mehr fuer Land, solange noch freier Platz ist, und belohnt eine Fabrik, die Richtung Brettmitte gerueckt ist (kauft deshalb "Fabrik ruecken"); seit Version 3.6 schlaegt er sinnvolle Figuren zuerst, setzt gegnerischen Koenig und Fabrik unter Druck, nutzt Umschliess-Chancen und verschiebt die Fabrik am Anfang mit dem Koenig. Im Browser "Super schwer". |
 | `stark-pur` | wie `stark`, kauft aber nie Karten (Vergleichsgegner fuer Kartenmessungen) |
 | `gierig` | feste Faustregeln ohne Vorausschau |
 | `flaeche` | nur Gebietsmodus: spielt auf Land und Rohstoffe statt auf Figurenkampf. Rechnet einen eigenen Zug voraus und bewertet das Ergebnis mit der echten Engine (verbundenes Land, Vorkommen darauf nach Reife gewichtet, Figuren, Bedrohung von Koenig und Fabrik), also sind Abtrennen und Umschliessen schon eingerechnet. Baut nur, wenn die neue Figur besser ist als seine beste; kauft Karten, die der naechsten Figur oder dem Koenig nutzen. Sichert die Flaeche (siehe "Siebte Aenderung der Version 3"): rechnet genau nach, ob ein Gegner im naechsten Zug den Koenig oder Land von der Fabrik trennen kann, und raeumt das vor dem Bauen aus. 0,6 ms je Zug (`area_bot.rs`) |
@@ -882,6 +882,41 @@ aendern, und man kann eigene Karten bauen.
   den Punkten) und den Knoepfen *Brett ansehen* und *Neue Partie* (Esc und Klick daneben schliessen es). Je Partie einmal.
 - **Standard 250 Runden** (`score_after = 250`, vorher 100; `max_rounds` bleibt 300). Die Zahlen in den aelteren Messungen dieser Datei
   stammen noch aus Partien mit 100 Runden.
+
+- **Bot `super-stark` ("Super schwer") schlaegt zuerst und geht den Gegner staerker an** (Wuensche vom 19.11.: Umschliessen bewusst
+  nutzen, am Anfang die Fabrik mit dem Koenig 1 bis 2 Felder verschieben, teilweise aggressiver; dazu der Fehler, dass Gegner die Fabrik
+  rueckten, statt eine Figur zu schlagen). Neue Stellschrauben in `area_bot::Drive` (`SPACEVITAN_DRIVE="open=2,enclose=100,press=4,hunt=50,offence=30"`),
+  die Standardwerte sind die gemessenen:
+  1. **Schlagen zuerst** (`hunt=50`; **der Fehler**): Die Abkuerzung "Fabrik ruecken sofort kaufen" (`push`) lief *vor* der Zugsuche und
+     sah Schlaege gar nicht an (`calm` zaehlt nur Gefahr fuer die eigenen Sachen). Jetzt prueft `area_bot::captures` zuerst alle Schlaege:
+     **sinnvoll** ist ein Schlag, wenn er die Partie entscheidet, die Figur danach nicht zurueckgeschlagen werden kann oder der Tausch
+     lohnt (Wert der geschlagenen Figur groesser als der der schlagenden). Gibt es einen sinnvollen Schlag, entfaellt in ruhiger Lage der
+     Kartenkauf und das Fabrik-Rutschen davor, und der Schlag bekommt in der Zugsuche 50 % vom Wert der geschlagenen Figur als Zuschlag.
+     Ein Schlag, der nur Figur gegen gleich Wertiges tauscht und verliert, bekommt nichts: die Vorausrechnung bestimmt, ob er sich lohnt
+     ("nicht sinnlos reinlaufen"). Test: `hunt_takes_a_sound_capture_before_shifting_the_factory` (Ausgangslage kauft Fabrik ruecken,
+     jetzt schlaegt er) und `a_free_capture_is_sound_and_a_losing_trade_is_not`. Messhilfe `capture_audit` (`cargo test --release -p game_core capture_audit -- --ignored --nocapture`):
+     Der alte Super-Bot nutzte nur **19 von 28** Zuegen mit einem sicheren Schlag (68 %), mit `hunt=100` **25 von 29** (86 %); `sehr-stark` 10 von 11.
+  2. **Druck** (`press=4`): eigene Figuren (nach Stufe) nahe am gegnerischen Koenig und seiner Fabrik zaehlen (Naehe bis 5 Felder), staerker bei
+     vollem Brett. 3. **Angriffswert** (`offence=30`): wer am Zug ist, bewertet mit, was er dem Gegner im naechsten Zug abtrennen koennte.
+  4. **Umschliessen** (`enclose=100`): ein weiteres Feld, das eine neutrale Flaeche ganz einschliessen wuerde, zaehlt als Chance
+     (`enclosure_chance`). 5. **Eroeffnung** (`open=2`, bis Runde 8): der Koenig laeuft zwei Felder Richtung Mitte und baut die Fabrik dort
+     neu (kostenloser Umzug); nur in ruhiger Lage.
+  **Messung** (Version 3, 100 Runden, `--nodes-sehr 5000`, 2 x 24 Partien je Variante, beide Sitzordnungen, neu gegen alt; Skript `duelv.sh`):
+  | Variante | neu : alt |
+  |---|---|
+  | Eroeffnung `open=1` / `open=2` | 23:25 / 26:22 |
+  | Umschliessen `enclose=50` | 25:23 |
+  | Angriffswert `offence=30` | 25:23 |
+  | Druck `press=4` (Seeds 1, 101, 201) | 29:19, 26:22, 31:17 = **86:58** (60 %) |
+  | Schlagen zuerst `hunt=1` / `50` / `100` | 23:25 / 23:25 / 22:26 |
+  | Druck + Schlagen (`press=4,hunt=50`) | 25:23 |
+  | **alles zusammen** (die neuen Standardwerte; Seeds 601 / 801) | **34:14** / **37:11** = 71:25 (74 %) |
+  | alles zusammen, 250 Runden (Seeds 701, 2 x 14 Partien) | **21:7** (75 %) |
+  Ehrlich dazu: **Einzeln** ist ausser dem Druck keine Idee messbar besser (24 Partien zeigen nur Unterschiede ab etwa 20 Prozentpunkten); `hunt`
+  haelt die Staerke und behebt den Fehler. Dass die Kombination deutlich vorn liegt, die Teilkombination Druck + Schlagen aber nicht (25:23),
+  zeigt, dass einzelne Teile erst zusammen wirken oder dass ein Teil davon Zufall ist; die beiden Reihen mit der Kombination (96 Partien,
+  verschiedene Startzahlen) sind aber eindeutig. Umschliessen: mit `enclose=150` schliessen die Bots in 6 Partien 48 statt 32 Felder ein
+  (nur Stichprobe) - es bleiben kleine Gewinne, weil der Brettrand beim Umschliessen standardmaessig nicht zaehlt (`terr_enclose_edge`).
 
 ### Version 3.5 (Wuensche vom 19.11.2026)
 

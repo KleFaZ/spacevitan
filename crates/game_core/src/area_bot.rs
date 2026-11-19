@@ -138,6 +138,24 @@ pub struct Drive {
     /// Kauft "Fabrik ruecken" gleich, sobald es kaufbar ist, die Fabrik damit naeher an die Mitte
     /// kommt und die Lage ruhig ist (0 = nur nach der Bewertung wie jede Karte).
     pub push: i64,
+    /// Eroeffnung: der Koenig laeuft so viele Felder (1 oder 2) Richtung Mitte und baut dort die Fabrik neu
+    /// (Umzug, kostenlos). 0 = aus.
+    pub open: i64,
+    /// Die Eroeffnung gilt nur bis zu dieser Runde.
+    pub open_rounds: i64,
+    /// Wert einer Umschliess-Chance (ein weiteres gefaerbtes Feld wuerde eine neutrale Flaeche ganz
+    /// einschliessen), in Hundertsteln des Landwertes je Feld. 0 = aus.
+    pub enclose: i64,
+    /// Druck auf den Gegner: Punkte je Stufe und Feld Naehe zu gegnerischem Koenig und Fabrik, wachsend
+    /// mit dem Fuellstand des Bretts. 0 = aus.
+    pub press: i64,
+    /// Angriffswert: Anteil (in Hundertsteln) dessen, was ich dem Gegner im naechsten Zug abtrennen
+    /// koennte, wenn ich am Zug bin. 0 = aus.
+    pub offence: i64,
+    /// Schlagen zuerst: 0 = aus (altes Verhalten). Sonst gilt, solange ein sinnvoller Schlag moeglich ist,
+    /// kein Kartenkauf und kein Fabrik-Rutschen vor der Zugsuche, und sinnvolle Schlaege bekommen den
+    /// angegebenen Anteil (in Prozent) vom Wert der geschlagenen Figur als Zuschlag.
+    pub hunt: i64,
 }
 
 impl Drive {
@@ -147,6 +165,12 @@ impl Drive {
         centre_cap: 6,
         ready: 30,
         push: 1,
+        open: 2,
+        open_rounds: 8,
+        enclose: 100,
+        press: 4,
+        offence: 30,
+        hunt: 50,
     };
 
     /// `land=6,centre=20,cap=6,ready=30,push=1` (nur zum Abstimmen).
@@ -166,6 +190,12 @@ impl Drive {
                 "cap" => d.centre_cap = v,
                 "ready" => d.ready = v,
                 "push" => d.push = v,
+                "open" => d.open = v,
+                "orounds" => d.open_rounds = v,
+                "enclose" => d.enclose = v,
+                "press" => d.press = v,
+                "offence" => d.offence = v,
+                "hunt" => d.hunt = v,
                 other => return Err(format!("unbekannte Stellschraube '{other}'")),
             }
         }
@@ -284,8 +314,249 @@ fn evaluate_drive(g: &Game, me: PlayerId, d: &Drive) -> i64 {
         {
             v += d.ready;
         }
+        if d.enclose > 0 {
+            // Wer am Zug ist, kann die Chance gleich nutzen, der andere erst nach dessen Antwort.
+            let side = if g.state.current == p { 100 } else { 35 };
+            v += d.enclose * enclosure_chance(g, p) * land * side / 10_000;
+        }
+        if d.press > 0 {
+            v += press_value(g, p, d.press);
+        }
         v
     })
+}
+
+/// Wie viele neutrale Felder `p` mit einem einzigen weiteren gefaerbten Feld auf einmal umschliessen
+/// koennte (das beste Feld neben seinem verbundenen Land). Nur eine Schaetzung: ob eine Figur das
+/// Feld in einem Zug faerben kann, wird nicht geprueft.
+pub(crate) fn enclosure_chance(g: &Game, p: PlayerId) -> i64 {
+    if !g.config.terr_enclose {
+        return 0;
+    }
+    let Some(conn) = g.connected_land(p) else {
+        return 0;
+    };
+    let board = &g.map.board;
+    let n = board.len();
+    let full = board
+        .cells()
+        .map(|c| board.neighbors(c).count())
+        .max()
+        .unwrap_or(0);
+    let edge_is_wall = g.config.terr_enclose_edge;
+    let mut land: Vec<Option<PlayerId>> = g.state.land.clone();
+    let mut best = 0usize;
+    let mut seen = vec![0u32; n];
+    let mut stamp = 0u32;
+    let mut region: Vec<usize> = Vec::with_capacity(n);
+    for c in board.cells() {
+        // Nur neutrale Felder neben verbundenem eigenem Land kommen als Wand in Frage.
+        if land[c.idx()].is_some() || !board.neighbors(c).any(|nb| conn[nb.idx()]) {
+            continue;
+        }
+        land[c.idx()] = Some(p);
+        stamp += 1;
+        let mut gain = 0usize;
+        // Neutrale Flaechen rund um `c` auf Einschluss durch genau `p` pruefen.
+        for start in board.neighbors(c) {
+            if land[start.idx()].is_some() || seen[start.idx()] == stamp {
+                continue;
+            }
+            region.clear();
+            region.push(start.idx());
+            seen[start.idx()] = stamp;
+            let mut owner: Option<PlayerId> = None;
+            let mut mixed = false;
+            let mut head = 0;
+            while head < region.len() {
+                let cur = crate::ids::CellId(region[head] as u32 as _);
+                head += 1;
+                if !edge_is_wall && board.neighbors(cur).count() < full {
+                    mixed = true;
+                }
+                for nb in board.neighbors(cur) {
+                    match land[nb.idx()] {
+                        None => {
+                            if seen[nb.idx()] != stamp {
+                                seen[nb.idx()] = stamp;
+                                region.push(nb.idx());
+                            }
+                        }
+                        Some(q) => match owner {
+                            None => owner = Some(q),
+                            Some(o) if o != q => mixed = true,
+                            _ => {}
+                        },
+                    }
+                }
+                if mixed {
+                    break;
+                }
+            }
+            if !mixed && owner == Some(p) {
+                gain += region.len();
+            }
+        }
+        land[c.idx()] = None;
+        best = best.max(gain);
+    }
+    best as i64
+}
+
+/// Druck auf den Gegner: eigene Figuren (nach Stufe) nahe bei gegnerischem Koenig und gegnerischer
+/// Fabrik, stärker bei vollem Brett (dann gibt es Land nur noch vom Gegner).
+fn press_value(g: &Game, p: PlayerId, weight: i64) -> i64 {
+    let board = &g.map.board;
+    let mut targets: Vec<Vec<u32>> = Vec::new();
+    for q in g.alive_players().into_iter().filter(|&q| q != p) {
+        if let Some(k) = g.king(q) {
+            targets.push(board.distances_from(k.cell));
+        }
+        if let Some(f) = g.home_factory(q) {
+            targets.push(board.distances_from(f.cell));
+        }
+    }
+    if targets.is_empty() {
+        return 0;
+    }
+    let filled = 1000 - free_permille(g);
+    let mut sum = 0i64;
+    for piece in g.pieces_of(p) {
+        let PieceKind::Unit { level, .. } = piece.kind else {
+            continue;
+        };
+        let near = targets
+            .iter()
+            .map(|d| d[piece.cell.idx()])
+            .min()
+            .unwrap_or(99);
+        sum += i64::from(level) * i64::from(6u32.saturating_sub(near));
+    }
+    weight * sum * filled / 1000
+}
+
+/// Eroeffnung ("super-stark" mit `open`): der Koenig geht ein oder zwei Felder Richtung Mitte und
+/// baut dort die Fabrik neu (kostenlos, der Umzug dauert eine Runde). Fruehe Zuege sind wenig wert,
+/// die Fabrik steht danach dauerhaft naeher an der Mitte. `None`, wenn nichts zu tun ist.
+pub(crate) fn opening_move(g: &Game, me: PlayerId, d: &Drive, legal: &[Action]) -> Option<Action> {
+    if d.open <= 0 || i64::from(g.state.round) > d.open_rounds {
+        return None;
+    }
+    let king = g.king(me)?;
+    let fac = g.home_factory(me)?;
+    if fac.building > 0 || fac.cell != g.map.start_cell(me) {
+        return None;
+    }
+    // Nichts Feindliches in der Naehe, sonst gilt die normale Suche.
+    if !calm(g, me) {
+        return None;
+    }
+    let board = &g.map.board;
+    let from_fac = board.distances_from(fac.cell);
+    let progress = |c: crate::ids::CellId| centre_progress_at(g, c, 100);
+    let here = from_fac[king.cell.idx()] as i64;
+    let better = progress(king.cell) > progress(fac.cell);
+    if king.cell != fac.cell
+        && better
+        && (here >= d.open
+            || legal.contains(&Action::RebuildFactory)
+                && here >= 1
+                && !has_step(g, king.cell, &from_fac, &progress, legal, king.id))
+    {
+        if legal.contains(&Action::RebuildFactory) {
+            return Some(Action::RebuildFactory);
+        }
+        return None;
+    }
+    // Ein Schritt weiter weg von der Fabrik und naeher an der Mitte.
+    let mut best: Option<(i64, Action)> = None;
+    for &a in legal {
+        let Action::Move { piece, to } = a else {
+            continue;
+        };
+        if piece != king.id
+            || !board.neighbors(king.cell).any(|n| n == to)
+            || g.state.piece_at(to).is_some()
+            || i64::from(from_fac[to.idx()]) != here + 1
+            || progress(to) <= progress(king.cell).max(progress(fac.cell))
+        {
+            continue;
+        }
+        if best.is_none_or(|(v, _)| progress(to) > v) {
+            best = Some((progress(to), a));
+        }
+    }
+    best.map(|(_, a)| a)
+}
+
+/// Gibt es fuer den Koenig noch einen Schritt weg von der Fabrik, der naeher an die Mitte fuehrt?
+fn has_step(
+    g: &Game,
+    at: crate::ids::CellId,
+    from_fac: &[u32],
+    progress: &dyn Fn(crate::ids::CellId) -> i64,
+    legal: &[Action],
+    king: crate::ids::PieceId,
+) -> bool {
+    let board = &g.map.board;
+    legal.iter().any(|a| match *a {
+        Action::Move { piece, to } => {
+            piece == king
+                && board.neighbors(at).any(|n| n == to)
+                && g.state.piece_at(to).is_none()
+                && from_fac[to.idx()] > from_fac[at.idx()]
+                && progress(to) > progress(at)
+        }
+        _ => false,
+    })
+}
+
+/// Ein moeglicher Schlag des Spielers am Zug (siehe `captures`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Capture {
+    pub action: Action,
+    /// Wert der geschlagenen Figur (Koenig: `KING_LOST`).
+    pub victim: i64,
+    /// Sinnvoll: entscheidet die Partie, oder die Figur wird nicht zurueckgeschlagen, oder sie tauscht
+    /// gegen etwas Wertvolleres. Sinnlos ist es, eine Figur in den Gegner laufen zu lassen, die dort
+    /// fuer weniger Wert wieder verloren geht.
+    pub sound: bool,
+}
+
+/// Alle Schlaege unter `moves` (Zuege auf ein Feld mit gegnerischer Figur), jeweils mit Pruefung, ob sie
+/// sinnvoll sind.
+pub(crate) fn captures(g: &Game, me: PlayerId, moves: &[Action]) -> Vec<Capture> {
+    let value = |k: &PieceKind| match k {
+        PieceKind::King => KING_LOST,
+        PieceKind::Unit { level, .. } => UNIT[usize::from(*level).min(4)],
+    };
+    let mut out = Vec::new();
+    for &a in moves {
+        let Action::Move { piece, to } = a else {
+            continue;
+        };
+        let Some(victim) = g.state.piece_at(to).filter(|v| v.owner != me) else {
+            continue;
+        };
+        let Some(mover) = g.state.pieces.get(&piece) else {
+            continue;
+        };
+        let (gain, own) = (value(&victim.kind), value(&mover.kind));
+        let mut child = g.clone();
+        child.apply_unchecked(a);
+        let recaptured = child.outcome().is_none()
+            && child.current_player() != me
+            && child
+                .legal_actions_for_bot()
+                .iter()
+                .any(|r| matches!(*r, Action::Move { to: t, .. } if t == to));
+        out.push(Capture {
+            action: a,
+            victim: gain,
+            sound: !recaptured || gain > own,
+        });
+    }
+    out
 }
 
 /// Was ein Gegner im naechsten Zug an Land, Figuren und Koenig von `me` abtrennen koennte.
@@ -363,6 +634,16 @@ pub(crate) fn leaf_value_with(g: &Game, me: PlayerId, drive: Option<&Drive>) -> 
     // dass der Koenig seltener abgetrennt wurde.)
     if g.state.current != me {
         v - cut_risk(g, me)
+    } else if drive.is_some_and(|d| d.offence > 0) {
+        // Angriff: was ich dem Gegner jetzt abtrennen koennte (er hat es noch nicht abgewehrt).
+        let best = g
+            .alive_players()
+            .into_iter()
+            .filter(|&q| q != me)
+            .map(|q| cut_value(g, q))
+            .max()
+            .unwrap_or(0);
+        v + drive.map_or(0, |d| d.offence) * best / 100
     } else {
         v
     }
@@ -628,6 +909,16 @@ mod drive_tests {
     use crate::ai::SearchBot;
     use crate::config::Config;
 
+    /// Die Stellschrauben vor den Aenderungen vom 19.11. (nur Land, Mitte, Fabrik-Rutschen).
+    const OLD: Drive = Drive {
+        open: 0,
+        enclose: 0,
+        press: 0,
+        offence: 0,
+        hunt: 0,
+        ..Drive::DEFAULT
+    };
+
     fn game() -> Game {
         let mut cfg = Config::new(2, 7);
         cfg.territory = true;
@@ -708,7 +999,7 @@ mod drive_tests {
         let me = PlayerId(0);
         assert!(can_advance(&g, me, &Drive::DEFAULT));
         assert!(calm(&g, me));
-        let mut bot = SearchBot::super_strong(3);
+        let mut bot = SearchBot::super_strong(3).with_drive(OLD);
         let a = crate::bot::Bot::choose(&mut bot, &g);
         assert!(
             matches!(
@@ -754,7 +1045,7 @@ mod drive_tests {
             })
             .unwrap();
         g.apply(buy).unwrap();
-        let mut bot = SearchBot::super_strong(3);
+        let mut bot = SearchBot::super_strong(3).with_drive(OLD);
         let a = crate::bot::Bot::choose(&mut bot, &g);
         let Action::ShiftFactory { to, .. } = a else {
             panic!("erzwungenes Rutschen erwartet: {a:?}");
@@ -769,6 +1060,297 @@ mod drive_tests {
             ..Drive::DEFAULT
         };
         assert!(!can_advance(&g, me, &tight));
+    }
+
+    #[test]
+    fn the_new_drive_keys_parse_and_the_defaults_are_the_measured_ones() {
+        let d = Drive::parse("open=2,orounds=6,enclose=50,press=4,offence=30").unwrap();
+        assert_eq!(
+            (d.open, d.open_rounds, d.enclose, d.press, d.offence),
+            (2, 6, 50, 4, 30)
+        );
+        // Ohne Angabe gelten die gemessenen Standardwerte (README, Version 3.6).
+        let plain = Drive::parse("land=6").unwrap();
+        assert_eq!(
+            (
+                plain.open,
+                plain.open_rounds,
+                plain.enclose,
+                plain.press,
+                plain.offence,
+                plain.hunt
+            ),
+            (2, 8, 100, 4, 30, 50)
+        );
+    }
+
+    fn colour(g: &mut Game, p: PlayerId, cells: &[(i32, i32)]) {
+        for &(x, y) in cells {
+            let c = g.map.board.cell_at(x, y).unwrap();
+            g.state.land[c.idx()] = Some(p);
+        }
+    }
+
+    #[test]
+    fn a_missing_wall_cell_counts_as_an_enclosure_chance() {
+        let me = PlayerId(0);
+        // Ein Ring um (0,1) und (1,1); es fehlt nur (0,2). Mit Randwand sind das zwei Felder.
+        let mut cfg = Config::new(2, 7);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        cfg.terr_enclose_edge = true;
+        let mut g = Game::new(cfg).unwrap();
+        colour(&mut g, me, &[(1, 0), (2, 0), (2, 1), (2, 2), (1, 2)]);
+        assert_eq!(enclosure_chance(&g, me), 2);
+        assert_eq!(enclosure_chance(&g, PlayerId(1)), 0);
+        // Ohne Randwand schliesst nur noch das Innenfeld (1,1) (mit (0,1) als Wand).
+        let mut plain = game();
+        colour(&mut plain, me, &[(1, 0), (2, 0), (2, 1), (2, 2), (1, 2)]);
+        assert_eq!(enclosure_chance(&plain, me), 1);
+        // Ausgeschaltetes Umschliessen: keine Chance.
+        let mut off = game();
+        off.config.terr_enclose = false;
+        colour(&mut off, me, &[(1, 0), (2, 0), (2, 1), (2, 2), (1, 2)]);
+        assert_eq!(enclosure_chance(&off, me), 0);
+    }
+
+    #[test]
+    fn the_enclosure_bonus_only_counts_when_asked() {
+        let me = PlayerId(0);
+        let mut g = game();
+        colour(&mut g, me, &[(1, 0), (2, 0), (2, 1), (2, 2), (1, 2)]);
+        let off = leaf_value_with(&g, me, Some(&OLD));
+        let on = leaf_value_with(&g, me, Some(&Drive { enclose: 80, ..OLD }));
+        assert!(on > off, "{on} > {off}");
+        assert_eq!(leaf_value_with(&g, me, Some(&OLD)), off);
+    }
+
+    #[test]
+    fn the_opening_walks_the_king_out_and_moves_the_factory() {
+        let me = PlayerId(0);
+        let d = Drive {
+            open: 1,
+            ..Drive::DEFAULT
+        };
+        let mut g = game();
+        let legal = g.legal_actions_for_bot();
+        // Aus: keine Eroeffnung.
+        assert_eq!(opening_move(&g, me, &OLD, &legal), None);
+        // An: der Koenig macht einen Schritt weg von der Fabrik, Richtung Mitte.
+        let first = opening_move(&g, me, &d, &legal).expect("ein Eroeffnungszug");
+        let Action::Move { piece, to } = first else {
+            panic!("erst laeuft der Koenig: {first:?}");
+        };
+        assert_eq!(piece, g.king(me).unwrap().id);
+        let fac = g.home_factory(me).unwrap().cell;
+        assert!(g.map.board.neighbors(fac).any(|n| n == to));
+        g.apply(first).unwrap();
+        // Der Gegner zieht irgendwie.
+        let reply = g.legal_actions_for_bot()[0];
+        g.apply(reply).unwrap();
+        // Danach: Fabrik am Koenig neu bauen (Umzug).
+        let legal = g.legal_actions_for_bot();
+        assert_eq!(
+            opening_move(&g, me, &d, &legal),
+            Some(Action::RebuildFactory)
+        );
+        g.apply(Action::RebuildFactory).unwrap();
+        g.check_invariants().unwrap();
+        // Spaeter in der Partie macht die Eroeffnung nichts mehr.
+        let late = Drive {
+            open_rounds: 0,
+            ..d
+        };
+        let legal = g.legal_actions_for_bot();
+        assert_eq!(opening_move(&g, me, &late, &legal), None);
+    }
+
+    /// Messhilfe (nicht im Normallauf): wie oft haette ein Bot schlagen koennen, und was tat er stattdessen?
+    #[test]
+    #[ignore]
+    fn capture_audit() {
+        use crate::ai::SearchParams;
+        let budget: u64 = std::env::var("AUDIT_NODES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1500);
+        for kind in ["sehr-stark", "super-stark"] {
+            let (mut avail, mut took, mut bought, mut other) = (0, 0, 0, 0);
+            let (mut safe_avail, mut safe_took) = (0, 0);
+            let mut shown = 0;
+            for seed in 1..=4u64 {
+                let mut cfg = Config::new(2, seed);
+                cfg.territory = true;
+                cfg.set_v3(true);
+                cfg.score_after = 100;
+                let mut g = Game::new(cfg).unwrap();
+                let mk = |s: u64| {
+                    let b = SearchBot::with_params(s, SearchParams::with_budget(budget));
+                    if kind == "super-stark" {
+                        let list = std::env::var("AUDIT_DRIVE").unwrap_or_default();
+                        b.with_drive(Drive::parse(&list).unwrap())
+                            .with_name("super-stark")
+                    } else {
+                        b
+                    }
+                };
+                let mut bots = [mk(seed * 2), mk(seed * 2 + 1)];
+                for _ in 0..400 {
+                    if g.outcome().is_some() {
+                        break;
+                    }
+                    let me = g.current_player();
+                    let legal = g.legal_actions_for_bot();
+                    let captures = |l: &[Action]| {
+                        l.iter()
+                            .filter(|a| match **a {
+                                Action::Move { to, .. } => {
+                                    g.state.piece_at(to).is_some_and(|p| p.owner != me)
+                                }
+                                _ => false,
+                            })
+                            .count()
+                    };
+                    // Sicherer Schlag: der Gegner kann das Zielfeld danach nicht zurueckschlagen.
+                    let safe_capture = |l: &[Action]| {
+                        l.iter().any(|a| {
+                            let Action::Move { to, .. } = *a else {
+                                return false;
+                            };
+                            let Some(v) = g.state.piece_at(to) else {
+                                return false;
+                            };
+                            if v.owner == me {
+                                return false;
+                            }
+                            let mut c = g.clone();
+                            c.state.current = me;
+                            c.apply_unchecked(*a);
+                            if c.outcome().is_some() {
+                                return true;
+                            }
+                            !c.legal_actions_for_bot()
+                                .iter()
+                                .any(|r| matches!(*r, Action::Move { to: t2, .. } if t2 == to))
+                        })
+                    };
+                    let n = captures(&legal);
+                    let safe = n > 0 && safe_capture(&legal);
+                    let a: Action = crate::bot::Bot::choose(&mut bots[me.idx()], &g);
+                    if safe {
+                        safe_avail += 1;
+                    }
+                    if n > 0 {
+                        avail += 1;
+                        let is_capture = matches!(a, Action::Move { to, .. } if g.state.piece_at(to).is_some_and(|p| p.owner != me));
+                        if is_capture {
+                            took += 1;
+                            if safe {
+                                safe_took += 1;
+                            }
+                        } else if matches!(a, Action::BuyCard { .. }) {
+                            bought += 1;
+                            if shown < 6 {
+                                shown += 1;
+                                println!("  [{kind}] Runde {} P{}: {n} Schlaege moeglich, gekauft: {a:?}", g.state.round, me.idx());
+                            }
+                        } else {
+                            other += 1;
+                            if shown < 6 {
+                                shown += 1;
+                                println!("  [{kind}] Runde {} P{}: {n} Schlaege moeglich, gezogen: {a:?}", g.state.round, me.idx());
+                            }
+                        }
+                    }
+                    g.apply(a).unwrap();
+                }
+            }
+            println!("{kind}: Schlag moeglich {avail}x, geschlagen {took}x, stattdessen gekauft {bought}x, anders gezogen {other}x; davon Zuege mit sicherem Schlag {safe_avail}x, dabei geschlagen {safe_took}x");
+        }
+    }
+
+    fn cell(g: &Game, x: i32, y: i32) -> crate::ids::CellId {
+        g.map.board.cell_at(x, y).unwrap()
+    }
+
+    #[test]
+    fn a_free_capture_is_sound_and_a_losing_trade_is_not() {
+        let me = PlayerId(0);
+        let foe = PlayerId(1);
+        let mut g = game();
+        // Ein Streifen eigenen Landes zieht sich an der Unterkante entlang; die Figur ist angebunden.
+        for x in 0..=7 {
+            g.set_land(cell(&g, x, 0), Some(me));
+        }
+        let hunter = g.setup_unit(me, cell(&g, 7, 0), 1, 1);
+        let target = g.setup_unit(foe, cell(&g, 8, 0), 1, 1);
+        let grab = Action::Move {
+            piece: hunter,
+            to: cell(&g, 8, 0),
+        };
+        let found = captures(&g, me, &[grab]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].victim, UNIT[1]);
+        assert!(found[0].sound, "niemand kann zurueckschlagen");
+        // Eine verteidigte Figur des Gegners (Stufe 2, genau zwei Felder entfernt) schlaegt zurueck:
+        // Bauer gegen Bauer und danach verloren ist kein Gewinn.
+        for y in 2..=9 {
+            g.set_land(cell(&g, 9, y), Some(foe));
+        }
+        g.set_land(cell(&g, 8, 2), Some(foe));
+        g.setup_unit(foe, cell(&g, 8, 2), 2, 2);
+        let found = captures(&g, me, &[grab]);
+        assert_eq!(found.len(), 1);
+        assert!(!found[0].sound, "wird zurueckgeschlagen, kein Gewinn");
+        // Dasselbe gegen eine wertvollere Figur lohnt sich.
+        g.state.remove_piece(target);
+        let better = g.setup_unit(foe, cell(&g, 8, 0), 2, 2);
+        let _ = better;
+        let found = captures(&g, me, &[grab]);
+        assert!(found[0].sound, "Stufe 2 fuer Stufe 1 ist ein guter Tausch");
+        // Zuege ohne gegnerische Figur am Ziel sind keine Schlaege.
+        let step = Action::Move {
+            piece: hunter,
+            to: cell(&g, 7, 1),
+        };
+        assert!(captures(&g, me, &[step]).is_empty());
+    }
+
+    #[test]
+    fn hunt_takes_a_sound_capture_before_shifting_the_factory() {
+        use crate::ai::SearchParams;
+        let me = PlayerId(0);
+        let mut g = shift_ready_game();
+        let hunter = g.setup_unit(me, cell(&g, 1, 0), 1, 1);
+        g.setup_unit(PlayerId(1), cell(&g, 2, 0), 1, 1);
+        let grab = Action::Move {
+            piece: hunter,
+            to: cell(&g, 2, 0),
+        };
+        assert!(g.legal_actions_for_bot().contains(&grab));
+        // Ohne "hunt": der Bot rutscht zuerst mit der Fabrik (altes Verhalten).
+        let old = OLD;
+        let mut bot = SearchBot::with_params(3, SearchParams::with_budget(1500))
+            .with_drive(old)
+            .with_name("super-stark");
+        let a = crate::bot::Bot::choose(&mut bot, &g);
+        assert!(
+            matches!(
+                a,
+                Action::BuyCard {
+                    card: Card::FactoryShift,
+                    ..
+                }
+            ),
+            "Ausgangslage: der Bot kauft erst Fabrik ruecken: {a:?}"
+        );
+        // Mit "hunt": der Schlag kommt zuerst.
+        let hunting = Drive { hunt: 100, ..old };
+        let mut bot = SearchBot::with_params(3, SearchParams::with_budget(1500))
+            .with_drive(hunting)
+            .with_name("super-stark");
+        let a = crate::bot::Bot::choose(&mut bot, &g);
+        assert_eq!(a, grab, "der Bot soll schlagen");
     }
 
     #[test]
