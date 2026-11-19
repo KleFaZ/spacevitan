@@ -858,8 +858,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const TERRAIN_HATCH = ["", "rgba(60,60,60,0.26)", "rgba(60,60,60,0.34)"];
   /** Zahl fuer die Anzeige: ganz, sonst mit Komma (Viertel: 0,25 / 0,5 / 0,75). */
   const fmtNum = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
-  /** Wehrlos: der Spieler hat eine Fabrik, die Figur steht aber nicht auf Land, das daran haengt. */
-  const helpless = (f, p) => !!f.land && f.anchored[p.owner] && !(f.land[p.cell] === p.owner && f.linked[p.cell]);
+  /** Wehrlos: die Figur steht nicht auf Land, das an einer stehenden Fabrik haengt. Auch ohne Fabrik (zerstoert) und im
+   *  Neubau sind alle Figuren wehrlos (Version 3, Neubau-Regel); ohne Neubau-Regel (Version 2) spielt man ohne Fabrik frei weiter. */
+  const rebuildOn = () => !!(R && R.config && R.config.terr_move > 0);
+  const helpless = (f, p) => !!f.land && (f.anchored[p.owner] || rebuildOn()) && !(f.land[p.cell] === p.owner && f.linked[p.cell]);
   const TERR_WHITE = "#f3f1ea";
   function mixHex(a, b, t) {
     const x = hexToRgb(a), y = hexToRgb(b);
@@ -3043,7 +3045,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const area = (f.area || [])[p] || 0;
     if (!fac) {
       const again = R.config && R.config.terr_move > 0 ? ` Der König kann sie auf eigenem Land neu bauen (kostenlos, Dauer: ${rebuildRuleText()}).` : "";
-      rows.push(`<div class="loc"><b>Fabrik zerstört</b><span class="sub">Ohne Fabrik gibt es kein Einkommen und keine neuen Figuren. Nur der König entscheidet das Spiel noch.${again}</span></div>`);
+      rows.push(`<div class="loc"><b>Fabrik zerstört</b><span class="sub">Ohne Fabrik gibt es kein Einkommen und keine neuen Figuren.${R.config && R.config.terr_move > 0 ? " Alle deine Figuren sind wehrlos (sie färben nichts und schlagen nichts, auch der König nicht), bis die Fabrik wieder steht." : ""} Nur der König entscheidet das Spiel noch.${again}</span></div>`);
       return rows;
     }
     if (fac.building > 0) {
@@ -4270,7 +4272,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const k = R.terrain[cell] || 0;
         rows.splice(1, 0, `Gelände: ${TERRAIN_KIND[k]}, zählt ${TERRAIN_FRAC[k]} Fläche (Feld 1, Erde ½, Moor ¼)`);
       }
-      if (piece && helpless(f, piece)) rows.push("Wehrlos: nicht mit dem eigenen Land verbunden, färbt nichts und kann nicht schlagen.");
+      if (piece && helpless(f, piece)) rows.push("Wehrlos: nicht mit einer stehenden Fabrik verbunden (Land abgetrennt oder Fabrik zerstört bzw. im Bau), färbt nichts und kann nicht schlagen.");
       // Version 3: Dauer und Preis eines Umzugs der eigenen Fabrik hierher, schon vor der Entscheidung.
       const hp = mode === "play" && live && R === liveR ? live.seats.indexOf("mensch") : -1;
       if (hp >= 0) {
@@ -4345,7 +4347,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       ["loot", "Beute einer eroberten Fabrik; nur ein König nimmt sie auf."],
       ["terrain", "Gelände: kleiner Kreis unten links im Feld. Ganzer Kreis = Feld (ohne Schraffur, meist in der Mitte), zählt 1 Fläche. Halber Kreis = Erde (einfach schraffiert, meist zwischen Mitte und Ecke), ½. Viertelkreis = Moor (gekreuzt schraffiert, meist in den Ecken), ¼."],
       ["land", "Gebietsmodus: Land in der Farbe des Spielers. Jedes Feld auf dem Weg einer Figur wird ihre Farbe, betritt ein Gegner es, kippt es um."],
-      ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt: sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist. Es genügt, dass sie neben ihrem verbundenen Land steht: dann färbt sie ihr Feld und ist wieder aktiv."],
+      ["helpless", "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an ihrer Fabrik hängt, oder die Fabrik ist zerstört bzw. im Bau (dann sind alle wehrlos): sie färbt nichts und kann nicht schlagen, bis sie wieder verbunden ist. Es genügt, dass sie neben ihrem verbundenen Land steht: dann färbt sie ihr Feld und ist wieder aktiv."],
     ];
     // 2D: andere Zeichen, also auch andere Erklaerungen.
     const text2d = {
@@ -4387,7 +4389,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (v3) {
       const pr = (R.config.terr_ripen || []);
       ttx = { ...ttx,
-        factory: "Fabrik: die einzige des Spielers. Hier erscheinen neue Figuren; am Zugende sammelt sie die Fläche aller mit ihr verbundenen Felder. Betritt ein Gegner sie, wird sie zerstört; der König baut sie dann kostenlos auf eigenem Land neu (Dauer: " + rebuildRuleText() + "). Auch freiwillig kann er sie auf sein Feld umsetzen (Dauer = halbe Entfernung, aufgerundet; der Tooltip über deinem Land nennt sie vorab). Bis sie steht: kein Ertrag, alle Figuren wehrlos, der König gesperrt.",
+        factory: "Fabrik: die einzige des Spielers. Hier erscheinen neue Figuren; am Zugende sammelt sie die Fläche aller mit ihr verbundenen Felder. Betritt ein Gegner sie, wird sie zerstört; der König baut sie dann kostenlos auf eigenem Land neu (Dauer: " + rebuildRuleText() + "); bis sie wieder steht, sind alle deine Figuren wehrlos. Auch freiwillig kann er sie auf sein Feld umsetzen (Dauer = halbe Entfernung, aufgerundet; der Tooltip über deinem Land nennt sie vorab). Bis sie steht: kein Ertrag, alle Figuren wehrlos, der König gesperrt.",
         pill: bonusOn()
           ? "Lager an der Fabrik: Eisen und Gold als Symbol mit Zahl (Brot wird nicht gelagert)."
           : breadOn()
@@ -4400,7 +4402,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           : breadOn()
             ? `Brot (Kat 3, Laib): wie Eisen, aber alle ${R.config.terr_bread} Runden geerntet, solange eine eigene Figur auf dem Feld steht. Es liegt im Lager und bezahlt vor allem Tempo und Nachschub (Kürzer, Ecke, Sprung, Durchzug, Siedeln, Doppelzug).`
           : `Brot (Kat 3, Laib): wie Eisen, Erntezeit ${pr[2] || 10} Runden. Das Lager tauscht es gegen Fläche: k Stück ergeben 2^k Fläche.`,
-        helpless: "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an einer stehenden Fabrik hängt (zum Beispiel, solange die Fabrik im Bau ist): sie färbt nichts und kann nicht schlagen.",
+        helpless: "Gebietsmodus: blasse Figur = wehrlos. Sie steht nicht auf Land, das an einer stehenden Fabrik hängt (zum Beispiel, solange die Fabrik im Bau oder zerstört ist): sie färbt nichts und kann nicht schlagen.",
       };
       t2x = { ...t2x, unit1: ttx.unit1, unit2: ttx.unit2, unitCards: "Karten als weiße Abzeichen: −1 = Kürzer, L = Ecke, Bogen = Sprung." };
     }
@@ -4977,7 +4979,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Platzarten: Code im Spielkern, Anzeige. Die Reihenfolge ist die in der Liste. */
   const SEAT_KINDS = [
     [2, "Mensch (ein Gerät)"],
-    [6, "Bot „super-stark“ – schwerste Stufe: wie „sehr stark“, aber mit mehr Land, Fabrik Richtung Mitte, schlägt zuerst sinnvolle Figuren und geht stärker auf den Gegner"],
+    [6, "Bot „super-stark“ – schwerste Stufe: wie „sehr stark“, aber mit mehr Land, Fabrik Richtung Mitte, schlägt zuerst sinnvolle Figuren und geht stärker auf den Gegner. Rangfolge aller rechnenden Bots: König schützen, dann Fabrik (auch Umzug, wenn der billiger ist), dann eigene Macht, zuletzt der gegnerische König"],
     [5, "Bot „sehr stark“ – rechnet voraus und bewertet Land"],
     [3, "Bot „stark“ – schwer, rechnet voraus"],
     [4, "Bot „fläche“ – schwer, spielt auf Land und sichert es"],
@@ -5798,7 +5800,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const fac = f.factories.find((x) => x.owner === me);
     const rebuild = R.config && R.config.terr_move > 0;
     if (!fac) return rebuild
-      ? `Deine Fabrik ist zerstört. Der König kann sie auf eigenem Land neu bauen (Knopf unten oder Tipp auf den König, kostenlos, Dauer: ${rebuildRuleText()}); bis dahin gibt es keine neuen Figuren und kein Einkommen.`
+      ? `Deine Fabrik ist zerstört. Der König kann sie auf eigenem Land neu bauen (Knopf unten oder Tipp auf den König, kostenlos, Dauer: ${rebuildRuleText()}); steht er nicht auf eigenem Land, muss er erst dorthin laufen. Bis die Fabrik wieder steht, sind alle deine Figuren wehrlos (sie färben nichts und schlagen nichts), es gibt keine neuen Figuren und kein Einkommen.`
       : "Deine Fabrik ist zerstört: keine neuen Figuren. Schütze den König und jage den gegnerischen.";
     if (fac.building > 0) return `Deine Fabrik ist im Bau: noch ${fac.building} Runde${fac.building === 1 ? "" : "n"}. Kein Einkommen, alle Figuren sind wehrlos (sie färben nichts und schlagen nicht), der König darf sich nicht bewegen.`;
     const blocked = f.pieces.some((x) => x.cell === fac.cell);

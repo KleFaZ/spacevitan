@@ -31,6 +31,14 @@ fn config(players: u8) -> Config {
     c
 }
 
+/// Mit Neubau-Regel (Version 3): zerstoerte Fabrik wird vom Koenig neu gebaut, bis dahin sind alle wehrlos.
+fn config_rebuild() -> Config {
+    let mut c = config(2);
+    c.terr_move = 1;
+    c.terr_rebuild = 3;
+    c
+}
+
 /// Die urspruenglichen runden Preise (Stufe 2 bis 4 je 100 Flaeche, Karten mal 3), damit die
 /// Ablauf-Tests nicht an der Feinabstimmung der Standardpreise haengen.
 fn round_prices() -> Config {
@@ -115,10 +123,19 @@ fn king_off_factory(g: &mut Game) -> PieceId {
     king
 }
 
-/// Spieler B hat keine Fabrik mehr: seine Figuren sind frei beweglich (kein Zusammenhang).
+/// Spieler B hat keine Fabrik mehr (zerstoert): alle seine Figuren sind wehrlos.
 fn without_factory(g: &mut Game, p: PlayerId) {
     let fid = g.home_factory(p).expect("Fabrik").id;
     g.state.remove_factory(fid);
+}
+
+/// Setzt die Fabrik von `p` auf das Feld (x, y) und faerbt es: eine Figur dort steht auf verbundenem
+/// Land und darf faerben und schlagen (Aufbau fuer Zuege, die einen Zusammenhang brauchen).
+fn stand_on(g: &mut Game, p: PlayerId, x: i32, y: i32) {
+    without_factory(g, p);
+    let cell = c(g, x, y);
+    g.setup_factory(p, cell);
+    g.state.land[cell.idx()] = Some(p);
 }
 
 // ----- Start ---------------------------------------------------------------------------------
@@ -199,9 +216,9 @@ fn a_straight_line_paints_the_whole_path() {
 #[test]
 fn a_move_flips_enemy_land_and_cuts_off_what_is_no_longer_connected() {
     let mut g = blank();
-    // A: Linie (0,0)..(5,0), B ohne Fabrik (frei) mit einem Bauern auf (3,1).
+    // A: Linie (0,0)..(5,0), B mit Fabrik und Bauern auf (3,1).
     paint(&mut g, P0, &[(1, 0), (2, 0), (3, 0), (4, 0), (5, 0)]);
-    without_factory(&mut g, P1);
+    stand_on(&mut g, P1, 3, 1);
     let unit = g.setup_unit(P1, c(&g, 3, 1), 1, 1);
     g.setup_current(P1);
     let events = act!(g, mv(&g, unit, 3, 0));
@@ -222,7 +239,7 @@ fn cut_off_land_becomes_neutral_when_flipping_is_switched_off() {
     cfg.terr_cut_flips = false;
     let mut g = blank_with(cfg);
     paint(&mut g, P0, &[(1, 0), (2, 0), (3, 0), (4, 0), (5, 0)]);
-    without_factory(&mut g, P1);
+    stand_on(&mut g, P1, 3, 1);
     let unit = g.setup_unit(P1, c(&g, 3, 1), 1, 1);
     g.setup_current(P1);
     act!(g, mv(&g, unit, 3, 0));
@@ -340,15 +357,148 @@ fn only_edges_count_for_waking_up_not_corners() {
 }
 
 #[test]
-fn a_piece_of_a_player_without_a_factory_is_not_affected() {
+fn without_the_rebuild_rule_a_player_without_a_factory_plays_on_freely() {
+    // Version 2 (`terr_move = 0`): die Fabrik kommt nie wieder; wer sie verloren hat, bleibt beweglich.
     let mut g = blank();
     without_factory(&mut g, P0);
     paint(&mut g, P0, &[(1, 0)]);
     let unit = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    assert!(g.piece_connected(&g.state.pieces[&unit]));
     let events = act!(g, mv(&g, unit, 5, 4));
-    // Ohne Fabrik gibt es keinen Zusammenhang: die Figur faerbt wie immer, ohne "wieder anbinden".
     assert!(reconnected(&events).is_empty());
-    assert_eq!(owner(&g, 5, 4), Some(P0));
+    assert_eq!(owner(&g, 5, 4), Some(P0), "faerbt wie immer");
+}
+
+#[test]
+fn a_piece_of_a_player_without_a_factory_is_defenceless() {
+    let mut g = blank_with(config_rebuild());
+    without_factory(&mut g, P0);
+    paint(&mut g, P0, &[(1, 0)]);
+    let unit = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    assert!(!g.piece_connected(&g.state.pieces[&unit]));
+    let events = act!(g, mv(&g, unit, 5, 4));
+    // Ohne stehende Fabrik gibt es keinen Zusammenhang: die Figur faerbt nichts und bindet sich nicht an.
+    assert!(reconnected(&events).is_empty());
+    assert_eq!(owner(&g, 5, 4), None);
+}
+
+#[test]
+fn without_a_factory_no_piece_can_capture_or_enter_an_enemy_factory() {
+    let mut g = blank_with(config_rebuild());
+    // A hat keine Fabrik mehr. B's Koenig steht weg von der Fabrik, B's Bauer neben A's Bauern.
+    without_factory(&mut g, P0);
+    let bk = king_id(&g, P1);
+    g.setup_teleport(bk, c(&g, 5, 9));
+    paint(&mut g, P1, &[(5, 9), (6, 9), (7, 9), (8, 9)]);
+    let mine = g.setup_unit(P0, c(&g, 5, 5), 1, 1);
+    let _enemy = g.setup_unit(P1, c(&g, 5, 4), 1, 1);
+    let walker = g.setup_unit(P0, c(&g, 8, 9), 1, 1);
+    g.setup_current(P0);
+    let fb = g.home_factory(P1).expect("Fabrik von B").cell;
+    assert_eq!(fb, c(&g, 9, 9));
+    assert!(
+        !g.piece_destinations(mine).contains(&c(&g, 5, 4)),
+        "wehrlos: kein Schlag"
+    );
+    assert!(
+        !g.piece_destinations(walker).contains(&fb),
+        "wehrlos: keine fremde Fabrik betreten"
+    );
+    // Auch der Koenig schlaegt nichts: A's Koenig steht direkt neben B's Koenig.
+    let ak = king_id(&g, P0);
+    g.setup_teleport(ak, c(&g, 6, 9));
+    assert!(
+        !g.piece_destinations(ak).contains(&c(&g, 5, 9)),
+        "kein Koenigsfang"
+    );
+    assert!(g.legal_actions().iter().all(|a| !matches!(
+        a,
+        Action::Move { to, .. } if *to == c(&g, 5, 9) || *to == c(&g, 5, 4) || *to == fb
+    )));
+    // Wehrlos heisst auch ungeschuetzt: B darf A's Figuren schlagen.
+    g.setup_current(P1);
+    assert!(g.piece_destinations(bk).contains(&c(&g, 6, 9)));
+}
+
+#[test]
+fn a_piece_can_capture_again_once_the_rebuilt_factory_stands() {
+    let mut g = blank_with(config_rebuild());
+    without_factory(&mut g, P0);
+    let ak = king_id(&g, P0);
+    g.setup_teleport(ak, c(&g, 4, 4));
+    paint(&mut g, P0, &[(4, 4), (4, 5)]);
+    let unit = g.setup_unit(P0, c(&g, 4, 5), 1, 1);
+    let spare = g.setup_unit(P0, c(&g, 0, 9), 1, 1);
+    let _enemy = g.setup_unit(P1, c(&g, 4, 6), 1, 1);
+    g.setup_current(P0);
+    let target = c(&g, 4, 6);
+    assert!(!g.piece_destinations(unit).contains(&target));
+    // Der Koenig baut die Fabrik neu (kostenlos, auf eigenem Land); sie steht erst nach der Bauzeit.
+    assert!(g.legal_actions().contains(&Action::RebuildFactory));
+    act!(g, Action::RebuildFactory);
+    assert!(g.rebuilding(P0));
+    assert!(
+        !g.piece_connected(&g.state.pieces[&unit]),
+        "im Neubau noch wehrlos"
+    );
+    assert!(!g.piece_destinations(unit).contains(&target));
+    // Die Zeit vergeht mit harmlosen Zuegen: A zieht mit dem Ersatz hin und her, B mit dem Koenig.
+    let mut guard = 0;
+    while g.rebuilding(P0) && guard < 40 {
+        let me = g.current_player();
+        let step = g
+            .legal_actions()
+            .into_iter()
+            .find(|a| match a {
+                Action::Move { piece, .. } if me == P0 => *piece == spare,
+                Action::Move { piece, .. } => *piece == king_id(&g, P1),
+                _ => false,
+            })
+            .expect("harmloser Zug");
+        act!(g, step);
+        guard += 1;
+    }
+    assert!(!g.rebuilding(P0), "Fabrik steht wieder");
+    assert!(g.piece_connected(&g.state.pieces[&unit]));
+    g.setup_current(P0);
+    assert!(
+        g.piece_destinations(unit).contains(&target),
+        "wieder schlagbereit"
+    );
+}
+
+#[test]
+fn a_defenceless_king_walks_back_to_his_land_before_he_can_rebuild() {
+    let mut g = blank_with(config_rebuild());
+    without_factory(&mut g, P0);
+    paint(&mut g, P0, &[(0, 0), (1, 0)]);
+    let ak = king_id(&g, P0);
+    g.setup_teleport(ak, c(&g, 3, 0));
+    g.setup_current(P0);
+    assert!(!g.legal_actions().contains(&Action::RebuildFactory));
+    // Der wehrlose Koenig faerbt unterwegs nichts.
+    act!(g, mv(&g, ak, 2, 0));
+    assert_eq!(owner(&g, 2, 0), None);
+    g.setup_current(P0);
+    act!(g, mv(&g, ak, 1, 0));
+    g.setup_current(P0);
+    assert!(g.legal_actions().contains(&Action::RebuildFactory));
+}
+
+#[test]
+fn a_king_without_any_land_may_rebuild_where_he_stands() {
+    let mut g = blank_with(config_rebuild());
+    without_factory(&mut g, P0);
+    let corner = c(&g, 0, 0);
+    g.state.land[corner.idx()] = None;
+    let ak = king_id(&g, P0);
+    g.setup_teleport(ak, c(&g, 3, 3));
+    assert_eq!(land_of(&g, P0), 0);
+    g.setup_current(P0);
+    assert!(g.legal_actions().contains(&Action::RebuildFactory));
+    act!(g, Action::RebuildFactory);
+    assert!(g.rebuilding(P0));
+    assert_eq!(owner(&g, 3, 3), Some(P0));
 }
 
 #[test]
@@ -441,7 +591,7 @@ fn a_neutral_pocket_closed_by_one_colour_falls_to_it() {
 #[test]
 fn the_board_edge_closes_a_pocket_when_it_counts_as_a_wall() {
     let mut g = blank_with(config_edge_walls(2));
-    without_factory(&mut g, P0);
+    stand_on(&mut g, P0, 0, 7);
     paint(&mut g, P0, &[(0, 4), (1, 5)]);
     let unit = g.setup_unit(P0, c(&g, 0, 7), 1, 1);
     let events = act!(g, mv(&g, unit, 0, 6));
@@ -452,7 +602,7 @@ fn the_board_edge_closes_a_pocket_when_it_counts_as_a_wall() {
 #[test]
 fn by_default_a_pocket_at_the_edge_stays_neutral() {
     let mut g = blank();
-    without_factory(&mut g, P0);
+    stand_on(&mut g, P0, 0, 7);
     paint(&mut g, P0, &[(0, 4), (1, 5)]);
     let unit = g.setup_unit(P0, c(&g, 0, 7), 1, 1);
     let events = act!(g, mv(&g, unit, 0, 6));
@@ -463,7 +613,7 @@ fn by_default_a_pocket_at_the_edge_stays_neutral() {
 #[test]
 fn by_default_a_ring_in_the_middle_still_closes() {
     let mut g = blank();
-    without_factory(&mut g, P0);
+    stand_on(&mut g, P0, 4, 7);
     // Ein Ring um (4,4); es fehlt nur noch (4,5).
     paint(&mut g, P0, &[(4, 3), (3, 4), (5, 4)]);
     let unit = g.setup_unit(P0, c(&g, 4, 7), 2, 2);
@@ -475,7 +625,7 @@ fn by_default_a_ring_in_the_middle_still_closes() {
 #[test]
 fn a_pocket_that_touches_two_colours_stays_neutral() {
     let mut g = blank();
-    without_factory(&mut g, P0);
+    stand_on(&mut g, P0, 8, 0);
     without_factory(&mut g, P1);
     // (4,4) grenzt an zwei Farben.
     paint(&mut g, P0, &[(3, 4), (4, 3)]);
@@ -520,7 +670,7 @@ fn enclosing_can_be_switched_off() {
 #[test]
 fn cutting_and_enclosing_work_together() {
     let mut g = blank_with(config_edge_walls(2));
-    without_factory(&mut g, P1);
+    stand_on(&mut g, P1, 2, 1);
     // A: Linie (1,0)..(3,0) an der Fabrik. B: Land rechts und unten um das Loch (4,0).
     paint(&mut g, P0, &[(1, 0), (2, 0), (3, 0)]);
     paint(&mut g, P1, &[(3, 1), (4, 1), (5, 0)]);
@@ -570,7 +720,7 @@ fn a_destroyed_factory_loses_its_storage_and_stored_card() {
     g.setup_storage(fid, cat1(0), 7);
     g.state.area[P0.idx()] = 30;
     g.state.stored_card[P0.idx()] = Some(Card::Lance);
-    without_factory(&mut g, P1);
+    stand_on(&mut g, P1, 1, 0);
     let king = king_id(&g, P0);
     g.setup_teleport(king, c(&g, 3, 3));
     let b_unit = g.setup_unit(P1, c(&g, 1, 0), 1, 1);
@@ -797,7 +947,7 @@ fn the_factory_collects_deposits_on_connected_land_every_round_without_exhaustin
 fn income_stops_when_the_enemy_cuts_the_land_off() {
     let mut g = blank();
     paint(&mut g, P0, &[(1, 0), (2, 0), (3, 0)]);
-    without_factory(&mut g, P1);
+    stand_on(&mut g, P1, 1, 1);
     let unit = g.setup_unit(P1, c(&g, 1, 1), 1, 1);
     g.setup_current(P1);
     act!(g, mv(&g, unit, 1, 0));
@@ -830,7 +980,6 @@ fn in_a_longer_game_the_rules_keep_running_after_one_player_falls() {
     // Zu dritt: faellt B, geht sein weisses Land nicht an A, solange es auch an C grenzt, und das
     // Spiel laeuft weiter (die Invarianten, auch zu Umschliessen und Anbinden, gelten weiter).
     let mut g = blank_with(config(3));
-    without_factory(&mut g, P0);
     let b = king_id(&g, P1);
     let corner_b = g.state.pieces[&b].cell;
     let step = g
@@ -839,6 +988,8 @@ fn in_a_longer_game_the_rules_keep_running_after_one_player_falls() {
         .neighbors(corner_b)
         .next()
         .expect("Nachbarfeld des Startfelds");
+    let (sx, sy) = g.map.board.coord(step);
+    stand_on(&mut g, P0, sx, sy);
     let unit = g.setup_unit(P0, step, 1, 1);
     let events = act!(
         g,

@@ -11,7 +11,10 @@
 //!   verbunden ist. Wird es durchtrennt, geht alles Abgetrennte an den, der durchtrennt hat (mit
 //!   `terr_cut_flips = false` wird es neutral). Eine Figur, die nicht auf verbundenem Land
 //!   steht, faerbt nichts und kann nicht angreifen: sie ist wehrlos, bis sie wieder verbunden ist.
-//!   Wer keine Fabrik mehr hat, braucht keinen Zusammenhang mehr (und bekommt auch keinen Ertrag).
+//!   Wer keine stehende Fabrik hat (zerstoert oder im Neubau), hat keinen Zusammenhang: alle seine
+//!   Figuren sind wehrlos (und er bekommt auch keinen Ertrag), bis die Fabrik wieder steht. Sein
+//!   Land bleibt dabei, wie es ist; es wird nicht abgetrennt. Das gilt mit Neubau-Regel (`terr_move > 0`,
+//!   Version 3); ohne sie spielt, wer die Fabrik verloren hat, wie in Version 2 frei weiter.
 //! - **Wieder anbinden.** Grenzt eine abgetrennte Figur (ueber eine Kante) an das verbundene Land
 //!   ihres Besitzers, ist sie sofort wieder aktiv und faerbt das Feld, auf dem sie steht
 //!   (`terr_reconnect`). Das gilt nach jedem Zug fuer alle Figuren, nicht nur fuer die des Ziehenden.
@@ -365,12 +368,20 @@ impl Game {
             .count() as u32
     }
 
-    /// Steht die Figur auf verbundenem Land? Ohne Fabrik gilt das immer.
+    /// Steht die Figur auf verbundenem Land? Ohne stehende Fabrik (zerstoert oder im Neubau) ist
+    /// nichts verbunden: alle Figuren sind wehrlos, bis die Fabrik wieder steht. Das gilt, wenn die
+    /// Fabrik neu gebaut werden kann (`terr_move > 0`, Version 3); ohne diese Regel kommt sie nie wieder,
+    /// und wer sie verloren hat, spielt wie in Version 2 frei weiter (sonst waere er fuer immer wehrlos).
     pub fn piece_connected(&self, piece: &Piece) -> bool {
         match self.connected_land(piece.owner) {
-            None => true,
+            None => !self.rebuild_enabled(),
             Some(c) => c[piece.cell.idx()],
         }
+    }
+
+    /// Kann eine zerstoerte Fabrik neu gebaut werden (Version 3, `terr_move > 0`)?
+    pub fn rebuild_enabled(&self) -> bool {
+        self.config.territory && self.config.terr_move > 0
     }
 
     /// Hoechste Stufe, die man bauen kann.
@@ -811,7 +822,7 @@ impl Game {
     /// Was der Koenig mit `RebuildFactory` taete: (Bauzeit in Runden, Kosten Kat 1 und Kat 2).
     /// `None`, wenn er hier nicht bauen darf. Steht eine Fabrik, muss das Feld des Koenigs mit ihr
     /// verbunden sein, die Bauzeit ist `relocation_rounds` und das Lager muss den Preis hergeben;
-    /// nach einer Zerstoerung geht es nur auf eigenem Land und ohne Kosten, die Bauzeit ist mit
+    /// nach einer Zerstoerung geht es nur auf eigenem Land (hat er gar keines mehr, auch dort, wo er steht) und ohne Kosten, die Bauzeit ist mit
     /// `terr_rebuild_dist` wie beim Umzug die halbe Entfernung zum alten Platz (`rebuild_rounds_lost`),
     /// sonst fest `terr_rebuild` Runden.
     pub fn rebuild_plan(&self, me: PlayerId) -> Option<(u32, [u32; 2])> {
@@ -835,7 +846,9 @@ impl Game {
                 }
                 Some((self.relocation_rounds(f.cell, king.cell), price))
             }
-            None => (self.state.land[king.cell.idx()] == Some(me))
+            // Wehrlos kann der Koenig kein Land mehr holen: hat der Gegner ihm alles abgenommen,
+            // darf er trotzdem dort neu bauen, wo er steht (sonst waere er fuer immer gesperrt).
+            None => (self.state.land[king.cell.idx()] == Some(me) || self.land_count(me) == 0)
                 .then(|| (self.rebuild_rounds_lost(me, king.cell), [0, 0])),
         }
     }
@@ -844,7 +857,13 @@ impl Game {
     /// `terr_rebuild_dist` die Bauzeit eines Umzugs vom alten Platz der Fabrik (`relocation_rounds`),
     /// sonst (oder ohne bekannten alten Platz) fest `terr_rebuild`.
     pub fn rebuild_rounds_lost(&self, me: PlayerId, to: CellId) -> u32 {
-        match self.state.lost_factory[me.idx()] {
+        self.rebuild_rounds_from(self.state.lost_factory[me.idx()], to)
+    }
+
+    /// Wie `rebuild_rounds_lost`, fuer eine Fabrik, die auf `old` stand (die Bots rechnen damit
+    /// durch, was eine Zerstoerung kosten wuerde).
+    pub fn rebuild_rounds_from(&self, old: Option<CellId>, to: CellId) -> u32 {
+        match old {
             Some(old) if self.config.terr_rebuild_dist => self.relocation_rounds(old, to),
             _ => self.config.terr_rebuild.max(1),
         }
@@ -880,6 +899,10 @@ impl Game {
             }
             None => {
                 self.state.lost_factory[actor.idx()] = None;
+                if self.state.land[to.idx()] != Some(actor) {
+                    // Ohne jedes eigene Land: der Platz der neuen Fabrik wird eigenes Land.
+                    self.set_land(to, Some(actor));
+                }
                 (self.state.insert_factory(actor, to), None)
             }
         };

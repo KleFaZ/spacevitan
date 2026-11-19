@@ -56,16 +56,30 @@ impl AreaBot {
 
 /// Wert der Lage von `p`: verbundenes Land, Vorkommen darauf (gewichtet nach Reife), Figuren.
 fn standing(g: &Game, p: PlayerId) -> i64 {
-    standing_with(g, p, LAND)
+    standing_with(g, p, LAND, true)
 }
 
 /// Wie `standing`, aber mit frei gewaehltem Wert je Flaeche (`super-stark` zahlt mehr fuer Land,
 /// solange noch Platz ist).
-fn standing_with(g: &Game, p: PlayerId, land: i64) -> i64 {
+fn standing_with(g: &Game, p: PlayerId, land: i64, guard: bool) -> i64 {
     let mut v = 0;
     // Mit `terr_occupy` zaehlt der Vorkommen-Wert voll nur auf bearbeiteten Feldern.
     let worked = g.config.terr_occupy.then(|| g.worked_cells(p));
-    if let Some(connected) = g.connected_land(p) {
+    // Ohne stehende Fabrik (zerstoert oder im Neubau) ist nichts verbunden: das Land gehoert ihm noch
+    // und kommt mit der neuen Fabrik zurueck, die Wartezeit wird unten abgezogen.
+    // (`guard` aus: so rechnete der Bot vor der Rangfolge Koenig > Fabrik, nur zum Messen.)
+    let guard = guard && g.rebuild_enabled();
+    let outage = if guard { outage_rounds(g, p) } else { 0 };
+    let connected = if outage > 0 {
+        let mut own = vec![false; g.map.board.len()];
+        for c in g.map.board.cells() {
+            own[c.idx()] = g.state.land[c.idx()] == Some(p);
+        }
+        Some(own)
+    } else {
+        g.connected_land(p)
+    };
+    if let Some(connected) = connected {
         for cell in g.map.board.cells().filter(|c| connected[c.idx()]) {
             // Mit Gelaende zaehlt ein Feld nach seinem Flaechenwert (Viertel), sonst voll.
             v += land * i64::from(g.land_quarters(cell)) / 4;
@@ -94,15 +108,93 @@ fn standing_with(g: &Game, p: PlayerId, land: i64) -> i64 {
         }
         // Flaechenbonus: jede Runde `2^k` Flaeche zusaetzlich, das verdoppelt sich je Kat-3-Feld.
         v += BONUS_UNIT * i64::from(Game::kat3_bonus(g.connected_kat3(p)).min(2_000));
-    } else {
-        v += g.land_count(p) as i64 * land;
     }
     for piece in g.pieces_of(p) {
         if let PieceKind::Unit { level, .. } = piece.kind {
             v += UNIT[usize::from(level).min(4)];
         }
     }
+    if guard {
+        v -= outage_cost(g, p);
+    } else if g.home_factory(p).is_none() {
+        // Altes Verhalten: ohne Fabrik zaehlt das ganze Land ohne Zusammenhang weiter.
+        v += g.land_count(p) as i64 * land;
+    }
     v
+}
+
+/// Eigene Zuege, bis die Fabrik von `p` wieder steht (0 = sie steht). Im Neubau ist es die Restzeit;
+/// nach einer Zerstoerung der Weg des Koenigs bis zum naechsten eigenen Feld plus die Bauzeit dort.
+/// So lange sind alle seine Figuren wehrlos.
+pub(crate) fn outage_rounds(g: &Game, p: PlayerId) -> i64 {
+    match g.home_factory(p) {
+        Some(f) => i64::from(f.building),
+        None => wehrlos_rounds(g, p, g.state.lost_factory[p.idx()]),
+    }
+}
+
+/// Wie viele eigene Zuege `p` ohne Fabrik waere, wenn sie (zuvor auf `old`) jetzt fehlte: der Koenig
+/// geht zum naechsten eigenen Feld (er faerbt unterwegs nichts) und baut dort neu.
+fn wehrlos_rounds(g: &Game, p: PlayerId, old: Option<crate::ids::CellId>) -> i64 {
+    let Some(king) = g.king(p) else {
+        return 0;
+    };
+    if g.config.terr_move == 0 {
+        // Ohne Neubau-Regel kommt die Fabrik nie wieder.
+        return 20;
+    }
+    let dist = g.map.board.distances_from(king.cell);
+    let nearest = g
+        .map
+        .board
+        .cells()
+        .filter(|c| g.state.land[c.idx()] == Some(p))
+        .min_by_key(|c| dist[c.idx()]);
+    let (walk, to) = match nearest {
+        Some(c) => (i64::from(dist[c.idx()]), c),
+        None => (0, king.cell),
+    };
+    walk + i64::from(g.rebuild_rounds_from(old, to))
+}
+
+/// Was eine wehrlose Runde `p` kostet: ein Teil des Ertrags, ein Teil des Wertes seiner Figuren
+/// (sie koennen nichts tun und sind leichte Beute) und die verlorene Zugzeit.
+fn idle_per_round(g: &Game, p: PlayerId) -> i64 {
+    let units: i64 = g
+        .pieces_of(p)
+        .map(|x| match x.kind {
+            PieceKind::Unit { level, .. } => UNIT[usize::from(level).min(4)],
+            PieceKind::King => 0,
+        })
+        .sum();
+    i64::from(g.land_count(p)) * LAND / 8 + units / 4 + 60
+}
+
+/// Abzug fuer eine Fabrik, die fehlt oder im Neubau ist.
+fn outage_cost(g: &Game, p: PlayerId) -> i64 {
+    let rounds = outage_rounds(g, p);
+    if rounds == 0 {
+        return 0;
+    }
+    // Zerstoert heisst auch: Lager, Flaeche und Karte sind weg.
+    let lost = if g.home_factory(p).is_none() {
+        FACTORY_THREAT
+    } else {
+        0
+    };
+    lost + rounds.min(30) * idle_per_round(g, p)
+}
+
+/// Was es `me` kostet, wenn die Fabrik im naechsten gegnerischen Zug zerstoert wird: Lager und
+/// Flaeche weg, dazu die Runden, in denen alle Figuren wehrlos sind, bis der Koenig sie neu gebaut hat.
+pub(crate) fn factory_loss_cost(g: &Game, me: PlayerId) -> i64 {
+    let Some(f) = g.standing_factory(me) else {
+        return 0;
+    };
+    if !g.rebuild_enabled() {
+        return FACTORY_THREAT;
+    }
+    FACTORY_THREAT + wehrlos_rounds(g, me, Some(f.cell)).min(30) * idle_per_round(g, me)
 }
 
 /// Wert der Lage fuer `me` gegen den Durchschnitt der lebenden Gegner.
@@ -156,6 +248,10 @@ pub struct Drive {
     /// kein Kartenkauf und kein Fabrik-Rutschen vor der Zugsuche, und sinnvolle Schlaege bekommen den
     /// angegebenen Anteil (in Prozent) vom Wert der geschlagenen Figur als Zuschlag.
     pub hunt: i64,
+    /// Rangfolge Koenig > Fabrik > eigene Macht > Koenigsjagd: eine fehlende oder im Neubau befindliche
+    /// Fabrik kostet Runden wehrlos in der Bewertung, und bei bedrohter Fabrik prueft die Suche den
+    /// Umzug des Koenigs. 0 = aus (altes Verhalten, nur zum Messen).
+    pub guard: i64,
 }
 
 impl Drive {
@@ -171,6 +267,7 @@ impl Drive {
         press: 4,
         offence: 30,
         hunt: 50,
+        guard: 1,
     };
 
     /// `land=6,centre=20,cap=6,ready=30,push=1` (nur zum Abstimmen).
@@ -196,6 +293,7 @@ impl Drive {
                 "press" => d.press = v,
                 "offence" => d.offence = v,
                 "hunt" => d.hunt = v,
+                "guard" => d.guard = v,
                 other => return Err(format!("unbekannte Stellschraube '{other}'")),
             }
         }
@@ -306,8 +404,8 @@ fn evaluate_drive(g: &Game, me: PlayerId, d: &Drive) -> i64 {
     // Mitte als Vorbereitung: so lenkt die Suche Figuren dorthin, bevor die Karte gekauft wird.
     let shift_in_market = d.ready > 0 && g.state.market.contains(&Card::FactoryShift);
     evaluate_with(g, me, |p| {
-        let mut v =
-            standing_with(g, p, land) + d.centre * centre_progress(g, p, d.centre_cap) / 1000;
+        let mut v = standing_with(g, p, land, d.guard > 0)
+            + d.centre * centre_progress(g, p, d.centre_cap) / 1000;
         if shift_in_market
             && owns_diagonal_ahead(g, p, d)
             && g.territory_card_payment(p, Card::FactoryShift).is_some()
@@ -583,7 +681,7 @@ fn risk(g: &Game, me: PlayerId) -> i64 {
     if g.home_factory(me)
         .is_some_and(|f| threatened.contains(&f.cell))
     {
-        r += FACTORY_THREAT;
+        r += factory_loss_cost(g, me);
     }
     // Eine duenne Verbindung: kann ein Gegner im naechsten Zug eine Engstelle umfaerben, fallen die
     // Felder dahinter an ihn (doppelter Landwert), Figuren darauf sind wehrlos und der Koenig steht
@@ -808,6 +906,34 @@ impl Bot for AreaBot {
             .copied()
             .filter(|a| !matches!(a, Action::RebuildFactory | Action::TradeKat3 { .. }))
             .partition(|a| matches!(a, Action::BuyCard { .. }));
+
+        // Zweite Rangstufe nach dem Koenig: die Fabrik. Kann ein Gegner sie im naechsten Zug zerstoeren,
+        // geht ein Zug vor Bauen und Karten, der die Gefahr beseitigt (Schlag, Abtrennen, Umzug des
+        // Koenigs). Der Umzug (Neubau) kostet ein paar wehrlose Runden; die Bewertung rechnet nach,
+        // ob das billiger ist, als die Fabrik zu verlieren.
+        if let Some(f) = game.standing_factory(me) {
+            if game.threatened_cells(me).contains(&f.cell) {
+                let mut cands: Vec<Action> = rest
+                    .iter()
+                    .copied()
+                    .filter(|a| !matches!(a, Action::BuildUnit { .. }))
+                    .collect();
+                if legal.contains(&Action::RebuildFactory) {
+                    cands.push(Action::RebuildFactory);
+                }
+                if let Some(a) = self.best_by_value(game, me, &cands, None) {
+                    let mut child = game.clone();
+                    child.apply_unchecked(a);
+                    let safe = child.outcome().is_some()
+                        || child
+                            .home_factory(me)
+                            .is_none_or(|nf| !child.threatened_cells(me).contains(&nf.cell));
+                    if safe {
+                        return a;
+                    }
+                }
+            }
+        }
 
         // Eine Figur bauen, wenn sie hoeher ist als jede, die er schon hat (oder er gar keine
         // hat und es schon spaet ist): hoehere Stufen faerben mehr Felder je Zug.
@@ -1351,6 +1477,253 @@ mod drive_tests {
             .with_name("super-stark");
         let a = crate::bot::Bot::choose(&mut bot, &g);
         assert_eq!(a, grab, "der Bot soll schlagen");
+    }
+
+    // ----- Rangfolge: Koenig vor Fabrik vor eigener Macht vor Koenigsjagd --------------------------
+
+    /// Alle Bots, die den Gebietsmodus rechnen (jeweils mit kleinem Budget, damit die Tests schnell sind).
+    fn thinking_bots(seed: u64) -> Vec<(&'static str, Box<dyn crate::bot::Bot>)> {
+        use crate::ai::SearchParams;
+        let p = || SearchParams::with_budget(2500);
+        vec![
+            (
+                "stark",
+                Box::new(SearchBot::with_params(seed, p()).with_name("stark")),
+            ),
+            (
+                "sehr-stark",
+                Box::new(SearchBot::with_params(seed, p()).with_area_eval()),
+            ),
+            (
+                "super-stark",
+                Box::new(
+                    SearchBot::with_params(seed, p())
+                        .with_drive(Drive::DEFAULT)
+                        .with_name("super-stark"),
+                ),
+            ),
+            ("flaeche", Box::new(AreaBot::new(seed))),
+        ]
+    }
+
+    /// Kann ein Gegner nach `a` im naechsten Zug den Koenig von `me` schlagen oder dessen Fabrik zerstoeren?
+    /// (`king`: Koenigsfang, sonst Zerstoerung der Fabrik.)
+    fn exposed_after(g: &Game, me: PlayerId, a: Action, king: bool) -> bool {
+        let mut child = g.clone();
+        child.apply_unchecked(a);
+        if child.outcome().is_some() {
+            return king && child.outcome() != Some(Outcome::Winner(me));
+        }
+        if child.current_player() == me {
+            return false;
+        }
+        child.legal_actions_for_bot().into_iter().any(|b| {
+            let mut c2 = child.clone();
+            c2.apply_unchecked(b);
+            if king {
+                c2.king(me).is_none()
+            } else {
+                c2.home_factory(me).is_none() && c2.state.alive[me.idx()]
+            }
+        })
+    }
+
+    /// P0: Land entlang der Unterkante, Fabrik auf (0,0), Koenig auf (4,0); P1 hat seine Fabrik in der
+    /// Naehe (auf (4,4)) und einen Angreifer der Stufe 2 auf (4,2), der den Koenig schlagen kann.
+    fn king_in_danger() -> (Game, crate::ids::PieceId, crate::ids::PieceId) {
+        let me = PlayerId(0);
+        let foe = PlayerId(1);
+        let mut g = game();
+        for x in 0..=7 {
+            g.set_land(cell(&g, x, 0), Some(me));
+        }
+        let king = g.king(me).unwrap().id;
+        g.setup_teleport(king, cell(&g, 4, 0));
+        // Die Fabrik des Gegners steht nahe, sein Land haengt zusammen.
+        let ff = g.home_factory(foe).unwrap().id;
+        g.state.move_factory(ff, cell(&g, 4, 4));
+        for y in 2..=4 {
+            g.set_land(cell(&g, 4, y), Some(foe));
+        }
+        let attacker = g.setup_unit(foe, cell(&g, 4, 2), 2, 2);
+        // Ein Koeder: eine Figur der Stufe 4 des Gegners, die meine Figur auf (7,0) frei schlagen koennte.
+        g.set_land(cell(&g, 8, 0), Some(foe));
+        let bait = g.setup_unit(foe, cell(&g, 8, 0), 4, 4);
+        let hunter = g.setup_unit(me, cell(&g, 7, 0), 1, 1);
+        let _ = hunter;
+        g.setup_current(me);
+        (g, attacker, bait)
+    }
+
+    #[test]
+    fn the_king_comes_first_for_every_thinking_bot() {
+        let me = PlayerId(0);
+        let (g, attacker, _bait) = king_in_danger();
+        let threats = g.piece_destinations(attacker);
+        let kc = g.king(me).unwrap().cell;
+        assert!(
+            threats.contains(&kc),
+            "Ausgangslage: der Koenig ist bedroht"
+        );
+        let bait_capture = g
+            .legal_actions_for_bot()
+            .into_iter()
+            .find(|a| matches!(*a, Action::Move { to, .. } if to == cell(&g, 8, 0)))
+            .expect("der Koeder ist schlagbar");
+        assert!(
+            exposed_after(&g, me, bait_capture, true),
+            "den Koeder zu schlagen laesst den Koenig stehen"
+        );
+        let safe = g
+            .legal_actions_for_bot()
+            .into_iter()
+            .any(|a| !exposed_after(&g, me, a, true));
+        assert!(safe, "es gibt eine Rettung");
+        for (name, mut bot) in thinking_bots(5) {
+            let a = bot.choose(&g);
+            assert!(
+                !exposed_after(&g, me, a, true),
+                "{name} laesst den Koenig stehen: {a:?}"
+            );
+        }
+    }
+
+    /// P0: Land entlang der Unterkante bis (6,0), Fabrik auf (0,0) mit Lager, Koenig auf (3,0).
+    /// P1 hat seine Fabrik auf (0,4) und einen Angreifer der Stufe 2 auf (0,2): im naechsten Zug
+    /// steht er auf (0,0). Optional steht ein Verteidiger von P0 bereit, der den Angreifer schlagen kann.
+    fn factory_in_danger(with_defender: bool) -> Game {
+        let me = PlayerId(0);
+        let foe = PlayerId(1);
+        let mut g = game();
+        for x in 0..=6 {
+            g.set_land(cell(&g, x, 0), Some(me));
+        }
+        let iron = g
+            .map
+            .resource_types
+            .iter()
+            .find(|t| t.home_corner == Some(0) && t.category == 1)
+            .unwrap()
+            .id;
+        let fid = g.home_factory(me).unwrap().id;
+        g.setup_storage(fid, iron, 6);
+        let king = g.king(me).unwrap().id;
+        g.setup_teleport(king, cell(&g, 3, 0));
+        let ff = g.home_factory(foe).unwrap().id;
+        g.state.move_factory(ff, cell(&g, 0, 4));
+        for y in 2..=4 {
+            g.set_land(cell(&g, 0, y), Some(foe));
+        }
+        g.setup_unit(foe, cell(&g, 0, 2), 2, 2);
+        if with_defender {
+            // Eine Figur auf (1,2) neben dem Angreifer: sie schlaegt ihn mit einem Schritt
+            // (sie steht auf eigenem, verbundenem Land).
+            for y in 1..=2 {
+                g.set_land(cell(&g, 1, y), Some(me));
+            }
+            g.set_land(cell(&g, 0, 1), Some(me));
+            g.setup_unit(me, cell(&g, 1, 2), 1, 1);
+        }
+        g.setup_current(me);
+        g
+    }
+
+    #[test]
+    fn the_factory_comes_second_every_thinking_bot_saves_it_when_it_can() {
+        let me = PlayerId(0);
+        let g = factory_in_danger(true);
+        let fcell = g.home_factory(me).unwrap().cell;
+        assert!(
+            g.threatened_cells(me).contains(&fcell),
+            "Ausgangslage: die Fabrik ist bedroht"
+        );
+        assert!(
+            g.legal_actions_for_bot()
+                .iter()
+                .any(|a| !exposed_after(&g, me, *a, false)),
+            "es gibt eine Rettung"
+        );
+        for (name, mut bot) in thinking_bots(9) {
+            let a = bot.choose(&g);
+            assert!(
+                !exposed_after(&g, me, a, false),
+                "{name} laesst die Fabrik stehen: {a:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_doomed_factory_is_moved_when_that_is_cheaper_than_losing_it() {
+        let me = PlayerId(0);
+        let g = factory_in_danger(false);
+        let fcell = g.home_factory(me).unwrap().cell;
+        assert!(g.threatened_cells(me).contains(&fcell));
+        assert!(
+            g.legal_actions_for_bot().contains(&Action::RebuildFactory),
+            "der Koenig darf umziehen"
+        );
+        // Ohne Umzug geht die Fabrik verloren, was immer der Bot sonst zieht.
+        assert!(g
+            .legal_actions_for_bot()
+            .iter()
+            .filter(|a| **a != Action::RebuildFactory)
+            .all(|a| exposed_after(&g, me, *a, false)));
+        for (name, mut bot) in thinking_bots(11) {
+            let a = bot.choose(&g);
+            assert_eq!(
+                a,
+                Action::RebuildFactory,
+                "{name}: der Umzug ist billiger als die Zerstoerung"
+            );
+        }
+    }
+
+    #[test]
+    fn without_a_factory_the_king_walks_back_to_his_land_and_rebuilds() {
+        let me = PlayerId(0);
+        let mut g = game();
+        for x in 0..=4 {
+            g.set_land(cell(&g, x, 0), Some(me));
+        }
+        // Fabrik zerstoert (wie `destroy_factory`); der Koenig steht abseits auf neutralem Land.
+        let fid = g.home_factory(me).unwrap().id;
+        let old = g.home_factory(me).unwrap().cell;
+        g.state.remove_factory(fid);
+        g.state.area[me.idx()] = 0;
+        g.state.lost_factory[me.idx()] = Some(old);
+        let king = g.king(me).unwrap().id;
+        g.setup_teleport(king, cell(&g, 4, 3));
+        g.setup_current(me);
+        let dist = |g: &Game| {
+            let k = g.king(me).unwrap().cell;
+            let d = g.map.board.distances_from(k);
+            g.map
+                .board
+                .cells()
+                .filter(|c| g.state.land[c.idx()] == Some(me))
+                .map(|c| d[c.idx()])
+                .min()
+                .unwrap()
+        };
+        let before = dist(&g);
+        assert_eq!(before, 3);
+        assert!(!g.legal_actions_for_bot().contains(&Action::RebuildFactory));
+        for (name, mut bot) in thinking_bots(3) {
+            let a = bot.choose(&g);
+            let mut child = g.clone();
+            child.apply_unchecked(a);
+            assert!(dist(&child) < before, "{name} geht nicht zurueck: {a:?}");
+        }
+        // Wehrlos zaehlt in der Bewertung: dieselbe Lage mit Fabrik ist deutlich besser.
+        let mut with_factory = g.clone();
+        with_factory.state.lost_factory[me.idx()] = None;
+        with_factory.setup_factory(me, old);
+        assert!(
+            evaluate(&with_factory, me) > evaluate(&g, me) + 500,
+            "ohne Fabrik: {} gegen mit Fabrik: {}",
+            evaluate(&g, me),
+            evaluate(&with_factory, me)
+        );
     }
 
     #[test]
