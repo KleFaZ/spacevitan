@@ -380,7 +380,9 @@ Gedacht als Vereinfachung: kein Abbauen, keine Fabrikbauten, keine Kartenmaerkte
   der Fabrik und wirkt automatisch auf die naechste gebaute Figur. Preis nur nach Kategorie, die alten
   Kat-2/3-Preise mal `terr_card_mult` (16): Pferd 32 Kat 2 + 32 Kat 3, Lange Beine 16 Kat 2 + 32 Kat 3.
 - Betritt (oder ueberquert) ein Gegner die Fabrik, wird sie sofort zerstoert: kein Spielende, aber keine
-  neuen Figuren; das Lager ist weg. Ohne Fabrik faerbt man frei, ohne abzutrennen und ohne Einkommen.
+  neuen Figuren; das Lager ist weg. Ohne Fabrik faerbt man frei, ohne abzutrennen und ohne Einkommen
+  (**ab Version 3.7 nur ohne Neubau-Regel**: mit `terr_move > 0`, also in Version 3, sind alle Figuren ohne stehende
+  Fabrik wehrlos, siehe Version 3.7).
   Das Spiel endet nur durch den Fall eines Koenigs (sonst Wertung: eigene Felder + Summe der Stufen).
 
 Bots: `stark` und `gierig` bewerten Land, Anbindung und Fabrik (`ai.rs`, `territory_value`).
@@ -589,7 +591,8 @@ ziehen aber), und der **Koenig darf sich nicht bewegen**. Wer auf den Bauplatz z
 wird dabei **nicht** an den Gegner umgefaerbt (Annahme: "als waere das Gebiet abgetrennt" gilt nur fuer Verteidigung,
 Faerben und Ertrag); steht die Fabrik wieder, wird alles neu angebunden. Auch der Kat-3-Bonus fehlt in dieser Zeit.
 
-Bots: `stark`, `gierig`, `flaeche` bauen eine zerstoerte Fabrik sofort neu. **Keiner zieht freiwillig um.** Der
+Bots: `stark`, `gierig`, `flaeche` bauen eine zerstoerte Fabrik sofort neu. **Keiner zieht freiwillig um** (seit Version 3.7
+ziehen die rechnenden Bots um, wenn die Fabrik sonst zerstoert wuerde und der Umzug billiger ist). Der
 Flaechen-Bot (`AreaBot`) und der Suchbot (`stark`) bewerten den Bonus (`2^k` je Runde) mit; `gierig` kennt ihn nicht.
 `stark` kennt die Karten von Version 2/3 nicht gezielt.
 
@@ -853,6 +856,59 @@ aendern, und man kann eigene Karten bauen.
   neuen Karten nicht gezielt: `flaeche` nutzt nur Ecke, Sprung, Kuerzer und den Koenigs-Boost; `stark` und `sehr-stark`
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
+
+### Version 3.7 (Wuensche vom 19.11.2026, dritter Teil): ohne Fabrik wehrlos, Rangfolge der Bots
+
+- **Ohne stehende Fabrik sind alle Figuren wehrlos** (Fehler laut Meldung mit Bild: "meine Fabrik wurde zerstoert, aber meine Figuren koennen alle
+  noch schlagen"). Ursache: `Game::piece_connected` galt ohne Fabrik als "immer verbunden" (der alte Satz "wer keine Fabrik mehr hat, braucht keinen
+  Zusammenhang mehr"). Jetzt gilt mit der Neubau-Regel (`terr_move > 0`, Version 3) in beiden Faellen, **zerstoert** und **im Neubau**:
+  - keine Figur (auch der Koenig nicht) schlaegt etwas, betritt eine gegnerische Fabrik, faerbt etwas (auch der Koenig auf dem Weg nicht),
+    benutzt Siedler oder greift als Kamikaze an; sie koennen ziehen. Der Gegner dagegen schlaegt sie ganz normal (wehrlos = ungeschuetzt).
+  - Der Koenig muss fuer den Neubau **auf eigenem Land stehen** (`RebuildFactory`, kostenlos wie bisher). Steht er daneben, geht er erst dorthin
+    (unterwegs faerbt er nichts). **Ausnahme:** hat der Spieler gar kein eigenes Land mehr, darf er dort neu bauen, wo er steht (`rebuild_plan`;
+    das Feld wird dabei sein Land). Das habe ich ergaenzt, weil er sonst fuer immer gesperrt waere (wehrlos kann er kein Land mehr holen).
+  - Sein Land bleibt, wie es ist (nichts wird abgetrennt, solange er keine Fabrik hat: `cut_off` ueberspringt ihn wie bisher). Steht die
+    Fabrik wieder, binden sich Figuren neben dem verbundenen Land sofort wieder an (`territory_settle`).
+  - **Ohne Neubau-Regel (Version 2, `terr_move = 0`) bleibt alles wie vorher**: dort kommt die Fabrik nie wieder, wer sie verloren hat, wuerde
+    sonst fuer immer wehrlos sein. Das ist eine Annahme von mir; sag Bescheid, wenn es auch dort gelten soll.
+  Tests (`territory_tests`): `a_piece_of_a_player_without_a_factory_is_defenceless`, `without_a_factory_no_piece_can_capture_or_enter_an_enemy_factory`
+  (Schlag, Fabrik betreten, Koenigsfang; der Gegner schlaegt sie), `a_piece_can_capture_again_once_the_rebuilt_factory_stands` (Neubau, dann wieder
+  schlagbereit), `a_defenceless_king_walks_back_to_his_land_before_he_can_rebuild`, `a_king_without_any_land_may_rebuild_where_he_stands`,
+  `without_the_rebuild_rule_a_player_without_a_factory_plays_on_freely` (Version 2). Neun alte Tests liessen eine Figur "ohne Fabrik" als Abkuerzung
+  ziehen; sie setzen jetzt die Fabrik des Ziehenden dorthin (`stand_on`).
+- **Rangfolge der rechnenden Bots** (`stark`, `sehr-stark`, `super-stark`, `flaeche`; `zufall` bleibt absichtlich zufaellig und `gierig` absichtlich
+  gierig): **1. Koenig schuetzen, 2. Fabrik (oder durchrechnen, was ein Umzug mit ein paar wehrlosen Runden kostet), 3. eigene Macht ausbauen,
+  4. gegnerischen Koenig herausnehmen.** So ist es umgesetzt (alles in `area_bot.rs` und `ai.rs`):
+  1. **Koenig.** Wie bisher ueber die Suche (Koenigsfang ist Gewinn bzw. Niederlage, `WIN` = 1 Million; die Bewertung kappt alles andere darunter) und
+     in `risk` (`KING_LOST` = 1 Million fuer einen bedrohten Koenig). Die Abkuerzungen vor der Suche (Eroeffnung, Fabrik rutschen) laufen
+     nur in ruhiger Lage (`calm`), ein Kartenkauf nur, wenn die Vorausrechnung ihn lohnt. Zuschlaege der Jagd (`hunt`, hoechstens 1000) und Druck (`press`) liegen weit darunter. Ein **sofort moeglicher
+     Koenigsfang** bleibt natuerlich der beste Zug (er beendet die Partie), auch wenn die 4. Stufe sonst zuletzt kommt: die 4. Stufe meint den Plan, den
+     Koenig zu jagen, nicht, einen Gewinn liegen zu lassen.
+  2. **Fabrik.** Die neue Bewertung kennt den Ausfall: `outage_rounds` (im Neubau die Restzeit; nach Zerstoerung die Schritte des Koenigs bis zum naechsten
+     eigenen Feld plus Bauzeit) mal `idle_per_round` (ein Achtel des Landwerts + ein Viertel der Figurenwerte + 60) plus bei zerstoerter Fabrik 800 fuer
+     Lager und Flaeche. Dasselbe gilt fuer den Gegner (seine zerstoerte Fabrik ist ein Gewinn). `risk` zaehlt eine bedrohte Fabrik jetzt mit
+     `factory_loss_cost` (800 + die Runden, die er wehrlos waere, mal Wert je Runde) statt fest 800. **Umzug als Ausweg:** kann ein Gegner die Fabrik im
+     naechsten Zug zerstoeren und kann der Koenig umziehen (`RebuildFactory` mit stehender Fabrik), ist der Umzug ein Kandidat der Zugsuche (alle Suchbots)
+     bzw. von `best_by_value` (`flaeche`); die Bewertung rechnet nach, ob die wehrlosen Runden billiger sind als der Verlust. Vorher haben die Bots nie
+     freiwillig umgesetzt. Beim `flaeche`-Bot geht ein Zug, der die Fabrik rettet, vor Bauen und Kartenkauf. Der `stark`-Bot bewertet im Gebietsmodus ohne
+     Fabrik ebenfalls Figuren als wehrlos (`helpless`) und zieht fuer jede Runde bis zur neuen Fabrik Wert ab.
+  3. **Eigene Macht** ist unveraendert der Rest der Bewertung (Land 10 je Feld, Vorkommen, Figurenwerte).
+  4. **Koenigsjagd** ist `press`, `offence` und die klassischen `pressure`/`trap`-Terme von `stark`; sie sind klein gegen Land und Figurenwerte.
+  Szenario-Tests (`area_bot::drive_tests`): `the_king_comes_first_for_every_thinking_bot` (ein Koeder der Stufe 4 zum freien Schlagen, aber der Koenig
+  ist bedroht: alle vier Bots retten ihn), `the_factory_comes_second_every_thinking_bot_saves_it_when_it_can`, `a_doomed_factory_is_moved_when_that_is_cheaper_than_losing_it`
+  (alle Bots ziehen um, wenn jeder andere Zug die Fabrik verliert), `without_a_factory_the_king_walks_back_to_his_land_and_rebuilds`.
+  Stellschraube `guard` in `Drive` (1 = an, 0 = altes Verhalten, nur zum Messen mit `SPACEVITAN_DRIVE="guard=0"`).
+  **Messung** (Version 3, `--nodes-sehr 5000`, beide Sitzordnungen; Skript `duelv.sh`; neue Rangfolge `guard=1` gegen altes Verhalten `guard=0`,
+  beide `super-stark`, in der neuen Engine mit wehrlosen Figuren ohne Fabrik):
+  | Lauf | `guard=1` : `guard=0` |
+  |---|---|
+  | 100 Runden, Seeds 901.., 2 x 24 Partien | 23:25 |
+  | 250 Runden, Seeds 951.., 2 x 14 Partien | 16:12 |
+  | zusammen | **39:37** |
+  | Stufen: `super-stark` gegen `sehr-stark`, 250 Runden, Seeds 1201.., 2 x 20 Partien | **29:11** (72 %) |
+  Ehrlich dazu: **Messbar besser ist es nicht, nur nicht schlechter.** Eine Fabrik wird in diesen Partien selten zerstoert (0,42 je Partie), die Regel greift
+  also nur selten; bei 76 Partien liegen erst Unterschiede ab etwa 15 Prozentpunkten ausserhalb des Rauschens. Dass die Bots die Rangfolge einhalten,
+  zeigen die Szenario-Tests oben, nicht die Duelle. `zufall` und `gierig` kennen die Rangfolge nicht (sie sind absichtlich schwach).
 
 ### Version 3.6 (Wuensche vom 19.11.2026, zweiter Teil)
 
