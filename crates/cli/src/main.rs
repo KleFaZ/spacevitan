@@ -78,7 +78,7 @@ Optionen:
                  terr_fort (Standard aus): die Karte Fort liegt im Markt; eine Figur auf dem Fort
                  zieht n oder n+1 Felder, das Fort verschwindet, wenn das Feld nicht mehr dir gehoert
   --bots LISTE   pro Spieler: super-stark (wie sehr-stark, dazu Drang nach Land und Brettmitte;
-                 Stellschrauben zum Abstimmen: SPACEVITAN_DRIVE=\"land=6,centre=20,cap=6\"),
+                 Stellschrauben zum Abstimmen: SPACEVITAN_DRIVE=\"land=6,centre=20,cap=6,ready=30,push=1\"),
                  sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),
                  stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,
@@ -266,7 +266,7 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                         Ok(list) => Weights::DEFAULT.parse_overrides(&list)?,
                         Err(_) => Weights::DEFAULT,
                     };
-                    // Zum Abstimmen: SPACEVITAN_DRIVE="land=6,centre=20,cap=6"
+                    // Zum Abstimmen: SPACEVITAN_DRIVE="land=6,centre=20,cap=6,ready=30,push=1"
                     let drive = match std::env::var("SPACEVITAN_DRIVE") {
                         Ok(list) => game_core::area_bot::Drive::parse(&list)?,
                         Err(_) => game_core::area_bot::Drive::DEFAULT,

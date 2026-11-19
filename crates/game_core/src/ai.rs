@@ -465,6 +465,25 @@ impl SearchBot {
         }
         // Gleich gute Zuege in zufaelliger, aber durch den Seed festgelegter Reihenfolge.
         self.rng.shuffle(&mut moves);
+        // "Super-stark": die Fabrik Richtung Mitte rutschen lassen, sobald es geht und ruhig genug ist.
+        if let Some(d) = self.drive {
+            if d.push > 0
+                && crate::area_bot::can_advance(game, me, &d)
+                && crate::area_bot::calm(game, me)
+            {
+                if let Some(&b) = buys.iter().find(|a| {
+                    matches!(
+                        a,
+                        Action::BuyCard {
+                            card: Card::FactoryShift,
+                            ..
+                        }
+                    )
+                }) {
+                    return b;
+                }
+            }
+        }
         // Kartenkauf zuerst: lohnt er sich (kurze Vorausrechnung mit und ohne Kauf), wird
         // gekauft; den eigentlichen Zug sucht der Bot danach (er bleibt am Zug).
         if let Some(b) = self.pick_buy(game, &buys) {

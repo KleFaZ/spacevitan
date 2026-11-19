@@ -55,6 +55,7 @@ neue Partie Runde fuer Runde; in einer Eingabeaufforderung gehen alle Optionen
 |---|---|
 | `stark` | rechnet voraus: eigene Zuege und die gefaehrlichste Antwort der Gegner, mehrere Zuege tief (bei 2 Spielern Alpha-Beta wie bei Schachprogrammen, ab 3 Spielern Best-Reply-Search). Wirtschaft, Koenigssicherheit und das Einkesseln gegnerischer Koenige stecken in der Bewertung. Rechnet mit festem Budget (`--nodes`, Standard 20000 Stellungen pro Zug), also auf jedem Rechner gleich. |
 | `sehr-stark` | die Suche von `stark` (Alpha-Beta, Ruhesuche), aber mit der Land-Bewertung von `flaeche` an den Blaettern (`SearchBot::with_area_eval`, `area_bot::leaf_value`): verbundenes Land, Vorkommen, Figuren und duenne Verbindungen, die ein Gegner kappen koennte. Eigenes Budget (`--nodes-sehr`, Standard 20000), etwa 200 ms je Zug (hoechstens 0,5 s). Nur im Gebietsmodus anders als `stark`. |
+| `super-stark` | wie `sehr-stark` (gleiche Suche, gleiches Budget), aber die Blattbewertung zahlt mehr fuer Land, solange noch freier Platz ist, und belohnt eine Fabrik, die Richtung Brettmitte gerueckt ist (kauft deshalb "Fabrik ruecken"). Im Browser "Super schwer". |
 | `stark-pur` | wie `stark`, kauft aber nie Karten (Vergleichsgegner fuer Kartenmessungen) |
 | `gierig` | feste Faustregeln ohne Vorausschau |
 | `flaeche` | nur Gebietsmodus: spielt auf Land und Rohstoffe statt auf Figurenkampf. Rechnet einen eigenen Zug voraus und bewertet das Ergebnis mit der echten Engine (verbundenes Land, Vorkommen darauf nach Reife gewichtet, Figuren, Bedrohung von Koenig und Fabrik), also sind Abtrennen und Umschliessen schon eingerechnet. Baut nur, wenn die neue Figur besser ist als seine beste; kauft Karten, die der naechsten Figur oder dem Koenig nutzen. Sichert die Flaeche (siehe "Siebte Aenderung der Version 3"): rechnet genau nach, ob ein Gegner im naechsten Zug den Koenig oder Land von der Fabrik trennen kann, und raeumt das vor dem Bauen aus. 0,6 ms je Zug (`area_bot.rs`) |
@@ -96,7 +97,7 @@ Menue nicht mehr waehlbar, bleiben aber im Spielkern und in der CLI (`--rule ...
 Felder weggefallen sind.
 
 **Schnellstart:** Das Menue beginnt mit drei Zeilen: **Gegner** (Leicht = gierig, Mittel = flaeche, Schwer = stark, Sehr schwer
-= sehr stark), **Spieler** (2, 3 oder 4; bei 3 wird das Dreieck-Brett gewaehlt, damit alle gleich stehen, sonst das Quadrat) und
+= sehr stark, Super schwer = super-stark), **Spieler** (2, 3 oder 4; bei 3 wird das Dreieck-Brett gewaehlt, damit alle gleich stehen, sonst das Quadrat) und
 **Regeln** als Paket: *Standard* (Version 3 pur), *Neue Regelideen* (die vier Schalter der Version 3.1, siehe unten), *Schnelle
 Partie* (Seite 8, Wertung nach Runde 40) und *Viele Karten* (12 im Markt). Ein Paket bleibt nur markiert, solange die
 Einstellungen genau dazu passen; aendert man danach ein Feld, steht dort "Eigene Regeln". Darunter: *Partie starten*, *Zu zweit
@@ -106,7 +107,7 @@ Mit Freund per Link spielen gibt es noch nicht (dafuer braeuchte es einen Spiel-
 
 **Startmenue:** *Spielen* oeffnet zuerst ein Menue; eine Partie beginnt erst mit *Partie
 starten*; *Neue Partie* oben neben *Spielen* oeffnet es jederzeit wieder. Dort stehen **Brettform** (Dreieck, Quadrat,
-Fuenfeck bis Achteck), Spielerzahl, *Mit Bots auffuellen*, je Platz **Mensch oder Bot-Stufe** (sehr stark, stark, flaeche, gierig,
+Fuenfeck bis Achteck), Spielerzahl, *Mit Bots auffuellen*, je Platz **Mensch oder Bot-Stufe** (super stark, sehr stark, stark, flaeche, gierig,
 zufall; jeder Bot einzeln), Seed, Brettgroesse, Wertung, Kartenzahl und alle
 Gebiets-Werte (Preise, Wieder anbinden, Umschliessen, Brettrand, Kartenpreis). Leere Felder gelten
 als Standard, *Alles zuruecksetzen* leert sie. Die Einstellungen merkt sich der Browser. Technisch
@@ -855,17 +856,39 @@ aendern, und man kann eigene Karten bauen.
 
 ### Version 3.5 (Wuensche vom 19.11.2026)
 
-- **Kein "Passen" mehr** im Viewer: Kann ein Mensch ziehen, bauen oder die Fabrik rücken, gibt es keinen Passen-Knopf. Bleibt nur noch
-  `pass` uebrig (zum Beispiel nach dem Wiederaufbau der Fabrik, wenn keine Figur ziehen kann), spielt der Viewer die Runde nach 0,8 s
-  **selbst zu Ende** (`autoPassDue` in `scheduleBots`). Ist neben `pass` noch etwas anderes erlaubt (zum Beispiel Karten kaufen oder
-  Fabrik wiederaufbauen), steht dafuer ein Knopf "Runde beenden (kein Zug moeglich)". Folge: Wer zieht oder bauen kann, muss das tun
-  (kein freiwilliges Aussetzen mehr); die Engine bleibt davon unberuehrt, `pass` ist dort weiter erlaubt.
-- **Grosse Zugmarker immer** (`paintFlatMark`): erreichbare Felder sind immer grosse gefuellte Kreise (Gegner groesser, mit hellem
-  Aussenring); die kleinen Punkte sind weg.
-- **Fabrik-Fehlbedienung (Meldung "Koenig anklicken, dann Fabrik: er baut eine neue Fabrik")**: nicht nachgestellt. Als Schutz gelten
-  jetzt zwei Dinge: (1) Klicks in den ersten 350 ms nach dem Oeffnen einer Koenigs- oder Fabrikblase werden ignoriert (Geister-Klick
-  durch das Antippen darunter), (2) Wiederaufbau und Fabrik-Verlegen (Koenigsblase, Fabrik-Karte, Zugleiste) brauchen **zwei Tipps**:
-  beim ersten wird der Knopf rot und fragt "Sicher? Nochmal tippen" (4 s lang). Ob das die echte Ursache trifft, ist **nicht bewiesen**.
+- **"Fabrik ruecken" wirkt sofort** (Engine, gilt im Gebietsmodus immer): Wer die Karte kauft, muss die Fabrik **gleich** auf ein
+  Diagonalfeld rutschen lassen. Nach dem Kauf sind nur noch die Zuege `shift_factory` erlaubt (kein Zug, kein Bau, kein Kauf, kein
+  Tausch); das Rutschen ist der Zug dieser Runde (wie vorher auch). Die Karte ist **nur kaufbar, wenn die Fabrik rutschen kann**
+  (`Game::factory_shift_cells`: Diagonalfeld, eigenes mit der Fabrik verbundenes Land, ohne Figur, nur Quadratbrett); so bleibt nie
+  eine nutzlose Karte liegen. Eine bereits liegende Karte (alter Stand, Wiedergabe) zwingt ebenfalls zum Rutschen, solange es ein Ziel gibt.
+  Im Viewer erscheinen die grossen Zielmarker sofort, ein Tipp auf etwas anderes (auch Koenig oder Fabrik) tut nichts ausser den
+  Hinweis zu zeigen, Abbrechen gibt es nicht (`shiftForced` im Viewer). Hat die Fabrik kein Zielfeld, steht an der Karte "kein Zielfeld".
+- **Neuer Bot `super-stark`** ("Super schwer", Sitzcode 6): die Suche von `sehr-stark` (gleiches Budget, gleiche Zugsuche), aber mit
+  einer anderen Blattbewertung und einer Regel fuer die Fabrik (`area_bot::Drive`, `SearchBot::super_strong`):
+  1. **Mehr Land, solange Platz ist**: Wert je Flaeche 10 plus bis zu 6 bei ganz leerem Brett, sinkend mit dem Anteil freier Felder
+     (`land`; gilt fuer eigenes und gegnerisches Land, der Bot raeumt also auch dem Gegner Land weg).
+  2. **Fabrik Richtung Mitte**: 20 Punkte je Feldbreite, die die Fabrik naeher an der Brettmitte steht als die Startecke, hoechstens
+     6 Feldbreiten (`centre`, `cap`; rund vier Diagonalschritte, auf dem 10er-Brett also bis in die Mitte).
+  3. **Vorbereitung**: liegt "Fabrik ruecken" im Markt, ist sie bezahlbar und gehoert dem Bot ein **freies** Diagonalfeld Richtung Mitte,
+     gibt die Bewertung 30 Punkte (`ready`); so haelt die Suche das Feld frei und holt Figuren dorthin.
+  4. **Kauf ohne Zoegern** (`push`): ist die Karte kaufbar, kann die Fabrik damit naeher an die Mitte (`can_advance`) und ist die Lage
+     ruhig (`calm`: Gefahr unter 300), kauft er sie sofort, ohne die Kaufrechnung der anderen Karten. Das Rutschen selbst waehlt die Suche
+     (die Karte erzwingt es). Ist die Obergrenze erreicht, hoert er auf.
+  Stellschrauben zum Abstimmen: `SPACEVITAN_DRIVE="land=6,centre=20,cap=6,ready=30,push=1"`.
+  **Messung** (je Seitenwechsel: der Bot sitzt einmal als erster, einmal als zweiter Spieler; Version 3, `--nodes-sehr 5000`):
+  - Karte "Fabrik ruecken" im Markt (`--cards factory_shift,settle`, 2 x 24 Partien je Variante): nur Land-Gewicht ohne Mitte-Drang
+    **24:24**; mit Mitte-Drang und `ready=30` **37:11** (77 %), mit Obergrenze 4 Feldbreiten 34:14.
+  - Zufaelliger Markt (die Karte liegt nur in etwa jeder dritten Partie): Seeds 1 bis 24 **29:19**, Seeds 25 bis 48 **26:22**, zusammen
+    **55:41** (57 %, 96 Partien). Das ist nur schwach ueber dem Zufall (Streuung etwa 5 Prozentpunkte); der Vorsprung kommt aus den Partien, in denen die
+    Karte da ist. Die erste Fassung (`ready=12`, ohne Kaufregel) lag bei 36:36 ueber 72 Partien, also **gleichauf** mit `sehr-stark`.
+  - Verhalten: er rutscht in Partien mit der Karte oft 4 bis 8 Mal und steht dann nah an der Mitte; ab Runde 60 hat er im Schnitt etwa 4
+    bis 13 Felder mehr Land als `sehr-stark` (8 Partien, nur zur Orientierung).
+  - **Offen / ehrlich**: Der Vorteil haengt an der Karte (Kosten 3 Eisen der eigenen Farbe, kommt aus dem Lager der Fabrik und ist frueh
+    knapp); die Fabrik **ohne** Karte umzuziehen (Umzug mit Bauzeit) kann er nicht gezielt. Dass die Mitte-Fabrik die Ursache des
+    Vorsprungs ist, zeigt der Vergleich mit dem Kontrollbot (Land-Gewicht allein: 24:24), aber nicht, *warum* sie hilft (kuerzere Wege,
+    mehr Land um die Fabrik, schnellere Verbindung?). Bots mit 20000 Stellungen (Standardbudget) wurden nur an wenigen Partien geprueft (siehe unten).
+- **Bot-Duelle am 19.11.**: Der erste Zug ist ein starker, aber schwankender Vorteil (Seeds 1 bis 12: Erster gewinnt 67 %, Seeds 13 bis 36: 40 %),
+  darum immer beide Sitzordnungen messen und mindestens 48 Partien je Variante nehmen; 24 Partien zeigen nur Unterschiede ab etwa 20 Prozentpunkten.
 
 ### Version 3.4: Gelaende (`terr_terrain`, Standard aus; Wunsch vom 18.11.2026)
 

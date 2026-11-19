@@ -132,6 +132,12 @@ pub struct Drive {
     pub centre: i64,
     /// Hoechstens so viele Feldbreiten zaehlen (rund drei bis vier Diagonalschritte).
     pub centre_cap: i64,
+    /// Aufschlag, solange ein freies Diagonalfeld Richtung Mitte bereitsteht, die Karte im Markt
+    /// liegt und bezahlbar ist.
+    pub ready: i64,
+    /// Kauft "Fabrik ruecken" gleich, sobald es kaufbar ist, die Fabrik damit naeher an die Mitte
+    /// kommt und die Lage ruhig ist (0 = nur nach der Bewertung wie jede Karte).
+    pub push: i64,
 }
 
 impl Drive {
@@ -139,9 +145,11 @@ impl Drive {
         land_extra: 6,
         centre: 20,
         centre_cap: 6,
+        ready: 30,
+        push: 1,
     };
 
-    /// `land=6,centre=20,cap=6` (nur zum Abstimmen).
+    /// `land=6,centre=20,cap=6,ready=30,push=1` (nur zum Abstimmen).
     pub fn parse(list: &str) -> Result<Drive, String> {
         let mut d = Drive::DEFAULT;
         for part in list.split(',').filter(|p| !p.trim().is_empty()) {
@@ -156,6 +164,8 @@ impl Drive {
                 "land" => d.land_extra = v,
                 "centre" | "center" => d.centre = v,
                 "cap" => d.centre_cap = v,
+                "ready" => d.ready = v,
+                "push" => d.push = v,
                 other => return Err(format!("unbekannte Stellschraube '{other}'")),
             }
         }
@@ -176,9 +186,12 @@ fn board_centre(g: &Game) -> (f64, f64) {
 /// Wie viele Feldbreiten die Fabrik von `p` naeher an der Brettmitte steht als die Startecken
 /// (in Tausendsteln, zwischen 0 und `cap` Feldbreiten).
 fn centre_progress(g: &Game, p: PlayerId, cap: i64) -> i64 {
-    let Some(f) = g.home_factory(p) else {
-        return 0;
-    };
+    g.home_factory(p)
+        .map_or(0, |f| centre_progress_at(g, f.cell, cap))
+}
+
+/// Wie `centre_progress` fuer eine Fabrik auf `cell`.
+fn centre_progress_at(g: &Game, cell: crate::ids::CellId, cap: i64) -> i64 {
     let board = &g.map.board;
     let (cx, cy) = board_centre(g);
     let dist = |c: crate::ids::CellId| {
@@ -201,8 +214,53 @@ fn centre_progress(g: &Game, p: PlayerId, cap: i64) -> i64 {
         })
         .filter(|s| *s > 0.0)
         .unwrap_or(1.0);
-    let steps = (start - dist(f.cell)) / spacing;
+    let steps = (start - dist(cell)) / spacing;
     ((steps * 1000.0) as i64).clamp(0, cap * 1000)
+}
+
+/// Kann die Fabrik von `me` jetzt per "Fabrik ruecken" naeher an die Mitte (und noch unter der
+/// Obergrenze)? Dann gibt es ein Diagonalfeld, das eigenes verbundenes Land ist, frei von Figuren.
+pub(crate) fn can_advance(g: &Game, me: PlayerId, d: &Drive) -> bool {
+    let Some(f) = g.standing_factory(me) else {
+        return false;
+    };
+    let now = centre_progress_at(g, f.cell, d.centre_cap);
+    now < d.centre_cap * 1000
+        && g.factory_shift_cells(me)
+            .into_iter()
+            .any(|c| centre_progress_at(g, c, d.centre_cap) > now)
+}
+
+/// Gehoert `p` schon ein freies Diagonalfeld der Fabrik, das naeher an der Mitte liegt (nur Quadratbrett)?
+/// Billige Vorstufe von `can_advance` fuer die Bewertung: Zusammenhang und freie Figurenfelder
+/// prueft erst der Kauf.
+fn owns_diagonal_ahead(g: &Game, p: PlayerId, d: &Drive) -> bool {
+    let board = &g.map.board;
+    if board.kind() != crate::board::GridKind::Square {
+        return false;
+    }
+    let Some(f) = g.standing_factory(p) else {
+        return false;
+    };
+    let now = centre_progress_at(g, f.cell, d.centre_cap);
+    if now >= d.centre_cap * 1000 {
+        return false;
+    }
+    let (x, y) = board.coord(f.cell);
+    [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+        .into_iter()
+        .filter_map(|(dx, dy)| board.cell_at(x + dx, y + dy))
+        .any(|c| {
+            g.state.land[c.idx()] == Some(p)
+                && g.state.piece_at(c).is_none()
+                && centre_progress_at(g, c, d.centre_cap) > now
+        })
+}
+
+/// Ist die Lage ruhig genug, um einen Zug fuer das Rutschen der Fabrik herzugeben (nichts
+/// Eigenes im naechsten gegnerischen Zug bedroht)?
+pub(crate) fn calm(g: &Game, me: PlayerId) -> bool {
+    risk(g, me) < URGENT_CUT
 }
 
 /// Anteil freier (herrenloser) Felder am Brett in Tausendsteln.
@@ -214,8 +272,19 @@ fn free_permille(g: &Game) -> i64 {
 /// Wie `evaluate`, aber mit dem Aufschlag von "super-stark".
 fn evaluate_drive(g: &Game, me: PlayerId, d: &Drive) -> i64 {
     let land = LAND + d.land_extra * free_permille(g) / 1000;
+    // Liegt "Fabrik ruecken" im Markt, zaehlt ein schon eigenes, verbundenes Diagonalfeld Richtung
+    // Mitte als Vorbereitung: so lenkt die Suche Figuren dorthin, bevor die Karte gekauft wird.
+    let shift_in_market = d.ready > 0 && g.state.market.contains(&Card::FactoryShift);
     evaluate_with(g, me, |p| {
-        standing_with(g, p, land) + d.centre * centre_progress(g, p, d.centre_cap) / 1000
+        let mut v =
+            standing_with(g, p, land) + d.centre * centre_progress(g, p, d.centre_cap) / 1000;
+        if shift_in_market
+            && owns_diagonal_ahead(g, p, d)
+            && g.territory_card_payment(p, Card::FactoryShift).is_some()
+        {
+            v += d.ready;
+        }
+        v
     })
 }
 
@@ -610,6 +679,96 @@ mod drive_tests {
         );
         // Mehr als `cap` Feldbreiten zaehlen nicht.
         assert!(centre_progress(&g, me, 1) <= 1000);
+    }
+
+    /// P0 hat Land um die Startecke, Eisen fuer die Karte und "Fabrik ruecken" im Markt.
+    fn shift_ready_game() -> Game {
+        let mut g = game();
+        g.state.market = vec![Card::FactoryShift];
+        let me = PlayerId(0);
+        for (x, y) in [(1, 0), (0, 1), (1, 1)] {
+            let c = g.map.board.cell_at(x, y).unwrap();
+            g.set_land(c, Some(me));
+        }
+        let iron = g
+            .map
+            .resource_types
+            .iter()
+            .find(|t| t.home_corner == Some(0) && t.category == 1)
+            .unwrap()
+            .id;
+        let fid = g.home_factory(me).unwrap().id;
+        g.setup_storage(fid, iron, 6);
+        g
+    }
+
+    #[test]
+    fn super_stark_buys_the_factory_shift_card_when_it_moves_the_factory_toward_the_middle() {
+        let g = shift_ready_game();
+        let me = PlayerId(0);
+        assert!(can_advance(&g, me, &Drive::DEFAULT));
+        assert!(calm(&g, me));
+        let mut bot = SearchBot::super_strong(3);
+        let a = crate::bot::Bot::choose(&mut bot, &g);
+        assert!(
+            matches!(
+                a,
+                Action::BuyCard {
+                    card: Card::FactoryShift,
+                    ..
+                }
+            ),
+            "{a:?}"
+        );
+        // "sehr-stark" hat diesen Drang nicht (kein Aufschlag fuer die Mitte).
+        let mut plain = SearchBot::very_strong(3);
+        let b = crate::bot::Bot::choose(&mut plain, &g);
+        assert!(
+            !matches!(
+                b,
+                Action::BuyCard {
+                    card: Card::FactoryShift,
+                    ..
+                }
+            ),
+            "{b:?}"
+        );
+    }
+
+    #[test]
+    fn super_stark_then_shifts_toward_the_middle_and_stops_at_the_cap() {
+        let mut g = shift_ready_game();
+        let me = PlayerId(0);
+        let fid = g.home_factory(me).unwrap().id;
+        let buy = g
+            .legal_actions()
+            .into_iter()
+            .find(|a| {
+                matches!(
+                    a,
+                    Action::BuyCard {
+                        card: Card::FactoryShift,
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        g.apply(buy).unwrap();
+        let mut bot = SearchBot::super_strong(3);
+        let a = crate::bot::Bot::choose(&mut bot, &g);
+        let Action::ShiftFactory { to, .. } = a else {
+            panic!("erzwungenes Rutschen erwartet: {a:?}");
+        };
+        assert_eq!(to, g.map.board.cell_at(1, 1).unwrap());
+        g.apply(a).unwrap();
+        assert_eq!(g.home_factory(me).unwrap().id, fid);
+        assert!(centre_progress(&g, me, 6) > 1000);
+        // Mit der Obergrenze 1 ist die Fabrik schon "genug" gerueckt: kein Drang mehr.
+        let tight = Drive {
+            centre_cap: 1,
+            ..Drive::DEFAULT
+        };
+        assert!(!can_advance(&g, me, &tight));
     }
 
     #[test]
