@@ -409,6 +409,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .kingpop .need { display: flex; gap: 8px; margin-top: 4px; }
 .kingpop button.go { width: 100%; margin-top: 7px; padding: 9px 8px; min-height: 40px; font-weight: 800; background: #f2c94c; color: #3a2a00; border: 1px solid #c9962a; border-radius: 8px; cursor: pointer; }
 .kingpop button.go:disabled { opacity: 0.55; cursor: default; }
+.kingpop button.go.armed, .faccard .fc-shift.armed, #actions .btn.armed { background: #b3261e; color: #fff; border-color: #8f1d16; }
 .kingpop .kp-sec + .kp-sec { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line, rgb(128 128 128 / 0.35)); }
 .market.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 @media (min-width: 701px) { .market.cards .pcard { aspect-ratio: 5 / 6.4; } }
@@ -1467,17 +1468,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Zielpunkte der flachen Ansicht werden erst nach den Vorkommen und Figuren gemalt, sonst verdeckt das Vorkommen den Punkt. */
   let lateMarks = null;
   function paintFlatMark(cell, color) {
-    // wie bei lichess: Punkt auf leeren Zielfeldern, Ring auf Feldern mit Gegner
+    // Immer grosse Kreise (gut zu sehen, auch auf dem Handy): gefuellte Scheibe mit kraeftigem Ring; Gegner: rot, etwas groesser.
     const [x, y] = R.board.cells[cell], [cx, cy] = iso(x, y);
+    const hostile = color === HOSTILE;
+    const r = geo.U * (hostile ? 0.43 : 0.36), lw = Math.max(3, geo.U * 0.08);
     ctx.beginPath();
-    if (color === HOSTILE) {
-      ctx.arc(cx, cy, geo.U * 0.43, 0, Math.PI * 2);
-      ctx.lineWidth = Math.max(3, geo.U * 0.09); ctx.strokeStyle = color; ctx.globalAlpha = 0.85; ctx.stroke();
-    } else {
-      ctx.arc(cx, cy, geo.U * 0.17, 0, Math.PI * 2);
-      ctx.globalAlpha = 0.8; ctx.fillStyle = color; ctx.fill();
-      ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.stroke();
-    }
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.globalAlpha = hostile ? 0.22 : 0.4; ctx.fillStyle = color; ctx.fill();
+    ctx.globalAlpha = 0.95; ctx.lineWidth = lw; ctx.strokeStyle = color; ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + lw * 0.5 + 0.75, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.8; ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.stroke();
     ctx.globalAlpha = 1;
   }
   function markCell(cell, color) {
@@ -3110,6 +3111,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (performance.now() - facClosedAt < 400) return true; // dieser Klick hat das Menue gerade geschlossen
     routeNote = "";
     facOpen = true;
+    popupOpenedAt = performance.now();
     renderFactoryCard();
     renderTurnBox();
     requestAnimationFrame(draw);
@@ -3132,6 +3134,25 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!isTerr() || !live || !canAct()) return -1;
     return live.legal.findIndex((a) => a.type === "buy" && a.card === "king_boost");
   }
+  // Fabrik bauen/umziehen ist schwer rueckgaengig zu machen (mehrere Runden wehrlos, Koenig gesperrt). Darum braucht
+  // der Knopf zwei Tipps hintereinander ("Sicher?"), und ein Tipp, der gerade ein Menue geoeffnet hat, zaehlt nie als
+  // Klick auf einen Knopf darin (der Browser schickt nach dem Loslassen noch einen Klick an die Stelle des Fingers).
+  let armedTap = null; // { key, until }
+  let popupOpenedAt = 0;
+  const ARM_MS = 4000, GHOST_MS = 350;
+  const armedNow = (key) => !!armedTap && armedTap.key === key && performance.now() < armedTap.until;
+  const rebuildLabel = (key, normal) => (armedNow(key) ? "Sicher? Nochmal tippen" : normal);
+  /** true = der zweite Tipp, die Aktion darf laufen; sonst wird der Knopf scharf gestellt (Beschriftung "Sicher?"). */
+  function confirmTap(key, btn) {
+    if (armedNow(key)) { armedTap = null; return true; }
+    armedTap = { key, until: performance.now() + ARM_MS };
+    if (btn) { btn.dataset.orig = btn.textContent; btn.textContent = "Sicher? Nochmal tippen"; btn.classList.add("armed"); }
+    setTimeout(() => {
+      if (btn && btn.isConnected && btn.classList.contains("armed") && !armedNow(key)) { btn.textContent = btn.dataset.orig; btn.classList.remove("armed"); }
+    }, ARM_MS + 50);
+    return false;
+  }
+  const justOpened = () => performance.now() - popupOpenedAt < GHOST_MS;
   /** Index der erlaubten Aktion "Fabrik hier bauen" (Neubau nach Zerstoerung oder Umzug auf das Feld des Koenigs), sonst -1. */
   function kingRebuildIdx() {
     if (!isTerr() || !live || !canAct()) return -1;
@@ -3164,7 +3185,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     let html = "";
     if (re) {
       const ri = kingRebuildInfo(f, p, king);
-      html += `<section class="kp-sec"><b>${escapeHtml(ri.title)}</b><small>${escapeHtml(ri.small)}</small><button type="button" class="go" data-k="rebuild">Hier bauen</button></section>`;
+      html += `<section class="kp-sec"><b>${escapeHtml(ri.title)}</b><small>${escapeHtml(ri.small)}</small><button type="button" class="go${armedNow("king-rebuild") ? " armed" : ""}" data-k="rebuild">${rebuildLabel("king-rebuild", "Hier bauen")}</button></section>`;
     }
     if (up) {
       html += `<section class="kp-sec"><b>König verbessern</b><small>Stufe ${ku.level} von 3: zieht ${ku.extra} Felder weiter</small>` +
@@ -3182,8 +3203,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   $("kingPop").addEventListener("click", (ev) => {
     const btn = ev.target.closest("button.go");
-    if (!btn) return;
+    if (!btn || justOpened()) return;
     const i = btn.dataset.k === "rebuild" ? kingRebuildIdx() : kingUpIdx();
+    if (btn.dataset.k === "rebuild" && i >= 0 && !confirmTap("king-rebuild", btn)) return;
     hideKingPop();
     if (i >= 0) humanAct(i);
   });
@@ -3354,7 +3376,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       `Bis die Fabrik steht: kein Ertrag, alle Figuren wehrlos, König gesperrt.`;
     const slim = compactUi();
     return `<div class="fc-sec"><p class="fc-h">${slim ? "Fabrik umziehen" : "Fabrik umziehen · der König baut sie auf seinem Feld"}</p>` +
-      `<button type="button" class="btn fc-shift" data-act="rebuild" ${can ? "" : "disabled"}>${escapeHtml(label)}</button>` +
+      `<button type="button" class="btn fc-shift${armedNow("fac-rebuild") ? " armed" : ""}" data-act="rebuild" ${can ? "" : "disabled"}>${escapeHtml(can ? rebuildLabel("fac-rebuild", label) : label)}</button>` +
       (slim && can ? "" : `<p>${escapeHtml(rs.why)}</p>${slim ? "" : explain(escapeHtml(steps))}`) + `</div>`;
   }
   /** Version 3: Hinweis im Zugkasten, solange der Umzug (oder der Neubau nach einer Zerstoerung) noch nicht geht. */
@@ -3423,6 +3445,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   $("facCard").addEventListener("click", (ev) => {
     const t = ev.target.closest("[data-lv],[data-buy],[data-build],[data-pick],[data-act]");
     if (!t) return;
+    if (justOpened() && t.dataset.act !== "toggle") return; // Geisterklick des Tipps, der das Menue geoeffnet hat
     if (t.dataset.lv) { facPick = Number(t.dataset.lv); renderFactoryCard(); requestAnimationFrame(draw); return; }
     if (t.dataset.build) {
       const i = live ? live.legal.findIndex((a) => a.type === "build_unit" && a.level === Number(t.dataset.build)) : -1;
@@ -3444,6 +3467,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (t.dataset.act === "trade" || t.dataset.act === "rebuild") {
       const type = t.dataset.act === "trade" ? "trade" : "rebuild_factory";
       const i = live ? live.legal.findIndex((a) => a.type === type) : -1;
+      if (i >= 0 && type === "rebuild_factory" && !confirmTap("fac-rebuild", t)) return;
       if (i >= 0) { facOpen = false; humanAct(i); }
       return;
     }
@@ -4573,7 +4597,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     // Der Koenig leuchtet, wenn er sich verbessern laesst. Ein Klick waehlt ihn nur (Ziehfelder), erst der
     // zweite Klick hintereinander oeffnet die Blase mit den Knoepfen; ein dritter schliesst sie wieder.
     if (piece && piece.king && (kingUpIdx() >= 0 || kingRebuildIdx() >= 0)) {
-      if (prevKingTap === piece.id && !wasKingPop) { kingPopOpen = true; renderKingPop(); }
+      if (prevKingTap === piece.id && !wasKingPop) { kingPopOpen = true; popupOpenedAt = performance.now(); renderKingPop(); }
       else kingTapId = piece.id;
     }
     if (!piece && cell !== null && isTerr() && facClick(cell)) return;
@@ -5524,6 +5548,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     clearTimeout(botTimer);
     safely("Zuganzeige", renderTurnBox);
     safely("Vorab-Zug", schedulePremove);
+    // Gibt es keinen einzigen Zug (nur Passen), springt die Runde von selbst weiter.
+    if (autoPassDue()) {
+      botTimer = setTimeout(() => {
+        if (!autoPassDue()) return;
+        routeNote = "";
+        humanAct(live.legal.findIndex((a) => a.type === "pass"));
+      }, 800);
+      return;
+    }
     if (mode !== "play" || !live || live.outcome || live.humanToMove) return;
     if (live.watch && (!playing || R !== liveR)) return;
     botTimer = setTimeout(() => {
@@ -5539,6 +5572,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       safely("Bot-Zug anzeigen", () => pushStep(out));
       scheduleBots();
     }, botDelay());
+  }
+  /** Ist der Mensch am Zug, aber Passen die einzige erlaubte Aktion? Dann wird die Runde automatisch uebersprungen. */
+  function autoPassDue() {
+    return mode === "play" && !!live && !live.outcome && canAct() && live.legal.length > 0 && live.legal.every((a) => a.type === "pass");
   }
   /** Schritte zwischen zwei Feldern (Breitensuche ueber die Nachbarn). */
   function boardDist(from, to) {
@@ -5587,7 +5624,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       return `Kat 3 tauschen: ${k}× Kat 3 → ${Math.pow(2, Math.min(k, 20))} Fläche (keine Aktion, der Zug geht weiter)`;
     }
     if (a.type === "shift_factory") return `Fabrik rücken nach ${cellName(a.to)} (Karte „Fabrik rücken“, statt eines Zuges)`;
-    if (a.type === "pass") return "Passen";
+    if (a.type === "pass") return "Runde beenden";
     return a.type;
   }
   /** Hinweis im Gebietsmodus: was gerade wichtig ist. */
@@ -5681,14 +5718,23 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         b.addEventListener("click", () => cancelRoutes("Route abgebrochen."));
         actions.appendChild(b);
       }
+      // Passen gibt es nicht mehr als Knopf: ohne jeden Zug wird die Runde von selbst uebersprungen (`autoPass`). Nur wenn
+      // zwar kein Ziehen/Bauen/Rucken, aber noch Karten, Tausch oder Umzug moeglich sind, bleibt "Runde beenden".
+      const canMove = live.legal.some((a) => a.type === "move" || a.type === "build_unit" || a.type === "shift_factory");
       live.legal.forEach((a, i) => {
         if (a.type === "move" || a.type === "buy") return;
         if (a.type === "build_unit" && isTerr()) return; // Figuren baut man im Menue der Fabrik (Klick auf die Fabrik)
+        if (a.type === "pass" && canMove) return;
         const b = document.createElement("button");
         b.type = "button";
         b.className = "btn";
-        b.textContent = actionLabel(a, now);
-        b.addEventListener("click", () => humanAct(i));
+        const heavy = a.type === "rebuild_factory";
+        b.textContent = a.type === "pass" ? "Runde beenden (kein Zug möglich)" : heavy ? rebuildLabel("turn-rebuild", actionLabel(a, now)) : actionLabel(a, now);
+        if (heavy && armedNow("turn-rebuild")) b.classList.add("armed");
+        b.addEventListener("click", () => {
+          if (heavy && !confirmTap("turn-rebuild", b)) return;
+          humanAct(i);
+        });
         actions.appendChild(b);
       });
       const rh = isTerr() ? relocTurnHint(now) : "";

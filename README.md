@@ -853,6 +853,20 @@ aendern, und man kann eigene Karten bauen.
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
 
+### Version 3.5 (Wuensche vom 19.11.2026)
+
+- **Kein "Passen" mehr** im Viewer: Kann ein Mensch ziehen, bauen oder die Fabrik rücken, gibt es keinen Passen-Knopf. Bleibt nur noch
+  `pass` uebrig (zum Beispiel nach dem Wiederaufbau der Fabrik, wenn keine Figur ziehen kann), spielt der Viewer die Runde nach 0,8 s
+  **selbst zu Ende** (`autoPassDue` in `scheduleBots`). Ist neben `pass` noch etwas anderes erlaubt (zum Beispiel Karten kaufen oder
+  Fabrik wiederaufbauen), steht dafuer ein Knopf "Runde beenden (kein Zug moeglich)". Folge: Wer zieht oder bauen kann, muss das tun
+  (kein freiwilliges Aussetzen mehr); die Engine bleibt davon unberuehrt, `pass` ist dort weiter erlaubt.
+- **Grosse Zugmarker immer** (`paintFlatMark`): erreichbare Felder sind immer grosse gefuellte Kreise (Gegner groesser, mit hellem
+  Aussenring); die kleinen Punkte sind weg.
+- **Fabrik-Fehlbedienung (Meldung "Koenig anklicken, dann Fabrik: er baut eine neue Fabrik")**: nicht nachgestellt. Als Schutz gelten
+  jetzt zwei Dinge: (1) Klicks in den ersten 350 ms nach dem Oeffnen einer Koenigs- oder Fabrikblase werden ignoriert (Geister-Klick
+  durch das Antippen darunter), (2) Wiederaufbau und Fabrik-Verlegen (Koenigsblase, Fabrik-Karte, Zugleiste) brauchen **zwei Tipps**:
+  beim ersten wird der Knopf rot und fragt "Sicher? Nochmal tippen" (4 s lang). Ob das die echte Ursache trifft, ist **nicht bewiesen**.
+
 ### Version 3.4: Gelaende (`terr_terrain`, Standard aus; Wunsch vom 18.11.2026)
 
 Jedes Feld ist **Feld** (zaehlt 1 Flaeche), **Erde** (1/2) oder **Moor** (1/4). Das ist die einzige Wirkung: es aendert, wie viel
