@@ -512,6 +512,10 @@ impl Game {
         } else if self.cards_go_on_pieces(card) {
             self.pieces_of(player)
                 .any(|p| self.card_fits_piece(card, p))
+        } else if card == Card::FactoryShift {
+            // Die Karte wirkt sofort (die Fabrik muss rutschen), also nur kaufbar, wenn sie kann.
+            self.state.stored_card[player.idx()].is_none()
+                && !self.factory_shift_cells(player).is_empty()
         } else {
             self.state.stored_card[player.idx()].is_none()
         }
@@ -1005,6 +1009,12 @@ impl Game {
         if self.state.stored_card[me.idx()] != Some(Card::FactoryShift) {
             return Vec::new();
         }
+        self.factory_shift_cells(me)
+    }
+
+    /// Wie `factory_shift_targets`, aber ohne die Karte vorauszusetzen: wohin die Fabrik rutschen
+    /// koennte. Der Kauf der Karte braucht mindestens ein solches Feld (sie wirkt sofort).
+    pub fn factory_shift_cells(&self, me: PlayerId) -> Vec<CellId> {
         let board = &self.map.board;
         if board.kind() != crate::board::GridKind::Square {
             return Vec::new();

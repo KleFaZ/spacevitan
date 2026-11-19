@@ -77,13 +77,15 @@ Optionen:
                  Rest unter einer Flaeche in der naechsten Runde;
                  terr_fort (Standard aus): die Karte Fort liegt im Markt; eine Figur auf dem Fort
                  zieht n oder n+1 Felder, das Fort verschwindet, wenn das Feld nicht mehr dir gehoert
-  --bots LISTE   pro Spieler: sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),
+  --bots LISTE   pro Spieler: super-stark (wie sehr-stark, dazu Drang nach Land und Brettmitte;
+                 Stellschrauben zum Abstimmen: SPACEVITAN_DRIVE=\"land=6,centre=20,cap=6\"),
+                 sehr-stark (wie stark, dazu Flaechensicherung und mehr Budget),
                  stark, stark-pur (kauft nie Karten), flaeche (Gebietsmodus: Land
                  und Rohstoffe), gierig oder zufall,
                  z. B. stark,gierig
                  (Standard: gierig)
   --nodes N      Rechenbudget von \"stark\": Stellungen pro Zug (Standard 20000)
-  --nodes-sehr N Rechenbudget von \"sehr-stark\" (Standard: eigenes Budget, siehe README)
+  --nodes-sehr N Rechenbudget von \"sehr-stark\" und \"super-stark\" (Standard: eigenes Budget, siehe README)
   --show         Partie Runde fuer Runde anzeigen
   --games N      N Partien mit Seeds seed..seed+N-1 spielen und Statistik zeigen
   --export DATEI Partie als JSON speichern (fuer die Browser-Ansicht), nur mit einer Partie
@@ -259,6 +261,23 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                             .with_name("sehr-stark");
                     Ok(Box::new(bot) as Box<dyn Bot>)
                 }
+                "super-stark" | "superstark" | "super-strong" => {
+                    let weights = match std::env::var("SPACEVITAN_WEIGHTS") {
+                        Ok(list) => Weights::DEFAULT.parse_overrides(&list)?,
+                        Err(_) => Weights::DEFAULT,
+                    };
+                    // Zum Abstimmen: SPACEVITAN_DRIVE="land=6,centre=20,cap=6"
+                    let drive = match std::env::var("SPACEVITAN_DRIVE") {
+                        Ok(list) => game_core::area_bot::Drive::parse(&list)?,
+                        Err(_) => game_core::area_bot::Drive::DEFAULT,
+                    };
+                    let bot =
+                        SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes_very))
+                            .with_weights(weights)
+                            .with_drive(drive)
+                            .with_name("super-stark");
+                    Ok(Box::new(bot) as Box<dyn Bot>)
+                }
                 "stark-pur" => {
                     let bot = SearchBot::with_params(bot_seed, SearchParams::with_budget(o.nodes))
                         .without_cards();
@@ -268,7 +287,7 @@ fn make_bots(o: &Options, seed: u64) -> Result<Vec<Box<dyn Bot>>, String> {
                 "gierig" | "greedy" => Ok(Box::new(GreedyBot::new(bot_seed)) as Box<dyn Bot>),
                 "zufall" | "random" => Ok(Box::new(RandomBot::new(bot_seed)) as Box<dyn Bot>),
                 other => Err(format!(
-                    "unbekannter Bot '{other}' (sehr-stark, stark, flaeche, gierig oder zufall)"
+                    "unbekannter Bot '{other}' (super-stark, sehr-stark, stark, flaeche, gierig oder zufall)"
                 )),
             }
         })

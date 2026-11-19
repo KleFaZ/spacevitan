@@ -510,6 +510,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           <button type="button" role="radio" aria-checked="false" data-bot="4">Mittel</button>
           <button type="button" role="radio" aria-checked="false" data-bot="3">Schwer</button>
           <button type="button" role="radio" aria-checked="false" data-bot="5">Sehr schwer</button>
+          <button type="button" role="radio" aria-checked="false" data-bot="6">Super schwer</button>
         </div>
       </div>
       <div class="qrow">
@@ -2366,7 +2367,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
 
     // Version 2: Zielfelder fuer "Fabrik ruecken"
-    if (shiftMode && canAct()) {
+    if ((shiftMode || shiftForced()) && canAct()) {
       const accent = cssVar("--accent") || "#2f55a4";
       const mine = f.factories.find((x) => x.owner === f.current);
       if (mine) outlineCell(mine.cell, "#2f9e55", 0.3);
@@ -3015,9 +3016,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     const sc = (f.stored_card || [])[p];
     const empty = cardAnyOn()
-      ? "Keine. „Fabrik rücken“ liegt hier, bis du sie benutzt. Kürzer, Ecke und Sprung wirken gleich auf eine Figur deiner Wahl (auch eine schon gebaute)."
+      ? "Keine. „Fabrik rücken“ wirkt sofort (die Fabrik muss gleich diagonal rücken). Kürzer, Ecke und Sprung wirken gleich auf eine Figur deiner Wahl (auch eine schon gebaute)."
       : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit).";
-    rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – ${sc === "factory_shift" ? "rückt die Fabrik einmal diagonal (statt eines Zuges)." : "wirkt auf die nächste gebaute Figur."}` : empty}</span></div>`);
+    rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – ${sc === "factory_shift" ? "rückt die Fabrik diagonal (sofort, statt eines Zuges)." : "wirkt auf die nächste gebaute Figur."}` : empty}</span></div>`);
     return rows;
   }
 
@@ -3031,6 +3032,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   let shiftMode = false; // Version 2: "Fabrik ruecken" gewaehlt, das Zielfeld steht noch aus
   /** Die erlaubten Zuege "Fabrik ruecken" (Karte "Fabrik ruecken" liegt bereit). */
   const shiftTargets = () => (live && canAct() ? live.legal.filter((a) => a.type === "shift_factory") : []);
+  /** "Fabrik ruecken" wirkt sofort: nach dem Kauf ist das Verschieben der einzig erlaubte Zug (kein Abbrechen). */
+  const shiftForced = () => !!(live && canAct() && live.legal.length > 0 && live.legal.every((a) => a.type === "shift_factory"));
   /** Faktor auf den Kartenpreis: der Koenigs-Boost kostet je Stufe mehr (Grundpreis mal die Stufe, die er braeuchte). */
   function cardFactor(c, p) {
     if (c.key !== "king_boost" || p === null || p === undefined) return 1;
@@ -3053,6 +3056,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const go = can ? (needPiece ? "Figur wählen" : "Kaufen") : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft"
       : miss ? `fehlt: ${miss}`
       : cardAnyOn() && c.target === "unit" ? "keine passende Figur"
+      : c.key === "factory_shift" ? "kein Zielfeld"
       : stockCards && c.key !== "king_boost" ? "Kartenplatz belegt" : "nicht möglich";
     return { c, needs, opts, can, needPiece, go, miss };
   }
@@ -3223,6 +3227,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!info) { card.hidden = true; return; }
     const acting = canAct();
     if (!acting || !shiftTargets().length) shiftMode = false;
+    else if (shiftForced()) shiftMode = true;
     info.ready = acting && info.free && !!info.pick;
     facState = info;
     if (info.fac.building > 0) { renderBuildingCard(card, info); return; }
@@ -3253,7 +3258,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     else if (acting && rs) sub += ` · Umzug: ${rs.short}`;
     if (canShift) sub += " · Fabrik rücken möglich";
     else if (shiftStuck) sub += " · Fabrik rücken: kein Zielfeld";
-    if (shiftMode) { title = "Fabrik rücken"; sub = "Klick auf ein markiertes Feld (Esc bricht ab)"; cls = "ready"; }
+    if (shiftMode) {
+      title = shiftForced() ? "Fabrik jetzt rücken" : "Fabrik rücken";
+      sub = shiftForced() ? "Tippe ein markiertes Feld: die Karte wirkt sofort" : "Klick auf ein markiertes Feld (Esc bricht ab)";
+      cls = "ready";
+    }
     const slim = compactUi();
     if (slim && open && !shiftMode) { title = "Figuren bauen"; sub = info.free ? "" : "Fabrik besetzt: zieh erst die Figur weg"; }
     let body = "";
@@ -3315,7 +3324,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         (!slim && king ? `<div class="fc-sec"><p class="fc-h">König verbessern</p>${king}</div>` : "") +
         (!slim && (cards.length || cardsNote || stockCard) ? `<div class="fc-sec"><p class="fc-h">Karten</p>${cards.join("")}${stockCard}${cardsNote ? `<p class="muted">${escapeHtml(cardsNote)}</p>` : ""}</div>` : "") +
         (tradeI >= 0 ? `<button type="button" class="btn fc-shift" data-act="trade">${escapeHtml(actionLabel(live.legal[tradeI], f).split(";")[0])}</button>` : "") +
-        (canShift ? `<button type="button" class="btn fc-shift" data-act="shift">${shiftMode ? "Abbrechen" : "Fabrik rücken (statt eines Zuges)"}</button>` : "") +
+        (canShift && !shiftForced() ? `<button type="button" class="btn fc-shift" data-act="shift">${shiftMode ? "Abbrechen" : "Fabrik rücken (statt eines Zuges)"}</button>` : "") +
         relocSection(f, info, acting, moveI) +
         (shiftStuck ? `<p class="muted">Fabrik rücken: kein Zielfeld. Ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett).</p>` : "") + `</div>`;
     }
@@ -3747,7 +3756,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const acting = canAct();
     const own = p === null || p === undefined ? -1 : ownColorOf(p);
     $("marketNote").textContent = isTerr() && cardAnyOn()
-      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König)"+(stackOn() ? ", und mehrmals auf dieselbe Figur (Stufe n höchstens n−1 mal; Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld)" : "")+"; klicke die Karte, dann die Figur. „Fabrik rücken“ liegt neben der Fabrik, bis du sie benutzt; der Königs-Boost wirkt sofort auf den König." +
+      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König)"+(stackOn() ? ", und mehrmals auf dieselbe Figur (Stufe n höchstens n−1 mal; Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld)" : "")+"; klicke die Karte, dann die Figur. „Fabrik rücken“ wirkt sofort: gleich nach dem Kauf musst du die Fabrik diagonal auf ein markiertes Feld rücken (das ersetzt deinen Zug); der Königs-Boost wirkt sofort auf den König." +
         (cardLockMode() === 1 ? " Eine verbesserte Figur (auch der König beim Boost) ruht dafür in diesem Zug: mit ihr kannst du nicht ziehen, mit allen anderen schon."
           : cardLockMode() === 2 ? " Eine Verbesserung (Figurenkarte, Königs-Boost) ist dein ganzer Zug." : "")
       : isTerr()
@@ -3819,6 +3828,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           const boostMax = c.key === "king_boost" && cardFactor(c, p) > 3;
           const noPiece = onPiece && best && !miss.length;
           const text = boostMax ? "Der König hat schon alle drei Boost-Stufen."
+            : c.key === "factory_shift" && !miss.length ? "Kein Zielfeld: ein Diagonalfeld der Fabrik muss dir gehören, mit der Fabrik zusammenhängen und frei sein (nur im Quadratbrett)."
             : noPiece ? "Keine deiner Figuren passt: die Karte wirkt auf eine Figur ab Stufe 2, die das noch nicht kann (nicht auf den König)."
             : slotFull ? "Der Kartenplatz neben der Fabrik ist belegt: erst die liegende Karte mit einer gebauten Figur aufbrauchen."
             : best && miss.length
@@ -4557,6 +4567,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       return;
     }
     const f = R.frames[fi];
+    // Gerade "Fabrik ruecken" gekauft: nur ein markiertes Feld zaehlt, alles andere (auch die Fabrik, der Koenig) ist gesperrt.
+    if (shiftForced()) {
+      const k = cell === null ? -1 : live.legal.findIndex((a) => a.type === "shift_factory" && a.to === cell);
+      if (k >= 0) { humanAct(k); return; }
+      shiftMode = true;
+      routeNote = "Fabrik rücken ist Pflicht: tippe eines der markierten Felder.";
+      renderFactoryCard(); renderTurnBox(); requestAnimationFrame(draw);
+      return;
+    }
     interruptRoute(cell); // ein Tipp auf eine Figur mit Route unterbricht sie; die Figur wird danach ganz normal gewaehlt
     if (shiftMode) {
       const k = cell === null ? -1 : live.legal.findIndex((a) => a.type === "shift_factory" && a.to === cell);
@@ -4819,7 +4838,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Platzarten: Code im Spielkern, Anzeige. Die Reihenfolge ist die in der Liste. */
   const SEAT_KINDS = [
     [2, "Mensch (ein Gerät)"],
-    [5, "Bot „sehr stark“ – schwerste Stufe, rechnet voraus und bewertet Land"],
+    [6, "Bot „super-stark“ – schwerste Stufe: wie „sehr stark“, will aber immer mehr Land und rückt seine Fabrik Richtung Mitte"],
+    [5, "Bot „sehr stark“ – rechnet voraus und bewertet Land"],
     [3, "Bot „stark“ – schwer, rechnet voraus"],
     [4, "Bot „fläche“ – schwer, spielt auf Land und sichert es"],
     [0, "Bot „gierig“ – leicht"],
@@ -4855,7 +4875,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       { key: "market_size", label: "Karten im Markt", ph: () => String(marketDefault(menuPlayers())), hint: () => "0 = ganz ohne Karten, höchstens 14 (fürs Quadrat; auf den anderen Brettern eine weniger)." },
     ] },
     { title: "Karten-Editor (Version 3)", wide: true, editor: true, note: "Jede Partie zieht die Karten des Marktes zufällig aus dem Kartenpool, deshalb ist jede Partie anders. Hier änderst du die Preise (leer = Standard), nimmst Karten aus dem Pool oder baust eigene Karten aus Bausteinen. Bausteine einer Karte wirken zusammen: „Ecke ×2“ ist doppelte Ecke (die letzten beiden Felder dürfen abbiegen). Der Königs-Boost liegt immer aus; seinen Preis stellst du unten bei „Gold je zusätzlichem Zugfeld“ ein.", fields: [] },
-    { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400; in Version 3 ab Stufe 2 noch einmal doppelt: 200 / 400 / 800). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik diagonal; der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Die Rohstoffe heißen Eisen (Kat 1), Gold (Kat 2) und Brot (Kat 3); die Kachel trägt einen Rand in der Farbe des Vorkommens.", fields: [
+    { title: "Gebiet", wide: true, grid: true, note: "Grundregeln (Version 2, in Version 3 mit den Änderungen der nächsten Gruppe). Weißes Brett: nur die Startecke gehört dir und trägt die einzige Fabrik. Jedes Feld auf dem Weg einer Figur (auch des Königs) wird deine Farbe, ein Gegner färbt es um. Land, das nicht mehr an der Fabrik hängt, fällt an den, der es abgetrennt hat; Figuren darauf sind wehrlos, bis sie wieder neben ihrem verbundenen Land stehen (dann färben sie ihr Feld sofort). Eine neutrale Fläche, die ganz von einer Farbe umschlossen ist (am Brettrand nur, wenn man ihn als Wand einstellt), geht an diese Farbe. Die Fabrik sammelt jede Runde alle verbundenen Felder als Fläche (dazu die Rohstoffe darauf, sie bleiben bestehen). Davon baut sie Figuren auf ihrem Feld; nur Fläche zählt, jede Stufe kostet doppelt so viel wie die davor (Bauer 50, dann 100 / 200 / 400; in Version 3 ab Stufe 2 noch einmal doppelt: 200 / 400 / 800). Eine Figur der Stufe n zieht genau n Felder geradeaus wie ein Turm (nicht durch Figuren) und schlägt auf dem Zielfeld. Ecken, Sprünge und ein Schritt weniger gibt es nur über Karten. Rohstoffe sind nur für Karten da: sie bringen erst Ertrag, wenn das Feld dir 3 (Kat 1) oder 10 Runden (Kat 2) gehört; ein Umfärben setzt die Uhr zurück. Karten (Kürzer, Ecke, Sprung) wirken auf jede eigene Figur deiner Wahl, auch auf schon gebaute (Version 3; in Version 2 liegen sie neben der Fabrik und wirken auf die nächste Figur); „Fabrik rücken“ schiebt die Fabrik sofort diagonal (Pflicht gleich nach dem Kauf, ersetzt den Zug); der Königs-Boost wirkt sofort (bis Stufe 3). Betritt ein Gegner die Fabrik, ist sie zerstört (kein Spielende, aber keine neuen Figuren). Nur der König entscheidet. Die Rohstoffe heißen Eisen (Kat 1), Gold (Kat 2) und Brot (Kat 3); die Kachel trägt einen Rand in der Farbe des Vorkommens.", fields: [
       { key: "terr_ver", label: "Regelstufe (3, 2 oder 1)", ph: () => "3", hint: () => "3 = Version 3 (Erntezähler, Fabrik-Umzug, Brot als Lager); 2 = Version 2; 1 = Version 1 (Referenz: Zugweite bis n, Preise mit Rohstoffen, sofortiger Ertrag)." },
       { key: "terr_pawn", label: "Fläche für einen Bauern", ph: () => "50", hint: () => "Mit etwa 10 Feldern Land sind es rund 9 Runden." },
       { key: "terr_grow", label: "Preisfaktor je Stufe", ph: () => "2", hint: () => "Stufe n kostet Bauer mal Faktor hoch (n−1): 50 / 100 / 200 / 400 (Version 3: ab Stufe 2 dazu der Faktor „Figurenpreis ab Stufe 2 mal“). 0 = Preise der Version 1 (nur mit Version 1 sinnvoll)." },
@@ -5391,7 +5411,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   // ----- Schnellstart im Startmenue -----------------------------------------------------------
   /** Gegnerstufen des Schnellstarts: Code im Spielkern, Anzeige im Knopf. */
-  const QUICK_BOTS = [0, 4, 3, 5];
+  const QUICK_BOTS = [0, 4, 3, 5, 6];
   /** Regelpakete: nur belegte Felder; alles andere bleibt auf dem Standard der Version 3. */
   const QUICK_PRESETS = {
     standard: { note: "Version 3.3: Brot ist ein Lager wie Eisen (Zähler 3, Figur muss draufstehen), die Kartenpreise sind auf Eisen, Gold und Brot verteilt.", rules: {} },
@@ -5983,7 +6003,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
     if (e.key === "Escape") {
       facClose(); closeCardPop(); hideKingPop();
-      if (shiftMode) { shiftMode = false; routeNote = ""; renderFactoryCard(); renderTurnBox(); }
+      if (shiftMode && !shiftForced()) { shiftMode = false; routeNote = ""; renderFactoryCard(); renderTurnBox(); }
       if (cardMode) { routeNote = ""; stopCardMode(); }
       if (inspect) { inspect = null; renderTurnBox(); requestAnimationFrame(draw); }
     }
@@ -6055,6 +6075,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get cardMode() { return cardMode; }, get lockedId() { const f = R && R.frames[fi]; return f ? f.card_lock : null; }, get inspect() { return inspect; }, get hoverReach() { return hoverReachValid() ? hoverReach : null; }, get fx() { return fx; },
     get ready() { return wasm !== null; },
     get ghost() { return ghostBuild(); }, get kingUp() { return kingUpIdx(); }, get cardPop() { return cardPopKey; }, get kingPopOpen() { return kingPopOpen; }, get facOpen() { return facOpen; },
+    get shiftForced() { return shiftForced(); }, get shiftMode() { return shiftMode; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },
     /** Feld einer Figur im angezeigten Zug (fuer automatische Tests). */

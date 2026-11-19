@@ -330,6 +330,8 @@ pub struct SearchBot {
     stats: SearchStats,
     /// Gebietsmodus: Bewertung der Blaetter wie bei `flaeche` (`area_bot::leaf_value`).
     area_eval: bool,
+    /// "Super-stark": Bewertung mit Drang nach Land und Mitte (`area_bot::Drive`).
+    drive: Option<crate::area_bot::Drive>,
 }
 
 impl SearchBot {
@@ -354,7 +356,23 @@ impl SearchBot {
             name: "stark",
             stats: SearchStats::default(),
             area_eval: false,
+            drive: None,
         }
+    }
+
+    /// "Super-stark": wie "sehr-stark", bewertet aber Land hoeher, solange noch Platz ist, und
+    /// belohnt eine Fabrik, die in Richtung Brettmitte gerueckt ist.
+    pub fn super_strong(seed: u64) -> SearchBot {
+        SearchBot::very_strong(seed)
+            .with_drive(crate::area_bot::Drive::DEFAULT)
+            .with_name("super-stark")
+    }
+
+    /// Die Spielweise von "super-stark" mit eigenen Stellschrauben (zum Abstimmen).
+    pub fn with_drive(mut self, drive: crate::area_bot::Drive) -> SearchBot {
+        self.area_eval = true;
+        self.drive = Some(drive);
+        self
     }
 
     /// "Sehr stark": die Suche von "stark" mit der Blattbewertung von `flaeche` (Land und duenne
@@ -1019,7 +1037,7 @@ impl SearchBot {
             if g.king(self.root).is_none() {
                 return -WIN;
             }
-            let v = crate::area_bot::leaf_value(g, self.root);
+            let v = crate::area_bot::leaf_value_with(g, self.root, self.drive.as_ref());
             return v.clamp(-i64::from(WIN / 2), i64::from(WIN / 2)) as i32;
         }
         let n = g.config.players as usize;

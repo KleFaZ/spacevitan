@@ -56,13 +56,19 @@ impl AreaBot {
 
 /// Wert der Lage von `p`: verbundenes Land, Vorkommen darauf (gewichtet nach Reife), Figuren.
 fn standing(g: &Game, p: PlayerId) -> i64 {
+    standing_with(g, p, LAND)
+}
+
+/// Wie `standing`, aber mit frei gewaehltem Wert je Flaeche (`super-stark` zahlt mehr fuer Land,
+/// solange noch Platz ist).
+fn standing_with(g: &Game, p: PlayerId, land: i64) -> i64 {
     let mut v = 0;
     // Mit `terr_occupy` zaehlt der Vorkommen-Wert voll nur auf bearbeiteten Feldern.
     let worked = g.config.terr_occupy.then(|| g.worked_cells(p));
     if let Some(connected) = g.connected_land(p) {
         for cell in g.map.board.cells().filter(|c| connected[c.idx()]) {
             // Mit Gelaende zaehlt ein Feld nach seinem Flaechenwert (Viertel), sonst voll.
-            v += LAND * i64::from(g.land_quarters(cell)) / 4;
+            v += land * i64::from(g.land_quarters(cell)) / 4;
             for res in g.all_deposits(cell) {
                 let cat = usize::from(g.map.category(res)).clamp(1, 4) - 1;
                 // Kat 3 zaehlt mit Flaechenbonus nur ueber `2^k` unten, nicht als Vorkommen.
@@ -89,7 +95,7 @@ fn standing(g: &Game, p: PlayerId) -> i64 {
         // Flaechenbonus: jede Runde `2^k` Flaeche zusaetzlich, das verdoppelt sich je Kat-3-Feld.
         v += BONUS_UNIT * i64::from(Game::kat3_bonus(g.connected_kat3(p)).min(2_000));
     } else {
-        v += g.land_count(p) as i64 * LAND;
+        v += g.land_count(p) as i64 * land;
     }
     for piece in g.pieces_of(p) {
         if let PieceKind::Unit { level, .. } = piece.kind {
@@ -101,6 +107,10 @@ fn standing(g: &Game, p: PlayerId) -> i64 {
 
 /// Wert der Lage fuer `me` gegen den Durchschnitt der lebenden Gegner.
 fn evaluate(g: &Game, me: PlayerId) -> i64 {
+    evaluate_with(g, me, |p| standing(g, p))
+}
+
+fn evaluate_with(g: &Game, me: PlayerId, stand: impl Fn(PlayerId) -> i64) -> i64 {
     if let Some(Outcome::Winner(w)) = g.outcome() {
         return if w == me { WIN } else { -WIN };
     }
@@ -108,9 +118,105 @@ fn evaluate(g: &Game, me: PlayerId) -> i64 {
         return -WIN;
     }
     let others: Vec<PlayerId> = g.alive_players().into_iter().filter(|&p| p != me).collect();
-    let theirs: i64 =
-        others.iter().map(|&p| standing(g, p)).sum::<i64>() / others.len().max(1) as i64;
-    standing(g, me) - theirs
+    let theirs: i64 = others.iter().map(|&p| stand(p)).sum::<i64>() / others.len().max(1) as i64;
+    stand(me) - theirs
+}
+
+/// Stellschrauben von "super-stark" (`SearchBot::super_strong`): mehr Wert auf Land, solange noch
+/// freier Platz da ist, und ein Aufschlag fuer eine Fabrik, die Richtung Brettmitte gerueckt ist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Drive {
+    /// Zusaetzlicher Wert je Flaeche bei ganz leerem Brett; sinkt mit dem freien Anteil auf 0.
+    pub land_extra: i64,
+    /// Wert je Feldbreite, die die Fabrik naeher an der Mitte steht als die Startecke.
+    pub centre: i64,
+    /// Hoechstens so viele Feldbreiten zaehlen (rund drei bis vier Diagonalschritte).
+    pub centre_cap: i64,
+}
+
+impl Drive {
+    pub const DEFAULT: Drive = Drive {
+        land_extra: 6,
+        centre: 20,
+        centre_cap: 6,
+    };
+
+    /// `land=6,centre=20,cap=6` (nur zum Abstimmen).
+    pub fn parse(list: &str) -> Result<Drive, String> {
+        let mut d = Drive::DEFAULT;
+        for part in list.split(',').filter(|p| !p.trim().is_empty()) {
+            let (k, v) = part
+                .split_once('=')
+                .ok_or_else(|| format!("'{part}': name=wert erwartet"))?;
+            let v: i64 = v
+                .trim()
+                .parse()
+                .map_err(|_| format!("'{part}': Zahl erwartet"))?;
+            match k.trim() {
+                "land" => d.land_extra = v,
+                "centre" | "center" => d.centre = v,
+                "cap" => d.centre_cap = v,
+                other => return Err(format!("unbekannte Stellschraube '{other}'")),
+            }
+        }
+        Ok(d)
+    }
+}
+
+/// Mittelpunkt des Bretts in Weltkoordinaten (Schwerpunkt des Umrisses).
+fn board_centre(g: &Game) -> (f64, f64) {
+    let outline = g.map.board.outline();
+    let n = outline.len().max(1) as f64;
+    let (sx, sy) = outline
+        .iter()
+        .fold((0.0, 0.0), |(x, y), p| (x + p.0, y + p.1));
+    (sx / n, sy / n)
+}
+
+/// Wie viele Feldbreiten die Fabrik von `p` naeher an der Brettmitte steht als die Startecken
+/// (in Tausendsteln, zwischen 0 und `cap` Feldbreiten).
+fn centre_progress(g: &Game, p: PlayerId, cap: i64) -> i64 {
+    let Some(f) = g.home_factory(p) else {
+        return 0;
+    };
+    let board = &g.map.board;
+    let (cx, cy) = board_centre(g);
+    let dist = |c: crate::ids::CellId| {
+        let (x, y) = board.pos(c);
+        ((x - cx).powi(2) + (y - cy).powi(2)).sqrt()
+    };
+    let corners = board.corners();
+    if corners.is_empty() {
+        return 0;
+    }
+    let start = corners.iter().map(|&c| dist(c)).sum::<f64>() / corners.len() as f64;
+    // Feldbreite = Abstand zweier Nachbarfelder.
+    let first = crate::ids::CellId(0);
+    let spacing = board
+        .neighbors(first)
+        .next()
+        .map(|n| {
+            let (a, b) = (board.pos(first), board.pos(n));
+            ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+        })
+        .filter(|s| *s > 0.0)
+        .unwrap_or(1.0);
+    let steps = (start - dist(f.cell)) / spacing;
+    ((steps * 1000.0) as i64).clamp(0, cap * 1000)
+}
+
+/// Anteil freier (herrenloser) Felder am Brett in Tausendsteln.
+fn free_permille(g: &Game) -> i64 {
+    let free = g.state.land.iter().filter(|l| l.is_none()).count() as i64;
+    free * 1000 / (g.state.land.len().max(1) as i64)
+}
+
+/// Wie `evaluate`, aber mit dem Aufschlag von "super-stark".
+fn evaluate_drive(g: &Game, me: PlayerId, d: &Drive) -> i64 {
+    let land = LAND + d.land_extra * free_permille(g) / 1000;
+    evaluate_with(g, me, |p| {
+        standing_with(g, p, land) + d.centre * centre_progress(g, p, d.centre_cap) / 1000
+    })
 }
 
 /// Was ein Gegner im naechsten Zug an Land, Figuren und Koenig von `me` abtrennen koennte.
@@ -169,8 +275,17 @@ fn cut_risk(g: &Game, me: PlayerId) -> i64 {
 /// Bewertung eines Blattes der Suche von "sehr stark" (`SearchBot::with_area_eval`): Lage von `me`
 /// gegen die der Gegner wie bei `flaeche`. Eine duenne Verbindung, die ein Gegner kappen koennte,
 /// kostet Punkte; Schlagen und Koenigsfang sieht die Suche selbst.
+#[cfg(test)]
 pub(crate) fn leaf_value(g: &Game, me: PlayerId) -> i64 {
-    let v = evaluate(g, me);
+    leaf_value_with(g, me, None)
+}
+
+/// `leaf_value`, mit `Some(drive)` nach der Spielweise von "super-stark".
+pub(crate) fn leaf_value_with(g: &Game, me: PlayerId, drive: Option<&Drive>) -> i64 {
+    let v = match drive {
+        Some(d) => evaluate_drive(g, me, d),
+        None => evaluate(g, me),
+    };
     if v.abs() >= WIN / 2 {
         return v;
     }
@@ -434,5 +549,102 @@ impl Bot for AreaBot {
             .copied()
             .find(|a| !matches!(a, Action::RebuildFactory | Action::TradeKat3 { .. }))
             .unwrap_or(legal[0])
+    }
+}
+
+#[cfg(test)]
+mod drive_tests {
+    use super::*;
+    use crate::action::Action;
+    use crate::ai::SearchBot;
+    use crate::config::Config;
+
+    fn game() -> Game {
+        let mut cfg = Config::new(2, 7);
+        cfg.territory = true;
+        cfg.set_v3(true);
+        Game::new(cfg).unwrap()
+    }
+
+    #[test]
+    fn the_drive_settings_can_be_tuned_by_text() {
+        assert_eq!(Drive::parse("").unwrap(), Drive::DEFAULT);
+        let d = Drive::parse("land=9, centre=30,cap=4").unwrap();
+        assert_eq!((d.land_extra, d.centre, d.centre_cap), (9, 30, 4));
+        assert!(Drive::parse("land").is_err());
+        assert!(Drive::parse("tempo=1").is_err());
+    }
+
+    #[test]
+    fn a_factory_nearer_the_middle_scores_higher_for_super_stark_only() {
+        let mut g = game();
+        let me = PlayerId(0);
+        let start = centre_progress(&g, me, 6);
+        assert_eq!(start, 0, "in der Startecke gibt es nichts");
+        // Die Fabrik rutscht zwei Diagonalschritte zur Mitte.
+        let fid = g.home_factory(me).unwrap().id;
+        let (x, y) = g.map.board.coord(g.home_factory(me).unwrap().cell);
+        let side = g.map.board.side() as i32;
+        let dir = if x == 0 { 1 } else { -1 };
+        let diry = if y == 0 { 1 } else { -1 };
+        assert!(side > 4);
+        for step in 1..=2 {
+            let to = g
+                .map
+                .board
+                .cell_at(x + dir * step, y + diry * step)
+                .unwrap();
+            g.state.move_factory(fid, to);
+        }
+        let moved = centre_progress(&g, me, 6);
+        assert!(
+            moved > 2000,
+            "zwei Diagonalschritte sind gut zwei Feldbreiten: {moved}"
+        );
+        let drive = Drive::DEFAULT;
+        let plain = leaf_value_with(&g, me, None);
+        let with = leaf_value_with(&g, me, Some(&drive));
+        assert!(
+            with > plain,
+            "der Aufschlag zaehlt nur fuer super-stark ({with} gegen {plain})"
+        );
+        // Mehr als `cap` Feldbreiten zaehlen nicht.
+        assert!(centre_progress(&g, me, 1) <= 1000);
+    }
+
+    #[test]
+    fn free_room_makes_land_worth_more() {
+        let g = game();
+        let free = free_permille(&g);
+        assert!(free > 900, "am Anfang ist fast alles frei: {free}");
+    }
+
+    #[test]
+    fn super_stark_plays_legal_moves_and_never_stalls() {
+        use crate::ai::SearchParams;
+        let mut g = game();
+        // Kleines Budget, damit der Test schnell bleibt; die Spielweise ist dieselbe.
+        let mut bots: Vec<SearchBot> = (1..=2)
+            .map(|seed| {
+                SearchBot::with_params(seed, SearchParams::with_budget(600))
+                    .with_drive(Drive::DEFAULT)
+                    .with_name("super-stark")
+            })
+            .collect();
+        for _ in 0..40 {
+            if g.outcome().is_some() {
+                break;
+            }
+            let who = g.current_player().idx();
+            let a: Action = crate::bot::Bot::choose(&mut bots[who], &g);
+            assert!(g.legal_actions().contains(&a), "{a:?}");
+            g.apply(a).unwrap();
+        }
+        g.check_invariants().unwrap();
+        assert_eq!(crate::bot::Bot::name(&bots[0]), "super-stark");
+        assert_eq!(
+            crate::bot::Bot::name(&SearchBot::super_strong(1)),
+            "super-stark"
+        );
     }
 }

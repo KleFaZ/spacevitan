@@ -460,6 +460,14 @@ impl Game {
         if self.state.outcome.is_some() || !self.state.alive[me.idx()] {
             return Vec::new();
         }
+        // "Fabrik ruecken" wirkt sofort: wer die Karte gekauft hat, muss die Fabrik jetzt rutschen
+        // lassen (der einzige erlaubte Zug), auch wenn Figuren ziehen koennten.
+        if self.config.territory {
+            let shifts = self.factory_shift_actions(me);
+            if !shifts.is_empty() {
+                return shifts;
+            }
+        }
         let mut actions = Vec::new();
 
         for piece in self.pieces_of(me) {
@@ -473,7 +481,6 @@ impl Game {
 
         if self.config.territory {
             actions.extend(self.territory_build_actions(me));
-            actions.extend(self.factory_shift_actions(me));
             actions.extend(self.territory_rebuild_actions(me));
             if actions.is_empty() {
                 actions.push(Action::Pass);

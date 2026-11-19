@@ -477,7 +477,7 @@ fn shifting_needs_the_card_free_connected_cells_and_the_square_board() {
 }
 
 #[test]
-fn the_shift_card_stays_beside_the_factory_when_a_unit_is_built() {
+fn a_held_shift_card_forces_the_shift_and_stays_if_nothing_can_shift() {
     let mut g = blank();
     paint(&mut g, P0, &[(1, 0), (0, 1), (1, 1)]);
     let king = king_id(&g, P0);
@@ -486,12 +486,27 @@ fn the_shift_card_stays_beside_the_factory_when_a_unit_is_built() {
     give_card(&mut g, P0, Card::FactoryShift);
     g.state.area[P0.idx()] = 50;
     let fid = g.home_factory(P0).unwrap().id;
-    g.apply(Action::BuildUnit {
+    let build = Action::BuildUnit {
         factory: fid,
         level: 1,
-    })
-    .unwrap();
+    };
+    // Kann die Fabrik rutschen, ist das der einzige erlaubte Zug (die Karte wirkt sofort).
+    assert!(g.legal_actions().contains(&Action::ShiftFactory {
+        factory: fid,
+        to: c(&g, 1, 1)
+    }));
+    assert!(g
+        .legal_actions()
+        .iter()
+        .all(|a| matches!(a, Action::ShiftFactory { .. })));
+    assert!(g.apply(build).is_err());
+    // Ist das Zielfeld besetzt, kann sie nicht rutschen: die Karte bleibt liegen, alles andere geht.
+    let blocker = g.setup_unit(P0, c(&g, 1, 1), 1, 1);
+    assert!(g.factory_shift_targets(P0).is_empty());
+    assert!(g.legal_actions().contains(&build));
+    g.apply(build).unwrap();
     assert_eq!(g.state.stored_card[P0.idx()], Some(Card::FactoryShift));
+    let _ = blocker;
 }
 
 // ----- Koenigs-Boost ----------------------------------------------------------------------------

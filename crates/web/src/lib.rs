@@ -70,6 +70,7 @@ fn seat_kind(code: u32) -> Result<SeatKind, String> {
         3 => Ok(SeatKind::Strong),
         4 => Ok(SeatKind::Area),
         5 => Ok(SeatKind::VeryStrong),
+        6 => Ok(SeatKind::SuperStrong),
         other => Err(format!("Unbekannte Gegnerart {other}")),
     }
 }
@@ -470,6 +471,17 @@ mod tests {
     }
 
     #[test]
+    fn the_super_strong_bot_takes_a_seat_with_code_six() {
+        assert_eq!(sv_new_game(2, 5, 0, 0, 6), 0, "{}", out());
+        assert!(
+            out().contains("\"seats\":[\"mensch\",\"super-stark\"]"),
+            "{}",
+            out()
+        );
+        assert_eq!(sv_new_game_list(put("5|0|4|2,6")), 0, "{}", out());
+    }
+
+    #[test]
     fn the_very_strong_bot_takes_a_seat_with_code_five() {
         assert_eq!(sv_new_game(2, 5, 0, 0, 5), 0, "{}", out());
         assert!(
@@ -480,7 +492,7 @@ mod tests {
         assert_eq!(sv_apply(0), 0);
         assert_eq!(sv_bot_step(), 0, "{}", out());
         assert!(out().contains("\"human_to_move\":true"));
-        assert_eq!(sv_new_game(2, 5, 0, 0, 6), 1, "Code 6 gibt es nicht");
+        assert_eq!(sv_new_game(2, 5, 0, 0, 7), 1, "Code 7 gibt es nicht");
     }
 
     #[test]

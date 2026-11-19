@@ -1646,9 +1646,10 @@ fn the_card_lock_can_be_switched_off_or_cost_the_whole_turn() {
     assert_eq!(g.current_player(), P1, "der Kauf beendet den Zug");
     assert_eq!(g.state.card_lock, None);
     assert!(g.state.pieces[&a].perks.bend > 0);
-    // Fabrik ruecken ist keine Verbesserung und kostet hier keinen Zug.
+    // Fabrik ruecken ist keine Verbesserung und kostet den Kauf keinen Zug (das Rutschen ist der Zug).
     let mut g = card_game(&[Card::FactoryShift]);
     g.config.terr_cardlock = 2;
+    paint(&mut g, P0, &[(1, 0), (0, 1), (1, 1)]);
     stock(&mut g, P0, k1, 20);
     stock_gold(&mut g, P0, 8);
     buy(&mut g, Card::FactoryShift, None);
@@ -1953,7 +1954,7 @@ fn a_card_needs_a_fitting_figure_to_be_bought() {
 }
 
 #[test]
-fn only_the_factory_shift_card_still_lies_beside_the_factory() {
+fn the_factory_shift_card_acts_at_once_and_forces_the_shift() {
     use crate::cards::Card;
     let mut g = card_game(&[Card::FactoryShift]);
     let k1 = typ(&g, 0, 1);
@@ -1964,11 +1965,30 @@ fn only_the_factory_shift_card_still_lies_beside_the_factory() {
         from: crate::action::PaySource::Factory(fid),
         target: None,
     };
+    // Ohne ein freies, verbundenes Diagonalfeld waere der Kauf wirkungslos: er ist nicht erlaubt.
+    assert!(g.factory_shift_cells(P0).is_empty());
+    assert!(!buys(&g).contains(&buy));
+    let from = g.home_factory(P0).unwrap().cell;
+    paint(&mut g, P0, &[(1, 0), (0, 1), (1, 1)]);
     assert!(buys(&g).contains(&buy));
     g.apply(buy).unwrap();
-    assert_eq!(g.state.stored_card[P0.idx()], Some(Card::FactoryShift));
-    g.state.bought_this_turn = false;
-    assert!(buys(&g).is_empty(), "der Platz ist belegt");
+    // Jetzt ist nur noch das Verschieben der Fabrik erlaubt (kein Zug, kein Bau, kein Kauf).
+    let legal = g.legal_actions();
+    assert!(!legal.is_empty());
+    assert!(
+        legal
+            .iter()
+            .all(|a| matches!(a, Action::ShiftFactory { .. })),
+        "{legal:?}"
+    );
+    assert_eq!(g.current_player(), P0);
+    g.apply(legal[0]).unwrap();
+    assert_ne!(g.home_factory(P0).unwrap().cell, from);
+    assert_eq!(
+        g.state.stored_card[P0.idx()],
+        None,
+        "die Karte ist verbraucht"
+    );
     g.check_invariants().unwrap();
 }
 

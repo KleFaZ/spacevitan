@@ -25,6 +25,8 @@ pub enum SeatKind {
     Area,
     /// Wie `Strong`, dazu Flaechensicherung und mehr Rechenbudget (`SearchBot::very_strong`).
     VeryStrong,
+    /// Wie `VeryStrong`, dazu Drang nach Land und Brettmitte (`SearchBot::super_strong`).
+    SuperStrong,
 }
 
 impl SeatKind {
@@ -36,6 +38,7 @@ impl SeatKind {
             SeatKind::Random => "zufall",
             SeatKind::Area => "flaeche",
             SeatKind::VeryStrong => "sehr-stark",
+            SeatKind::SuperStrong => "super-stark",
         }
     }
 }
@@ -87,6 +90,9 @@ impl Session {
                     SeatKind::Area => Some(Box::new(AreaBot::new(bot_seed)) as Box<dyn Bot>),
                     SeatKind::VeryStrong => {
                         Some(Box::new(SearchBot::very_strong(bot_seed)) as Box<dyn Bot>)
+                    }
+                    SeatKind::SuperStrong => {
+                        Some(Box::new(SearchBot::super_strong(bot_seed)) as Box<dyn Bot>)
                     }
                 }
             })
