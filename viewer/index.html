@@ -449,8 +449,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .camppop .cm-btns .btn { min-height: 44px; }
 .camppop .cm-btns .btn.go { background: #2f9e55; border-color: #2f9e55; color: #fff; }
 .endpop .ep-stars { margin: 0; font-size: 2rem; }
+.endpop .ep-reward { margin: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid #2fa35b; background: rgb(47 163 91 / 0.14); font-size: 0.92rem; font-weight: 650; }
 .endpop .ep-camp { margin: 0; font-size: 0.9rem; line-height: 1.4; color: var(--muted); }
 body.camp-nocards #marketBox { display: none !important; }
+.campbar.famine { border-color: #c9622b; background: rgb(201 98 43 / 0.14); }
+.campbar.famine.now { background: rgb(201 98 43 / 0.34); font-weight: 650; }
 .campbar { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid #d9a21b; background: rgb(217 162 27 / 0.14); font-size: 0.86rem; line-height: 1.35; }
 .cardpop .cp-btns { display: flex; gap: 8px; }
 .cardpop .cp-btns .btn { flex: 1; min-height: 44px; font-weight: 700; cursor: pointer; }
@@ -624,6 +627,7 @@ body.camp-nocards #marketBox { display: none !important; }
           <button type="button" role="radio" aria-checked="false" data-preset="oldbread">Alter Brot-Bonus</button>
           <button type="button" role="radio" aria-checked="false" data-preset="fast">Schnelle Partie</button>
           <button type="button" role="radio" aria-checked="false" data-preset="upcount">Unterhalt nach Anzahl</button>
+          <button type="button" role="radio" aria-checked="false" data-preset="famine">Mit Hungersnot</button>
           <button type="button" role="radio" aria-checked="false" data-preset="cards">Viele Karten</button>
         </div>
       </div>
@@ -725,6 +729,7 @@ body.camp-nocards #marketBox { display: none !important; }
     </div>
     <p class="status" id="status"></p>
     <p class="campbar" id="campBar" hidden></p>
+    <p class="campbar famine" id="famineBar" hidden></p>
     <div id="turnBox" class="turnbox" hidden>
       <p class="hint" id="hint"></p>
       <div class="actions" id="actions"></div>
@@ -3047,16 +3052,23 @@ body.camp-nocards #marketBox { display: none !important; }
   const upkeepLevel = (lvl) => (upkeepSqOn() ? lvl * lvl : lvl);
   /** Version 3.9: Unterhalt nach Anzahl, alle Figuren zusammen (k·n)² (k = `terr_upkeep_cnt`, 0 = aus). */
   const upkeepCnt = () => (R && R.config && R.config.terr_upkeep_cnt) || 0;
-  const upkeepCount = (n) => { const k = upkeepCnt(); return (k * n) * (k * n); };
+  /** Version 3.10: Hungersnot. Jede N-te Runde (`terr_famine`) rechnet der Unterhalt nach Anzahl mit k = `terr_famine_k`. */
+  const famineN = () => (R && R.config && R.config.terr_famine) || 0;
+  const famineK = () => (R && R.config && R.config.terr_famine_k) || 2;
+  const famineOn = () => famineN() > 0 && upkeepOn() && upkeepCnt() > 0;
+  const famineRound = (f) => famineOn() && !!f && f.round % famineN() === 0;
+  const upkeepK = (f) => (famineRound(f) ? famineK() : upkeepCnt());
+  /** Unterhalt von n Figuren; mit dem Stand `f` zaehlt eine Hungersnot-Runde mit ihrem k. */
+  const upkeepCount = (n, f) => { const k = f ? upkeepK(f) : upkeepCnt(); return (k * n) * (k * n); };
   /** Unterhalt je Runde: Summe der Stufen aller Figuren des Spielers (mit Unterhalt nach Anzahl: (k·n)²), der Koenig zahlt nichts. */
   const upkeepOf = (f, p) => {
     if (!upkeepOn()) return 0;
     const mine = f.pieces.filter((x) => x.owner === p && !x.king);
-    return upkeepCnt() > 0 ? upkeepCount(mine.length) : mine.reduce((a, x) => a + upkeepLevel(x.level || 1), 0);
+    return upkeepCnt() > 0 ? upkeepCount(mine.length, f) : mine.reduce((a, x) => a + upkeepLevel(x.level || 1), 0);
   };
   /** Kurzer Hinweis „Unterhalt …“ an einer Figur, die man bauen koennte (mit Unterhalt nach Anzahl: was sie zusaetzlich kostet). */
   const upkeepNote = (f, p, level) => {
-    if (upkeepCnt() > 0) { const n = f.pieces.filter((x) => x.owner === p && !x.king).length; return `Unterhalt +${upkeepCount(n + 1) - upkeepCount(n)}`; }
+    if (upkeepCnt() > 0) { const n = f.pieces.filter((x) => x.owner === p && !x.king).length; return `Unterhalt +${upkeepCount(n + 1, f) - upkeepCount(n, f)}`; }
     return `Unterhalt ${upkeepLevel(level)}`;
   };
   const signed = (n) => (n < 0 ? `−${fmtNum(-n)}` : `+${fmtNum(n)}`);
@@ -3228,7 +3240,7 @@ body.camp-nocards #marketBox { display: none !important; }
       rows.push(`<div class="warn">Die Fläche reicht am Zugende nicht für den Unterhalt: eine Figur löst sich auf.</div>`);
     }
     rows.push(explain(`Am Ende deines Zugs sammelt die Fabrik alle Felder, die an ihr hängen (${terrainOn() ? "Feld 1, Erde ½, Moor ¼ Fläche" : "je 1 Fläche"}), dazu das Eisen, Gold und Brot auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.` +
-      (upkeepOn() && upkeepCnt() > 0 ? ` Unterhalt nach Anzahl: alle Figuren zusammen (außer dem König) kosten je Runde (${upkeepCnt()}·Anzahl)² Fläche, egal welche Stufe (eine ${upkeepCount(1)}, zwei ${upkeepCount(2)}, drei ${upkeepCount(3)}, vier ${upkeepCount(4)}, fünf ${upkeepCount(5)}), abgezogen nach dem Einkommen. Reicht die Fläche nicht, suchst du aus, welche Figur sich auflöst (keine Rückerstattung); Bots lösen die schwächste auf. Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ${upkeepSqOn() ? "ihre Stufe im Quadrat (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16)" : "ihre Stufe"} in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
+      (upkeepOn() && upkeepCnt() > 0 ? ` Unterhalt nach Anzahl: alle Figuren zusammen (außer dem König) kosten je Runde (${upkeepCnt()}·Anzahl)² Fläche, egal welche Stufe (eine ${upkeepCount(1)}, zwei ${upkeepCount(2)}, drei ${upkeepCount(3)}, vier ${upkeepCount(4)}, fünf ${upkeepCount(5)}), abgezogen nach dem Einkommen.${famineOn() ? ` Hungersnot: jede ${famineN()}. Runde rechnet der Unterhalt mit k = ${famineK()} statt ${upkeepCnt()} (eine Figur ${upkeepCount(1, { round: famineN() })}, zwei ${upkeepCount(2, { round: famineN() })}, drei ${upkeepCount(3, { round: famineN() })}).` : ""} Reicht die Fläche nicht, suchst du aus, welche Figur sich auflöst (keine Rückerstattung); Bots lösen die schwächste auf. Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ${upkeepSqOn() ? "ihre Stufe im Quadrat (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16)" : "ihre Stufe"} in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
     // --- Figuren: grau, solange nicht bezahlbar; Farbe, wenn bereit
     rows.push("\u0001");   // Trennmarke: ab hier kommt der Figurenteil (eigene Box unter den Karten)
     rows.push(`<p class="sec">Figuren bauen</p>`);
@@ -3997,7 +4009,7 @@ body.camp-nocards #marketBox { display: none !important; }
   const dissolveMark = () => (dissolveSel !== null ? dissolveSel : dissolveHover);
   /** Unterhalt des Spielers, wenn die Figur `q` wegfaellt. */
   function upkeepWithout(f, p, q) {
-    if (upkeepCnt() > 0) return upkeepCount(f.pieces.filter((x) => x.owner === p && !x.king).length - 1);
+    if (upkeepCnt() > 0) return upkeepCount(f.pieces.filter((x) => x.owner === p && !x.king).length - 1, f);
     return upkeepOf(f, p) - upkeepLevel(q.level || 1);
   }
   function renderDissolvePop() {
@@ -4279,6 +4291,7 @@ body.camp-nocards #marketBox { display: none !important; }
           c.terr_yield_lvl ? "Ertrag je Stufe: eine Figur der Stufe n erntet n Stück je Ernte" : "",
           c.terr_delay ? "Sturmangriff und Doppelzug wirken erst im nächsten eigenen Zug" : "",
           c.terr_terrain ? "Gelände: Feld zählt 1 Fläche (meist in der Mitte), Erde ½ (⅓ der Felder, zwischen Mitte und Ecke), Moor ¼ (¼ der Felder, meist in den Ecken)" : "",
+          c.terr_famine > 0 && c.terr_upkeep_cnt > 0 ? `Hungersnot: jede ${c.terr_famine}. Runde rechnet der Unterhalt mit k = ${c.terr_famine_k} statt ${c.terr_upkeep_cnt}` : "",
           c.terr_multibuy ? "Karten: so viele je Zug, wie das Lager bezahlen kann (jede verbesserte Figur ruht in diesem Zug)" : "",
           c.terr_kamikaze ? "Kamikaze-Karte: die gewählte Figur brennt, setzt eine Runde aus und greift dann einmal an (Ziel genau in Reichweite, eine Figur davor wird übersprungen und stirbt auch); sie stirbt dabei, der Weg wird neutral" : "",
           c.terr_fort ? "Fort-Karte: eine Figur auf dem Fort zieht n oder n+1 Felder; es verschwindet, wenn das Feld nicht mehr dem Besitzer gehört" : "",
@@ -4310,7 +4323,23 @@ body.camp-nocards #marketBox { display: none !important; }
     const roles = c.kat_roles ? " · Rollen: Kat 2 = Bauern, Kat 3 = Spezialzüge" : "";
     return `${regrow} · ${score} · ${cards}${roles}`;
   }
+  /** Hungersnot-Leiste: sagt an, wann die naechste kommt und was sie kostet; in der Runde selbst deutlicher. */
+  function renderFamineBar() {
+    const bar = $("famineBar");
+    if (!R || !famineOn()) { bar.hidden = true; return; }
+    const f = R.frames[Math.min(fi, R.frames.length - 1)];
+    const N = famineN(), k = famineK(), k0 = upkeepCnt();
+    const now = famineRound(f);
+    const next = now ? f.round + N : (Math.floor(f.round / N) + 1) * N;
+    const probe = { round: N };
+    const costs = [1, 2, 3].map((n) => `${n} ${n === 1 ? "Figur" : "Figuren"}: ${upkeepCount(n, probe)} statt ${upkeepCount(n, { round: 1 })}`).join(", ");
+    if (now) bar.textContent = `Hungersnot in Runde ${f.round}! Der Unterhalt rechnet jetzt mit (${k}·Anzahl)² statt (${k0}·Anzahl)² (${costs}). Die nächste kommt in Runde ${next}.`;
+    else bar.textContent = `Nächste Hungersnot in Runde ${next} (${next - f.round === 1 ? "schon in der nächsten Runde" : `in ${next - f.round} Runden`}): dann rechnet der Unterhalt mit (${k}·Anzahl)² statt (${k0}·Anzahl)²: ${costs}.`;
+    bar.classList.toggle("now", now);
+    bar.hidden = false;
+  }
   function renderPanel() {
+    safely("Hungersnot-Leiste", renderFamineBar);
     const f = R.frames[fi];
     const last = R.frames.length - 1;
     $("summary").innerHTML =
@@ -5338,6 +5367,8 @@ body.camp-nocards #marketBox { display: none !important; }
       { key: "terr_delay", label: "Verzögerung: Sturmangriff und Doppelzug", ph: () => "0", hint: () => "1 = beide Karten wirken erst in deinem nächsten Zug. Der Gegner sieht sie bereitliegen und kann reagieren. 0 = sie wirken sofort." },
       { key: "terr_upkeep_sq", label: "Unterhalt: Stufe im Quadrat", ph: () => "0", hint: () => "1 = eine Figur der Stufe n kostet je Runde n×n Fläche (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16). Braucht den Unterhalt." },
       { key: "terr_upkeep_cnt", label: "Unterhalt nach Anzahl (k)", ph: () => "0", hint: () => "Leer oder 0 = aus (Unterhalt nach Stufe). Eine Zahl k von 1 bis 20 = alle Figuren zusammen (ohne König) kosten je Runde (k·n)² Fläche, n ist ihre Anzahl, die Stufe zählt nicht. k = 2: eine Figur 4, zwei 16, drei 36, vier 64, fünf 100. Das zwingt zu großen Flächen oder kleinen Heeren. Reicht die Fläche nicht, wählst du selbst, welche Figur sich auflöst (Bots: die schwächste). Ersetzt „Unterhalt: Stufe im Quadrat“ und braucht den Unterhalt je Figur." },
+      { key: "terr_famine", label: "Hungersnot: jede N-te Runde", ph: () => "0", hint: () => "Leer oder 0 = aus. Eine Zahl N = jede N-te Runde (N, 2N, 3N …) rechnet der Unterhalt nach Anzahl mit dem k der Hungersnot statt mit dem normalen k. Alle Spieler trifft es gleich, eine Leiste über dem Zug kündigt sie an. Braucht „Unterhalt nach Anzahl (k)“." },
+      { key: "terr_famine_k", label: "Hungersnot: k", ph: () => "2", hint: () => "Das k des Unterhalts in einer Hungersnot-Runde (1 bis 20, Standard 2): (k·Anzahl)² Fläche. Wirkt nur mit „Hungersnot: jede N-te Runde“." },
       { key: "terr_terrain", label: "Gelände (Feld, Erde, Moor)", ph: () => "0", hint: () => "1 = jedes Feld ist Feld (zählt 1 Fläche, rund 42 % der Felder, eher in der Mitte), Erde (½, ein Drittel, eher zwischen Mitte und Ecke) oder Moor (¼, ein Viertel, eher in den Ecken). Jede Ecke bekommt gleich viele Erd- und Moorfelder, die Umgebung des Starts bleibt Feld. Das Gelände ändert nur die Fläche je Runde, nicht Rohstoffe oder Zugweite; ein Rest unter einer ganzen Fläche geht in die nächste Runde." },
       { key: "terr_multibuy", label: "Beliebig viele Karten je Zug", ph: () => "0", hint: () => "1 = du darfst in einem Zug so viele Karten kaufen, wie das Lager bezahlen kann (Standard: eine). Jede Figur, die eine Karte bekommt, ruht in diesem Zug; die Karte neben der Fabrik hat weiter nur einen Platz. Geht nicht mit „Karte = ganzer Zug“ (Sperre 2)." },
       { key: "terr_kamikaze", label: "Kamikaze-Karte", ph: () => "1", hint: () => "1 (Standard) = die Karte „Kamikaze“ liegt immer im Markt: Die gewählte eigene Figur (nie der König) brennt, setzt eine Runde aus und greift dann in deinem nächsten Zug einmal an: eine gegnerische Figur genau in Reichweite, eine gegnerische davor darf sie überspringen und tötet sie auch. Sie stirbt dabei, alle Felder des Weges werden neutral. Wer sie nicht zieht, verliert sie am Zugende. Bots kaufen die Karte nicht. 0 = aus." },
@@ -5847,8 +5878,12 @@ body.camp-nocards #marketBox { display: none !important; }
     },
     fast: { note: "Wertung schon nach Runde 40: kurze Partien zum Ausprobieren (mit einer kleineren Feldgröße oben noch kürzer).", rules: { score_after: 40 } },
     upcount: {
-      note: "Unterhalt nach Anzahl: alle Figuren zusammen kosten je Runde (2·Anzahl)² Fläche, egal welche Stufe (eine 4, zwei 16, drei 36, vier 64). Das zwingt zu großen Flächen oder kleinen Heeren. Reicht die Fläche nicht, wählst du, welche Figur sich auflöst.",
-      rules: { terr_upkeep_cnt: 2 },
+      note: "Unterhalt nach Anzahl: alle Figuren zusammen kosten je Runde (1·Anzahl)² Fläche, egal welche Stufe (eine 1, zwei 4, drei 9, vier 16, fünf 25). Das hält die Heere klein, ohne die Wirtschaft abzuwürgen. Reicht die Fläche nicht, wählst du, welche Figur sich auflöst. Mit dem Feld „Unterhalt nach Anzahl (k)“ unter Erweiterte Einstellungen wird es steiler (k = 2: eine 4, zwei 16, drei 36).",
+      rules: { terr_upkeep_cnt: 1 },
+    },
+    famine: {
+      note: "Unterhalt nach Anzahl (k = 1) mit Hungersnot: jede 10. Runde rechnet der Unterhalt mit k = 2, also viermal so viel (eine Figur 4 statt 1, zwei 16 statt 4, drei 36 statt 9). Alle Spieler trifft es gleich, und eine Leiste über dem Zug kündigt sie rechtzeitig an. Wer vorher Fläche spart oder Figuren abgibt, übersteht sie.",
+      rules: { terr_upkeep_cnt: 1, terr_famine: 10 },
     },
     cards: { note: "12 Karten im Markt statt 2 je Spieler: viele Möglichkeiten, jede Partie wird stark von den Karten bestimmt.", rules: { market_size: 12 } },
   };
@@ -5967,7 +6002,7 @@ body.camp-nocards #marketBox { display: none !important; }
   }
   /** Neue Partie: `seats` sind die Platzarten je Spieler (Codes des Spielkerns), `corners` die Brettform
    *  (3 bis 8, 0 = nach Spielerzahl). */
-  function startLive(seats, corners, seed, camp) {
+  function startLive(seats, corners, seed, camp, bonus) {
     clearTimeout(botTimer);
     closeEndPop(); endPopFor = null;
     playing = false; clearTimeout(timer);
@@ -5980,7 +6015,7 @@ body.camp-nocards #marketBox { display: none !important; }
     const watch = out.seats.every((x) => x !== "mensch");
     const humans = out.seats.filter((x) => x === "mensch").length;
     live = { legal: out.legal, humanToMove: out.human_to_move, outcome: out.outcome, seats: out.seats, hotseat: humans > 1, watch };
-    campRun = camp ? { lv: camp, done: false, result: null } : null;
+    campRun = camp ? { lv: camp, done: false, result: null, bonus: bonus || 0 } : null;
     playing = watch; // Zuschauen laeuft sofort los
     R = liveR;
     selected = null; fi = 0; tween = null; hoverCell = null;
@@ -6399,7 +6434,7 @@ body.camp-nocards #marketBox { display: none !important; }
 
   // ----- Version 3.9: Kampagne (Phase 1: Level 1 und 2) ------------------------------------------------------
   const CAMP_KEY = "spacevitan.campaign.v1";
-  const CAMP_BASE = "territory=1,terr_v3=1,terr_terrain=1,terr_favor=1,terr_kamikaze=0";
+  const CAMP_BASE = "territory=1,terr_v3=1,terr_terrain=1,terr_favor=1,terr_kamikaze=0,terr_kingup=0";
   /** Karten, die in Level 2 nicht gezogen werden: nur „Kürzer“ bleibt im Markt. */
   const CAMP_ONLY_SHORTEN = ["bend", "hop", "pass", "pawn_diagonal", "settle", "factory_shift", "charge", "mining", "smelter", "double_move", "king_boost"].map((k) => `pool.${k}=0`).join(",");
   /** Die Level. `seats`: 2 = du (Spieler A), sonst der Gegner (0 leicht, 4 mittel); `fast`: so früh muss der König fallen für den dritten Stern. */
@@ -6408,14 +6443,15 @@ body.camp-nocards #marketBox { display: none !important; }
       title: "Kapitel 1: Das friedliche Königreich",
       levels: [
         {
-          id: "1-1", title: "Der Überfall", sub: "kleine Karte, nur Fläche",
+          id: "1-1", title: "Der Überfall", sub: "7×7, nur Fläche, die Mitte ist umkämpft",
           story: [
             "Hundert Jahre lang war dein Königreich friedlich. Dann stehen fremde Reiter an der Grenze, und ihr König will dein Land.",
             "Du hast kein Eisen und keine Karten, nur Fläche. Jede Runde bringt sie dir ein, und für Fläche kaufst du Bauern. Dein Boden ist besser als der des Feindes: nutze es.",
+            "Das Feld in der Mitte erreicht ihr beide gleich schnell. Dort wird es sich entscheiden.",
           ],
-          goal: "Fange den gegnerischen König. Hast du ihn bis Runde 30 nicht, gewinnt, wer mehr Punkte hat.",
-          rules: `${CAMP_BASE},terr_dep=0,market_size=0,side=6,score_after=30,terr_pawn=15`,
-          seats: [2, 0], corners: 4, seed: 7, fast: 20, res: [], cards: false,
+          goal: "Fange den gegnerischen König. Hast du ihn bis Runde 40 nicht, gewinnt, wer mehr Punkte hat.",
+          rules: `${CAMP_BASE},terr_dep=0,market_size=0,side=7,score_after=40,terr_pawn=15`,
+          seats: [2, 0], corners: 4, seed: 7, fast: 30, res: [], cards: false,
         },
         {
           id: "1-2", title: "Das erste Eisen", sub: "Eisen und die Karte „Kürzer“",
@@ -6431,6 +6467,8 @@ body.camp-nocards #marketBox { display: none !important; }
     },
   ];
   const CAMP_LEVELS = CAMPAIGN.flatMap((c) => c.levels);
+  /** Belohnung für das nächste Level: Startfläche, je nach Sternen des vorigen Levels (0 bis 3 Sterne). */
+  const CAMP_REWARD = [0, 8, 15, 30];
   let campRun = null;   // { lv, done, result } solange eine Kampagnenpartie läuft
   let campView = null;  // null = Levelliste, sonst das Level, dessen Geschichte gezeigt wird
   let campProgress = {};
@@ -6444,13 +6482,17 @@ body.camp-nocards #marketBox { display: none !important; }
   const campStars = (id) => Math.max(0, Math.min(3, Number((campProgress[id] || {}).stars) || 0));
   const starText = (n) => "★".repeat(n) + "☆".repeat(3 - n);
   const campUnlocked = (i) => i === 0 || campStars(CAMP_LEVELS[i - 1].id) >= 1;
+  /** Flächenboost, den das Level Nr. `i` aus dem vorigen mitbringt (Startfläche für dich). */
+  const campBonus = (i) => (i > 0 ? CAMP_REWARD[campStars(CAMP_LEVELS[i - 1].id)] : 0);
+  const campIndex = (lv) => CAMP_LEVELS.findIndex((x) => x.id === lv.id);
   function campRender() {
     const box = $("campPop");
     if (campView) {
       const lv = campView;
       box.innerHTML = `<div class="cm-box"><h3>Level ${escapeHtml(lv.id)}: ${escapeHtml(lv.title)}</h3>` +
         `<div class="cm-story">${lv.story.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}</div>` +
-        `<p class="cm-goal"><b>Ziel:</b> ${escapeHtml(lv.goal)}<br><b>Sterne:</b> ★ gewonnen · ★★ König gefangen · ★★★ König gefangen bis Runde ${lv.fast}</p>` +
+        `<p class="cm-goal"><b>Ziel:</b> ${escapeHtml(lv.goal)}<br><b>Sterne:</b> ★ gewonnen · ★★ König gefangen · ★★★ König gefangen bis Runde ${lv.fast}` +
+        (campBonus(campIndex(lv)) > 0 ? `<br><b>Mitgebracht:</b> Flächenboost +${campBonus(campIndex(lv))} Fläche zum Start (Belohnung aus Level ${escapeHtml(CAMP_LEVELS[campIndex(lv) - 1].id)})` : "") + `</p>` +
         `<div class="cm-btns"><button type="button" class="btn" data-cm="list">Zurück</button><button type="button" class="btn go" data-cm="go">Los geht’s</button></div></div>`;
       const b = box.querySelector("[data-cm='go']"); if (b) b.focus({ preventScroll: true });
       return;
@@ -6467,9 +6509,10 @@ body.camp-nocards #marketBox { display: none !important; }
   function closeCamp() { campView = null; $("campPop").hidden = true; }
   function startCampaignLevel(lv) {
     try {
-      sendRules(lv.rules);
+      const bonus = campBonus(campIndex(lv));
+      sendRules(bonus > 0 ? `${lv.rules},camp_bonus_area=${bonus}` : lv.rules);
       closeMenu(); closeCamp();
-      startLive(lv.seats, lv.corners, lv.seed, lv);
+      startLive(lv.seats, lv.corners, lv.seed, lv, bonus);
     } catch (err) {
       openMenu(hadGame());
       showMenuError(err.message);
@@ -6511,6 +6554,7 @@ body.camp-nocards #marketBox { display: none !important; }
     if (!campRun || !campRun.result) return null;
     const r = campRun.result, lv = campRun.lv, next = campNext();
     const best = campStars(lv.id);
+    const reward = r.win && next ? CAMP_REWARD[campStars(lv.id)] : 0;
     let note;
     if (!r.win) note = "Kein Stern. Versuche es noch einmal.";
     else if (r.quick) note = "Drei Sterne: König gefangen in Runde " + r.round + ".";
@@ -6518,7 +6562,8 @@ body.camp-nocards #marketBox { display: none !important; }
     else note = "Ein Stern. Für den zweiten Stern musst du den gegnerischen König fangen.";
     const buttons = `<button type="button" class="btn" data-ep="close">Brett ansehen</button><button type="button" class="btn" data-ep="again">Nochmal</button>` +
       (r.win && next ? `<button type="button" class="btn go" data-ep="next">Nächstes Level</button>` : `<button type="button" class="btn go" data-ep="camp">Kampagne</button>`);
-    return { html: `<p class="ep-stars" aria-label="${r.stars} von 3 Sternen">${starText(r.stars)}</p><p class="ep-camp">${escapeHtml(note)}${best > r.stars ? ` Dein bestes Ergebnis: ${best} von 3.` : ""}</p>`, buttons };
+    return { html: `<p class="ep-stars" aria-label="${r.stars} von 3 Sternen">${starText(r.stars)}</p><p class="ep-camp">${escapeHtml(note)}${best > r.stars ? ` Dein bestes Ergebnis: ${best} von 3.` : ""}</p>` +
+      (reward > 0 ? `<p class="ep-reward">Belohnung: Flächenboost +${reward} Fläche, du nimmst ihn mit in Level ${escapeHtml(next.id)}.</p>` : ""), buttons };
   }
   function renderCampBar() {
     const bar = $("campBar");

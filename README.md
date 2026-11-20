@@ -857,6 +857,28 @@ aendern, und man kann eigene Karten bauen.
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
 
+### Version 3.10 (Wuensche vom 20.11.2026, dritter Teil)
+
+- **Paket "Unterhalt nach Anzahl" jetzt mit k=1** (eine Figur 1, zwei 4, drei 9, vier 16, fuenf 25). Messung siehe 3.9: k=1
+  beseitigt die Mauern (hoechstens 6 statt 16 gleichzeitige Figuren), die Ernte bleibt bei etwa der Haelfte. k=2 bleibt ueber das
+  Feld "Unterhalt nach Anzahl (k)" einstellbar.
+- **Hungersnot: `terr_famine=N`, `terr_famine_k=K`** (Standard aus, K = 2). Jede N-te Runde (N, 2N, 3N ...) rechnet der Unterhalt nach
+  Anzahl mit K statt `terr_upkeep_cnt`, also zum Beispiel k=1 gegen k=2 (viermal so viel). Gilt fuer alle Spieler gleich und
+  ist vorhersehbar. `Game::famine_round()` und `Game::upkeep_k()` im Spielkern (die Runde zaehlt `State::round`),
+  `Config::validate` verlangt den Unterhalt nach Anzahl und K von 1 bis 20. Bots rechnen die Hungersnot in ihrer Suche mit, weil
+  sie `territory_upkeep` benutzen. Im Browser: eine orange Leiste ueber dem Zug sagt die naechste Hungersnot an ("in 3 Runden,
+  dann kostet eine Figur 4 statt 1, zwei 16 statt 4 ..."), in der Runde selbst ist sie kraeftiger ("Hungersnot in Runde 10!"); die
+  Anzeige der Figurenkosten und die Auflose-Auswahl rechnen mit dem k der Runde. Paket "Mit Hungersnot" (k=1, jede 10. Runde) und
+  zwei Felder in den erweiterten Einstellungen. FAMINE_MESSUNG
+- **Kampagne: Aenderungen an Level 1 und 2.** Level 1 ist jetzt 7x7 (ungerade: die Mitte erreichen beide gleich schnell, Wertung nach
+  Runde 40, dritter Stern bis Runde 30; Messung: starker Bot gegen leichten 30 von 30, 25 davon per Koenigsfang, im Schnitt Runde 31).
+  Beide Level schalten das Koenigs-Upgrade ab (`terr_kingup=0`, es gibt ja kein Gold); in Level 1 sind zudem Karten und
+  Gold-Kacheln ausgeblendet.
+- **Kampagne: Belohnung.** Wer ein Level gewinnt, nimmt einen Flaechenboost ins naechste mit: Startflaeche fuer Spieler A,
+  je nach den (besten) Sternen des vorigen Levels 0 / 8 / 15 / 30 (`CAMP_REWARD` im Viewer, ein Bauer kostet 15). Spielkern:
+  `camp_bonus_area=N` (Spieler A beginnt mit N Flaeche, die anderen mit 0; `Config::validate`: hoechstens 1000). Die Geschichte des
+  naechsten Levels und das Ergebnisfenster nennen den Boost.
+
 ### Version 3.9 (Wuensche vom 20.11.2026, zweiter Teil)
 
 - **Startmenue: Form des Bretts.** Neue Zeile "Form des Bretts" (Automatisch, Quadrat, Dreieck, Fuenfeck, Sechseck,
