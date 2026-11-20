@@ -892,6 +892,28 @@ aendern, und man kann eigene Karten bauen.
   schwaechste Figur weg (bei gleicher Stufe die zuletzt gebaute); der Unterhalt wird nach jeder Figur neu gerechnet.
   Im Menue "Unterhalt nach Anzahl (k)" bei den erweiterten Regeln. Die Kommandozeile zeigt jetzt
   "Figuren gleichzeitig (ohne Koenig, je Spieler zu Rundenbeginn)" als Mittel und Hoechstwert.
+- **Messung: verschwinden die Mauern?** 16 Partien stark gegen stark, Seite 10, `territory=1,terr_v3=1,score_after=120`, Seeds 11 bis 26,
+  ohne Regel gegen `terr_upkeep_cnt=2` und `terr_upkeep_cnt=1` (Zahlen aus der Kommandozeile; 16 Partien sind wenig, Siegquoten
+  von 50 bis 56 % sagen nichts):
+
+  | | ohne | k=1 | k=2 |
+  |---|---|---|---|
+  | Figuren gleichzeitig je Spieler (Mittel / Hoechstwert) | 3,9 / 16 | 1,9 / 6 | 1,2 / 3 |
+  | Figuren gebaut je Partie | 15,1 | 8,2 | 5,5 |
+  | geschlagen je Partie | 4,9 | 3,8 | 2,6 |
+  | aufgeloest je Partie | 0 | 0 | 0,25 |
+  | Ernte je Partie (Kat 1 / 2 / 3) | 48 / 19 / 23 | 26 / 9 / 12 | 13 / 6 / 6 |
+  | Erste Figur Stufe 2 (Runde, in wie vielen Partien) | 96,8 (10 von 16) | 77,2 (10 von 16) | 62,9 (7 von 16) |
+  | Runden im Schnitt | 98,9 | 81,9 | 84,8 |
+  | Siege erst nach Wertung | 8 von 16 | 3 von 16 | 4 von 16 |
+  | Landanteil des Fuehrenden am Ende | 83 % | 93 % | 97 % |
+
+  Ja, die Mauern verschwinden (Hoechstwert 16 gleichzeitige Figuren gegen 6 bei k=1 und 3 bei k=2), aber der Preis ist hoch:
+  die Ernte sinkt bei k=1 auf etwa die Haelfte, bei k=2 auf etwa ein Viertel, weil kaum noch Figuren auf Vorkommen stehen,
+  und die Partien enden haeufiger mit einem gefangenen Koenig (13 oder 12 von 16 gegen 8 von 16). Der erste Bauer kostet bei k=2
+  schon 4 Flaeche je Runde, mehr als der Unterhalt nach Stufe verlangt. Die Bots rechnen den Unterhalt nur in ihrer Suche
+  mit und planen nicht darauf; ein Mensch kann sich besser darauf einstellen. k=1 ist der sanftere Ausgangspunkt: noch
+  wenige Figuren je Spieler, aber die Wirtschaft laeuft weiter.
 - **Welche Figur sich aufloest, waehlt der Mensch (`terr_upkeep_pick`, Bitmaske der Spieler).** Reicht die Flaeche nicht fuer
   den Unterhalt, wartet das Spiel (`State::dissolve_due`, `Event::DissolveDue`): erlaubt ist nur noch `Action::Dissolve`
   mit einer eigenen Figur (nie der Koenig); danach wird neu gerechnet, reicht es immer noch nicht, kommt die naechste
@@ -901,10 +923,24 @@ aendern, und man kann eigene Karten bauen.
   Unterhalt" mit der Liste der Figuren (Stufe, Feld, wie viel Unterhalt sie spart; der Zeiger auf einem Eintrag
   markiert die Figur auf dem Brett rot), Klick = "Wirklich diese Figur aufloesen?" mit "Zurueck" / "Ja, aufloesen",
   danach ist sie weg. Gilt auch fuer den Unterhalt nach Stufe.
-- **Kampagne, Spielkern (noch ohne Oberflaeche):** `terr_favor=1` gibt Spieler A die besseren Flaechen (mehr Feld, weniger Moor in
-  seiner Ecke; Bedingung `terr_terrain`), `terr_dep=N` laesst nur die gewaehlten Rohstoffkategorien als Vorkommen stehen
-  (Bit 0 Eisen, 1 Gold, 2 Brot, 3 Kat 4; 15 = alle, 1 = nur Eisen); die Karte wird erst gewuerfelt, auf Fairness geprueft und
-  dann gefiltert, bleibt also fuer alle gleich.
+- **Kampagne (Phase 1: Level 1 und 2).** Knopf "Kampagne" im Startmenue oeffnet die Levelliste (Sterne je Level, Level 2 erst
+  nach einem Stern in Level 1), dann die Geschichte mit Ziel und Sternen, "Los geht's" startet. Der Spielkern bekommt die
+  Regeln des Levels (`CAMPAIGN` im Viewer: Regeltext, Platzarten, Brettform, fester Seed, `res` = welche Rohstoffe es gibt,
+  `cards` = ob es Karten gibt); das Menue und seine gemerkten Einstellungen bleiben unberuehrt. Sterne: 1 gewonnen, 2 Koenig
+  gefangen (Bonus), 3 Koenig gefangen bis Runde `fast` (Level 1: 20, Level 2: 30). Der beste Stand je Level steht im
+  `localStorage` (`spacevitan.campaign.v1`, ohne Speicher gilt er nur fuer die Sitzung). Im Spiel zeigt eine gelbe Leiste Level
+  und Ziel; am Ende kommt das Ergebnisfenster mit Sternen und "Nochmal" / "Naechstes Level" / "Kampagne".
+  - Level 1 "Der Ueberfall": 6x6, nur Flaeche (`terr_dep=0`, keine Karten, `terr_pawn=15`), mehr Flaeche fuer den Spieler
+    (`terr_favor=1`), Gegner leicht, Wertung nach Runde 30. Messung: ein starker Bot als Spieler gewinnt 29 von 30 Partien
+    gegen den leichten Bot, im Schnitt in Runde 23; Seed 7 (der feste Seed des Levels) in Runde 20 durch Koenigsfang.
+  - Level 2 "Das erste Eisen": 8x8, nur Eisen (`terr_dep=1`), im Markt nur die Karte "Kuerzer" (3 Eisen), Gegner mittel,
+    Wertung nach Runde 40. Messung: starker Bot gegen mittleren Bot gewinnt 16 von 20 (80 %).
+  - Spielkern-Schalter dafuer (seit dc8d07f): `terr_favor=1` gibt Spieler A die besseren Flaechen (mehr Feld, weniger Moor in
+    seiner Ecke; Bedingung `terr_terrain`), `terr_dep=N` laesst nur die gewaehlten Rohstoffkategorien als Vorkommen stehen
+    (Bit 0 Eisen, 1 Gold, 2 Brot, 3 Kat 4; 15 = alle); die Karte wird erst gewuerfelt, auf Fairness geprueft und dann
+    gefiltert, bleibt also fuer alle gleich.
+  - Noch nicht gebaut: Brot und Karten (Level 3), Gold (letztes Level des zweiten Kapitels, zwei Karten zum Mitnehmen),
+    Dreieckskarte mit verbuendetem Bot, Karte "Figur aufwerten", globaler Haushalt, Geschichte zwischen den Kapiteln.
 
 ### Version 3.8 (Wuensche vom 20.11.2026)
 

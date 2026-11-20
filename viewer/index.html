@@ -432,6 +432,26 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .endpop .ep-scores b { color: var(--ink); }
 .endpop .ep-btns { display: flex; gap: 8px; margin-top: 4px; }
 .endpop .ep-btns .btn { flex: 1; min-height: 46px; font-weight: 700; cursor: pointer; }
+.camppop { z-index: 70; }
+.camppop .cm-box { width: min(460px, 100%); max-height: 100%; overflow: auto; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-top: 6px solid var(--accent); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 16px 44px rgb(0 0 0 / 0.55); }
+.camppop h3 { margin: 0; font-family: var(--font-display); font-size: 1.25rem; }
+.camppop .cm-chap { margin: 4px 0 0; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.camppop .cm-list { display: grid; gap: 6px; }
+.camppop .cm-lv { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.camppop .cm-lv:hover:not(:disabled), .camppop .cm-lv:focus-visible { border-color: var(--accent); outline: none; }
+.camppop .cm-lv:disabled { opacity: 0.5; cursor: default; }
+.camppop .cm-lv .cm-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.camppop .cm-lv .cm-t small { color: var(--muted); }
+.camppop .cm-stars, .endpop .ep-stars { color: #d9a21b; white-space: nowrap; letter-spacing: 3px; }
+.camppop .cm-story p { margin: 0 0 8px; line-height: 1.45; font-size: 0.95rem; }
+.camppop .cm-goal { margin: 0; padding: 6px 10px; border-left: 4px solid var(--accent); background: rgb(127 127 127 / 0.12); font-size: 0.9rem; line-height: 1.4; }
+.camppop .cm-btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.camppop .cm-btns .btn { min-height: 44px; }
+.camppop .cm-btns .btn.go { background: #2f9e55; border-color: #2f9e55; color: #fff; }
+.endpop .ep-stars { margin: 0; font-size: 2rem; }
+.endpop .ep-camp { margin: 0; font-size: 0.9rem; line-height: 1.4; color: var(--muted); }
+body.camp-nocards #marketBox { display: none !important; }
+.campbar { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid #d9a21b; background: rgb(217 162 27 / 0.14); font-size: 0.86rem; line-height: 1.35; }
 .cardpop .cp-btns { display: flex; gap: 8px; }
 .cardpop .cp-btns .btn { flex: 1; min-height: 44px; font-weight: 700; cursor: pointer; }
 .cardpop .cp-btns .btn:disabled { cursor: default; opacity: 0.5; }
@@ -617,6 +637,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <p class="note qnote" id="qNote"></p>
       <div class="qgo">
         <button class="btn primary big" type="submit" id="menuStart">Partie starten</button>
+        <button class="btn" type="button" id="qCampaign">Kampagne</button>
         <button class="btn" type="button" id="qHot">Zu zweit an einem Gerät</button>
         <button class="btn" type="button" id="qWatch">Zuschauen (Bot gegen Bot)</button>
         <button class="btn" type="button" id="menuBack" hidden>Zurück zur Partie</button>
@@ -703,6 +724,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       </div>
     </div>
     <p class="status" id="status"></p>
+    <p class="campbar" id="campBar" hidden></p>
     <div id="turnBox" class="turnbox" hidden>
       <p class="hint" id="hint"></p>
       <div class="actions" id="actions"></div>
@@ -756,6 +778,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 </main>
 <div id="cardPop" class="cardpop" hidden role="dialog" aria-modal="true" aria-label="Karte"></div>
 <div id="endPop" class="cardpop endpop" hidden role="dialog" aria-modal="true" aria-label="Spielende"></div>
+<div id="campPop" class="cardpop camppop" hidden role="dialog" aria-modal="true" aria-label="Kampagne"></div>
 <div id="dissolvePop" class="cardpop dissolvepop" hidden role="dialog" aria-modal="true" aria-label="Figur auflösen"></div>
 
 <script type="application/json" id="samples">[]</script>
@@ -3163,6 +3186,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     return out;
   }
+  /** Kampagne: gibt es diesen Rohstoff (Kategorie 1 Eisen, 2 Gold, 3 Brot) in diesem Level? Sonst bleibt die Kachel weg. */
+  const campRes = (c) => !campRun || !campRun.lv.res || campRun.lv.res.includes(c);
   function renderTerritoryStock(f, p) {
     const fac = f.factories.find((x) => x.owner === p);
     const rows = [...armedRows(f)];
@@ -3185,9 +3210,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const areaTip = `Fläche ${area}. Am Ende deines Zugs: ${fmtNum(inc.area)} Land${inc.bonus ? `, +${inc.bonus} durch ${inc.k3}× Brot` : ""}${inc.upkeep ? `, −${inc.upkeep} Unterhalt` : ""} = ${signed(inc.net)}`;
     tiles.push(rsHtml(symSvg(areaKind(), 24, color, false, "Fläche"), area, growthHtml(inc.net, areaTip), areaTip));
     const rateTip = (name, c) => `${name} im Lager. In Klammern: Durchschnitt je Runde (Ertrag der besetzten Vorkommen geteilt durch ihre Erntezeit), ${signed2(inc.rate[c])}. Am Ende deines nächsten Zugs kommen konkret ${inc[c]} dazu.`;
-    tiles.push(rsHtml(symSvg("iron", 24, null, false, "Eisen"), stock(1), growthHtml(inc.rate[1], rateTip("Eisen", 1)), "Eisen (Kat 1)"));
-    tiles.push(rsHtml(symSvg("gold", 24, null, false, "Gold"), stock(2), growthHtml(inc.rate[2], rateTip("Gold", 2)), "Gold (Kat 2)"));
-    if (bonusOn()) {
+    if (campRes(1)) tiles.push(rsHtml(symSvg("iron", 24, null, false, "Eisen"), stock(1), growthHtml(inc.rate[1], rateTip("Eisen", 1)), "Eisen (Kat 1)"));
+    if (campRes(2)) tiles.push(rsHtml(symSvg("gold", 24, null, false, "Gold"), stock(2), growthHtml(inc.rate[2], rateTip("Gold", 2)), "Gold (Kat 2)"));
+    if (!campRes(3)) { /* Kampagne: Brot gibt es in diesem Level nicht */ } else if (bonusOn()) {
       const tip = `Brot (Kat 3) wird nicht gelagert: ${inc.k3} verbundene${inc.k3 === 1 ? "s Feld" : " Felder"} bringen dir je Runde ${inc.bonus} Fläche (2^${inc.k3}); das nächste brächte ${bonusArea(inc.k3 + 1)}.`;
       tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), inc.k3, growthHtml(inc.bonus, tip) + `<small class="u">Fläche je Runde</small>`, tip));
     } else {
@@ -3217,7 +3242,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         `<div class="lb"><b>${unitTitle(level)}</b><small>Stufe ${level}${upkeepOn() ? ` · ${upkeepNote(f, p, level)}` : ""}</small></div><span class="st">${when}</span><div class="need">${reqs}</div></div>`);
     }
     // --- Koenig mit Gold verbessern
-    const ku = kingUpInfo(f, p);
+    const ku = campRes(2) ? kingUpInfo(f, p) : null;
     if (ku) {
       rows.push(`<p class="sec">König verbessern (Gold)</p>`);
       if (ku.done) {
@@ -3235,6 +3260,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const empty = cardAnyOn()
       ? "Keine. „Fabrik rücken“ wirkt sofort (die Fabrik muss gleich diagonal rücken). Kürzer, Ecke und Sprung wirken gleich auf eine Figur deiner Wahl (auch eine schon gebaute)."
       : "Keine. Eine gekaufte Karte liegt hier und wirkt auf die nächste gebaute Figur (nur eine zur Zeit).";
+    if (campRun && campRun.lv.cards === false) return rows;   // Kampagne: in diesem Level gibt es keine Karten
     rows.push(`<div class="loc"><b>Karte neben der Fabrik</b><span class="sub">${sc ? `„${escapeHtml(CARD(sc).name)}“ – ${sc === "factory_shift" ? "rückt die Fabrik diagonal (sofort, statt eines Zuges)." : "wirkt auf die nächste gebaute Figur."}` : empty}</span></div>`);
     return rows;
   }
@@ -3931,15 +3957,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!info) { closeEndPop(); return; }
     const box = $("endPop");
     const list = info.scores.length ? `<ul class="ep-scores">${info.scores.map((x) => `<li>${escapeHtml(playerName(x.p))}: <b>${x.n}</b></li>`).join("")}</ul>` : "";
-    box.innerHTML = `<div class="ep-box ${info.tone}"><h2 class="ep-title">${escapeHtml(info.title)}</h2><p class="ep-why">${escapeHtml(info.why)}</p>${list}` +
-      `<div class="ep-btns"><button type="button" class="btn" data-ep="close">Brett ansehen</button><button type="button" class="btn go" data-ep="new">Neue Partie</button></div></div>`;
+    const cp = campEndPart();
+    box.innerHTML = `<div class="ep-box ${info.tone}"><h2 class="ep-title">${escapeHtml(info.title)}</h2><p class="ep-why">${escapeHtml(info.why)}</p>${list}${cp ? cp.html : ""}` +
+      `<div class="ep-btns">${cp ? cp.buttons : `<button type="button" class="btn" data-ep="close">Brett ansehen</button><button type="button" class="btn go" data-ep="new">Neue Partie</button>`}</div></div>`;
     box.hidden = false; endPopOpen = true;
-    const b = box.querySelector("[data-ep='new']"); if (b) b.focus({ preventScroll: true });
+    const b = box.querySelector("[data-ep='next'], [data-ep='camp'], [data-ep='new']"); if (b) b.focus({ preventScroll: true });
   }
   /** Nach dem letzten Zug kurz warten (die Figur soll noch zu Ende ziehen), dann das Fenster oeffnen; je Partie einmal. */
   function scheduleEndPop() {
     if (!live || !live.outcome || endPopFor === liveR) return;
     endPopFor = liveR;
+    safely("Kampagne: Ergebnis", campFinish);
     clearTimeout(endPopTimer);
     endPopTimer = setTimeout(showEndPop, reduceMotion ? 50 : 900);
   }
@@ -3947,6 +3975,13 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const box = $("endPop"), t = ev.target.closest("[data-ep]");
     if (ev.target === box || (t && t.dataset.ep === "close")) { closeEndPop(); return; }
     if (t && t.dataset.ep === "new") { closeEndPop(); $("newGame").click(); }
+    if (t && campRun && ["again", "next", "camp"].includes(t.dataset.ep)) {
+      const k = t.dataset.ep, lv = campRun.lv, next = campNext();
+      closeEndPop();
+      if (k === "again") startCampaignLevel(lv);
+      else if (k === "next" && next) startCampaignLevel(next);
+      else { openMenu(true); openCamp(null); }
+    }
   });
   // ----- Version 3.9: zu wenig Flaeche fuer den Unterhalt, der Spieler waehlt, welche Figur sich aufloest ----
   let dissolveSel = null;     // gewaehlte Figur, die noch bestaetigt werden muss
@@ -5932,7 +5967,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   /** Neue Partie: `seats` sind die Platzarten je Spieler (Codes des Spielkerns), `corners` die Brettform
    *  (3 bis 8, 0 = nach Spielerzahl). */
-  function startLive(seats, corners, seed) {
+  function startLive(seats, corners, seed, camp) {
     clearTimeout(botTimer);
     closeEndPop(); endPopFor = null;
     playing = false; clearTimeout(timer);
@@ -5945,6 +5980,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const watch = out.seats.every((x) => x !== "mensch");
     const humans = out.seats.filter((x) => x === "mensch").length;
     live = { legal: out.legal, humanToMove: out.human_to_move, outcome: out.outcome, seats: out.seats, hotseat: humans > 1, watch };
+    campRun = camp ? { lv: camp, done: false, result: null } : null;
     playing = watch; // Zuschauen laeuft sofort los
     R = liveR;
     selected = null; fi = 0; tween = null; hoverCell = null;
@@ -6096,6 +6132,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   }
   function renderTurnBox() {
     safely("Unterhalt: Figur wählen", renderDissolvePop);
+    safely("Kampagne: Leiste", renderCampBar);
     const box = $("turnBox");
     if (mode !== "play" || !live || R !== liveR) { box.hidden = true; return; }
     box.hidden = false;
@@ -6359,6 +6396,137 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   $("setup").addEventListener("submit", (e) => { e.preventDefault(); submitMenu(""); });
   $("qHot").addEventListener("click", () => submitMenu("hot"));
   $("qWatch").addEventListener("click", () => submitMenu("watch"));
+
+  // ----- Version 3.9: Kampagne (Phase 1: Level 1 und 2) ------------------------------------------------------
+  const CAMP_KEY = "spacevitan.campaign.v1";
+  const CAMP_BASE = "territory=1,terr_v3=1,terr_terrain=1,terr_favor=1,terr_kamikaze=0";
+  /** Karten, die in Level 2 nicht gezogen werden: nur „Kürzer“ bleibt im Markt. */
+  const CAMP_ONLY_SHORTEN = ["bend", "hop", "pass", "pawn_diagonal", "settle", "factory_shift", "charge", "mining", "smelter", "double_move", "king_boost"].map((k) => `pool.${k}=0`).join(",");
+  /** Die Level. `seats`: 2 = du (Spieler A), sonst der Gegner (0 leicht, 4 mittel); `fast`: so früh muss der König fallen für den dritten Stern. */
+  const CAMPAIGN = [
+    {
+      title: "Kapitel 1: Das friedliche Königreich",
+      levels: [
+        {
+          id: "1-1", title: "Der Überfall", sub: "kleine Karte, nur Fläche",
+          story: [
+            "Hundert Jahre lang war dein Königreich friedlich. Dann stehen fremde Reiter an der Grenze, und ihr König will dein Land.",
+            "Du hast kein Eisen und keine Karten, nur Fläche. Jede Runde bringt sie dir ein, und für Fläche kaufst du Bauern. Dein Boden ist besser als der des Feindes: nutze es.",
+          ],
+          goal: "Fange den gegnerischen König. Hast du ihn bis Runde 30 nicht, gewinnt, wer mehr Punkte hat.",
+          rules: `${CAMP_BASE},terr_dep=0,market_size=0,side=6,score_after=30,terr_pawn=15`,
+          seats: [2, 0], corners: 4, seed: 7, fast: 20, res: [], cards: false,
+        },
+        {
+          id: "1-2", title: "Das erste Eisen", sub: "Eisen und die Karte „Kürzer“",
+          story: [
+            "Der Feind hat sich zurückgezogen, aber er kommt wieder. In den Bergen am Rand deines Landes wurde Eisen gefunden.",
+            "Stelle eine Figur auf ein Eisenvorkommen und sie bringt es dir ein. Dafür kaufst du die Karte „Kürzer“: Die nächste Figur darf einen Schritt weniger ziehen, so stehst du genau neben dem Feind.",
+          ],
+          goal: "Fange den gegnerischen König. Hast du ihn bis Runde 40 nicht, gewinnt, wer mehr Punkte hat.",
+          rules: `${CAMP_BASE},terr_dep=1,market_size=1,${CAMP_ONLY_SHORTEN},price.shorten=3/0/0,side=8,score_after=40,terr_pawn=15`,
+          seats: [2, 4], corners: 4, seed: 11, fast: 30, res: [1],
+        },
+      ],
+    },
+  ];
+  const CAMP_LEVELS = CAMPAIGN.flatMap((c) => c.levels);
+  let campRun = null;   // { lv, done, result } solange eine Kampagnenpartie läuft
+  let campView = null;  // null = Levelliste, sonst das Level, dessen Geschichte gezeigt wird
+  let campProgress = {};
+  function campLoad() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CAMP_KEY) || "null");
+      if (raw && typeof raw === "object") campProgress = raw;
+    } catch (err) { /* Speicher gesperrt: der Fortschritt gilt nur für diese Sitzung */ }
+  }
+  function campSave() { try { localStorage.setItem(CAMP_KEY, JSON.stringify(campProgress)); } catch (err) { /* siehe oben */ } }
+  const campStars = (id) => Math.max(0, Math.min(3, Number((campProgress[id] || {}).stars) || 0));
+  const starText = (n) => "★".repeat(n) + "☆".repeat(3 - n);
+  const campUnlocked = (i) => i === 0 || campStars(CAMP_LEVELS[i - 1].id) >= 1;
+  function campRender() {
+    const box = $("campPop");
+    if (campView) {
+      const lv = campView;
+      box.innerHTML = `<div class="cm-box"><h3>Level ${escapeHtml(lv.id)}: ${escapeHtml(lv.title)}</h3>` +
+        `<div class="cm-story">${lv.story.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}</div>` +
+        `<p class="cm-goal"><b>Ziel:</b> ${escapeHtml(lv.goal)}<br><b>Sterne:</b> ★ gewonnen · ★★ König gefangen · ★★★ König gefangen bis Runde ${lv.fast}</p>` +
+        `<div class="cm-btns"><button type="button" class="btn" data-cm="list">Zurück</button><button type="button" class="btn go" data-cm="go">Los geht’s</button></div></div>`;
+      const b = box.querySelector("[data-cm='go']"); if (b) b.focus({ preventScroll: true });
+      return;
+    }
+    let idx = 0;
+    const chapters = CAMPAIGN.map((c) => `<p class="cm-chap">${escapeHtml(c.title)}</p><div class="cm-list">` + c.levels.map((lv) => {
+      const i = idx++, ok = campUnlocked(i);
+      return `<button type="button" class="cm-lv" data-cm="level" data-lv="${lv.id}"${ok ? "" : " disabled"}><span class="cm-t"><b>${escapeHtml(lv.id)} ${escapeHtml(lv.title)}</b><small>${ok ? escapeHtml(lv.sub) : "Gewinne das Level davor"}</small></span><span class="cm-stars" aria-label="${campStars(lv.id)} von 3 Sternen">${starText(campStars(lv.id))}</span></button>`;
+    }).join("") + "</div>").join("");
+    box.innerHTML = `<div class="cm-box"><h3>Kampagne</h3>${chapters}<p class="cm-chap">Weitere Level folgen</p><div class="cm-btns"><button type="button" class="btn" data-cm="close">Schließen</button></div></div>`;
+    const b = box.querySelector(".cm-lv:not(:disabled)") || box.querySelector("[data-cm='close']"); if (b) b.focus({ preventScroll: true });
+  }
+  function openCamp(level) { campLoad(); campView = level || null; campRender(); $("campPop").hidden = false; }
+  function closeCamp() { campView = null; $("campPop").hidden = true; }
+  function startCampaignLevel(lv) {
+    try {
+      sendRules(lv.rules);
+      closeMenu(); closeCamp();
+      startLive(lv.seats, lv.corners, lv.seed, lv);
+    } catch (err) {
+      openMenu(hadGame());
+      showMenuError(err.message);
+    }
+  }
+  $("campPop").addEventListener("click", (ev) => {
+    const box = $("campPop"), t = ev.target.closest("[data-cm]");
+    if (ev.target === box) { closeCamp(); return; }
+    if (!t) return;
+    const k = t.dataset.cm;
+    if (k === "close") closeCamp();
+    else if (k === "list") { campView = null; campRender(); }
+    else if (k === "level") { campView = CAMP_LEVELS.find((x) => x.id === t.dataset.lv) || null; campRender(); }
+    else if (k === "go" && campView) startCampaignLevel(campView);
+  });
+  $("qCampaign").addEventListener("click", () => openCamp(null));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("campPop").hidden) closeCamp(); });
+  /** Ergebnis der laufenden Kampagnenpartie: du bist Spieler A. */
+  function campResult() {
+    const o = live.outcome, lv = campRun.lv;
+    const win = o.type !== "draw" && o.player === 0;
+    const king = win && o.type === "winner";
+    const fr = liveR.frames;
+    const round = Math.max(1, fr.length > 1 ? fr[fr.length - 2].round : 1);
+    const quick = king && round <= lv.fast;
+    return { win, king, quick, round, stars: !win ? 0 : king ? (quick ? 3 : 2) : 1 };
+  }
+  /** Beim Spielende: Sterne merken (nur wenn besser als bisher). Einmal je Partie. */
+  function campFinish() {
+    if (!campRun || campRun.done || !live || !live.outcome) return;
+    campRun.done = true;
+    const r = campRun.result = campResult();
+    const old = campProgress[campRun.lv.id] || {};
+    if (r.stars > (Number(old.stars) || 0)) { campProgress[campRun.lv.id] = { stars: r.stars, rounds: r.round }; campSave(); }
+  }
+  const campNext = () => { const i = CAMP_LEVELS.findIndex((x) => x.id === campRun.lv.id); return i >= 0 ? CAMP_LEVELS[i + 1] || null : null; };
+  /** Zusatz im Ende-Fenster einer Kampagnenpartie: Sterne, was fehlt, Knöpfe. */
+  function campEndPart() {
+    if (!campRun || !campRun.result) return null;
+    const r = campRun.result, lv = campRun.lv, next = campNext();
+    const best = campStars(lv.id);
+    let note;
+    if (!r.win) note = "Kein Stern. Versuche es noch einmal.";
+    else if (r.quick) note = "Drei Sterne: König gefangen in Runde " + r.round + ".";
+    else if (r.king) note = `Zwei Sterne: König gefangen (Bonus). Der dritte Stern wartet, wenn du es bis Runde ${lv.fast} schaffst.`;
+    else note = "Ein Stern. Für den zweiten Stern musst du den gegnerischen König fangen.";
+    const buttons = `<button type="button" class="btn" data-ep="close">Brett ansehen</button><button type="button" class="btn" data-ep="again">Nochmal</button>` +
+      (r.win && next ? `<button type="button" class="btn go" data-ep="next">Nächstes Level</button>` : `<button type="button" class="btn go" data-ep="camp">Kampagne</button>`);
+    return { html: `<p class="ep-stars" aria-label="${r.stars} von 3 Sternen">${starText(r.stars)}</p><p class="ep-camp">${escapeHtml(note)}${best > r.stars ? ` Dein bestes Ergebnis: ${best} von 3.` : ""}</p>`, buttons };
+  }
+  function renderCampBar() {
+    const bar = $("campBar");
+    document.body.classList.toggle("camp-nocards", !!(campRun && campRun.lv.cards === false && mode === "play" && R === liveR));
+    if (!campRun || mode !== "play" || R !== liveR) { bar.hidden = true; return; }
+    bar.textContent = `Kampagne · Level ${campRun.lv.id} „${campRun.lv.title}“. ${campRun.lv.goal}`;
+    bar.hidden = false;
+  }
   // Schnellstart: Gegnerstaerke, Spielerzahl, Regelpaket
   $("qBot").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-bot]");
@@ -6479,7 +6647,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (!R) return;
     if (e.key === "Shift" || e.key === "Control" || e.key === "Meta") modifiersChanged(e.shiftKey, e.ctrlKey || e.metaKey);
     if (e.key === "Escape") {
-      facClose(); closeCardPop(); hideKingPop(); closeEndPop();
+      facClose(); closeCardPop(); hideKingPop(); closeEndPop(); closeCamp();
       if (shiftMode && !shiftForced()) { shiftMode = false; routeNote = ""; renderFactoryCard(); renderTurnBox(); }
       if (cardMode) { routeNote = ""; stopCardMode(); }
       if (inspect) { inspect = null; renderTurnBox(); requestAnimationFrame(draw); }
@@ -6551,7 +6719,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
     get cardMode() { return cardMode; }, get lockedId() { const f = R && R.frames[fi]; return f ? f.card_lock : null; }, get inspect() { return inspect; }, get hoverReach() { return hoverReachValid() ? hoverReach : null; }, get fx() { return fx; },
     get ready() { return wasm !== null; },
-    get ghost() { return ghostBuild(); }, get kingUp() { return kingUpIdx(); }, get cardPop() { return cardPopKey; }, get dissolve() { const b = $("dissolvePop"); return { open: !b.hidden, html: b.textContent, sel: dissolveSel }; }, get endPop() { const b = $("endPop"); return { open: !b.hidden, html: b.textContent }; }, showEndPop, scheduleEndPop, get kingPopOpen() { return kingPopOpen; }, get facOpen() { return facOpen; },
+    get ghost() { return ghostBuild(); }, get kingUp() { return kingUpIdx(); }, get cardPop() { return cardPopKey; }, get camp() { const b = $("campPop"); return { open: !b.hidden, text: b.textContent, run: campRun ? { id: campRun.lv.id, done: campRun.done, result: campRun.result } : null, progress: campProgress, bar: $("campBar").hidden ? "" : $("campBar").textContent }; }, campFake(o) { live.outcome = o; liveR.outcome = o; scheduleEndPop(); }, campReset() { campProgress = {}; campSave(); }, get dissolve() { const b = $("dissolvePop"); return { open: !b.hidden, html: b.textContent, sel: dissolveSel }; }, get endPop() { const b = $("endPop"); return { open: !b.hidden, html: b.textContent }; }, showEndPop, scheduleEndPop, get kingPopOpen() { return kingPopOpen; }, get facOpen() { return facOpen; },
     get shiftForced() { return shiftForced(); }, get shiftMode() { return shiftMode; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },
