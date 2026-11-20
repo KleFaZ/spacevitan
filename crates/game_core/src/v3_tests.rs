@@ -1107,6 +1107,53 @@ fn every_player_count_plays_on_every_board() {
 }
 
 #[test]
+fn odd_field_sizes_start_and_play_on_every_board_shape() {
+    // Wunsch vom 20.11.2026: auch ungerade Seitenlaengen (Quadrat: ein gemeinsames Mittelfeld).
+    for n in 3..=8usize {
+        let probe = {
+            let mut c = Config::new(2, 1);
+            c.board_corners = n as u8;
+            c
+        };
+        let (lo, hi) = probe.side_range();
+        for side in [7u32, 9, 11, 13, 15] {
+            if side < lo || side > hi {
+                continue;
+            }
+            for k in [2usize, n] {
+                for seed in [1u64, 2] {
+                    let mut cfg = Config::new(k as u8, seed);
+                    cfg.territory = true;
+                    cfg.set_v3(true);
+                    cfg.terr_terrain = true;
+                    cfg.board_corners = n as u8;
+                    cfg.side = side;
+                    cfg.max_rounds = 12;
+                    cfg.score_after = 12;
+                    let mut g = Game::new(cfg).unwrap_or_else(|e| {
+                        panic!("{n} Ecken, Seite {side}, {k} Spieler, Seed {seed}: {e}")
+                    });
+                    let mut bots: Vec<Box<dyn Bot>> = (0..k)
+                        .map(|i| Box::new(RandomBot::new(seed + i as u64)) as Box<dyn Bot>)
+                        .collect();
+                    for step in 0..60 {
+                        if g.outcome().is_some() {
+                            break;
+                        }
+                        let me = g.current_player().idx();
+                        let a = bots[me].choose(&g);
+                        g.apply(a).unwrap();
+                        g.check_invariants().unwrap_or_else(|e| {
+                            panic!("{n} Ecken, Seite {side}, {k} Spieler, Zug {step}: {e}")
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn random_players_that_rebuild_and_trade_never_break_the_rules() {
     // Zufallsspieler waehlen auch Umzug und Tausch, wann immer es geht.
     for seed in 0..6u64 {
@@ -1606,6 +1653,73 @@ fn a_card_locks_the_upgraded_figure_for_the_turn_but_not_the_others() {
     assert_eq!(g.current_player(), P1);
     assert!(!g.piece_destinations(a).is_empty());
     g.check_invariants().unwrap();
+}
+
+#[test]
+fn with_multibuy_several_cards_can_be_bought_and_every_upgraded_figure_rests() {
+    use crate::cards::Card;
+    // Standard: nach dem ersten Kauf ist Schluss, der zweite wird abgewiesen.
+    let mut g = card_game(&[Card::Bend, Card::Hop]);
+    let a = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let b = g.setup_unit(P0, c(&g, 7, 7), 2, 2);
+    let k1 = typ(&g, 0, 1);
+    stock(&mut g, P0, k1, 40);
+    stock_gold(&mut g, P0, 20);
+    buy(&mut g, Card::Bend, Some(a));
+    let fid = g.home_factory(P0).unwrap().id;
+    let second = Action::BuyCard {
+        card: Card::Hop,
+        from: crate::action::PaySource::Factory(fid),
+        target: Some(b),
+    };
+    assert!(
+        g.apply(second).is_err(),
+        "ohne Schalter nur eine Karte je Zug"
+    );
+    // Mit Schalter: beide, und beide Figuren ruhen, die dritte und der Koenig ziehen.
+    let mut g = card_game(&[Card::Bend, Card::Hop]);
+    g.config.terr_multibuy = true;
+    let a = g.setup_unit(P0, c(&g, 5, 5), 2, 2);
+    let b = g.setup_unit(P0, c(&g, 7, 7), 2, 2);
+    let free = g.setup_unit(P0, c(&g, 3, 3), 2, 2);
+    stock(&mut g, P0, k1, 40);
+    stock_gold(&mut g, P0, 20);
+    buy(&mut g, Card::Bend, Some(a));
+    assert!(!buys(&g).is_empty(), "der zweite Kauf ist erlaubt");
+    buy(&mut g, Card::Hop, Some(b));
+    assert_eq!(g.state.player_perks[0].cards_bought, 2);
+    assert_eq!(
+        moves_of(&g, a),
+        0,
+        "die erste verbesserte Figur ruht weiter"
+    );
+    assert_eq!(moves_of(&g, b), 0, "die zweite auch");
+    assert!(moves_of(&g, free) > 0 && moves_of(&g, king_id(&g, P0)) > 0);
+    g.check_invariants().unwrap();
+    // Der Zug endet mit einer Bewegung; beim naechsten Mal ruht niemand mehr.
+    let to = g.piece_destinations(free)[0];
+    g.apply(Action::Move { piece: free, to }).unwrap();
+    assert!(g.state.card_locks.is_empty() && g.state.card_lock.is_none());
+    assert!(!g.piece_destinations(a).is_empty() && !g.piece_destinations(b).is_empty());
+    assert_eq!(g.current_player(), P1);
+}
+
+#[test]
+fn multibuy_needs_the_territory_mode_and_no_whole_turn_cards() {
+    let mut c = Config::new(2, 1);
+    c.terr_multibuy = true;
+    assert!(c.validate().is_err(), "ohne Gebietsmodus");
+    let mut c = v3_config(2);
+    c.terr_multibuy = true;
+    assert!(c.validate().is_ok());
+    c.terr_cardlock = 2;
+    assert!(
+        c.validate().is_err(),
+        "Verbesserung = ganzer Zug passt nicht dazu"
+    );
+    let mut c = v3_config(2);
+    c.set("terr_multibuy", 1).unwrap();
+    assert!(c.terr_multibuy);
 }
 
 #[test]
@@ -4109,4 +4223,207 @@ fn whole_random_games_with_kamikaze_keep_every_invariant_and_really_use_the_card
     }
     println!("Angriffe {strikes}, verfallen {gone}, gekauft {bought}");
     assert!(strikes > 0, "mindestens ein Angriff kommt vor");
+}
+
+// ----- Version 3.9: Unterhalt nach Anzahl und Wahl der Figur zum Aufloesen -------------------
+
+fn dissolved(ev: &[Event]) -> Vec<(PieceId, u8)> {
+    ev.iter()
+        .filter_map(|x| match x {
+            Event::Dissolved { piece, level, .. } => Some((*piece, *level)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn upkeep_by_count_is_k_times_n_squared_whatever_the_levels() {
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_cnt = 2;
+    assert_eq!(g.territory_upkeep(P0), Some(0), "nur der Koenig: nichts");
+    g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    assert_eq!(g.territory_upkeep(P0), Some(4), "(2*1)^2");
+    g.setup_unit(P0, c(&g, 4, 0), 4, 4);
+    assert_eq!(
+        g.territory_upkeep(P0),
+        Some(16),
+        "(2*2)^2, die Stufe ist egal"
+    );
+    g.setup_unit(P0, c(&g, 5, 0), 2, 2);
+    assert_eq!(g.territory_upkeep(P0), Some(36), "(2*3)^2");
+    g.config.terr_upkeep_cnt = 1;
+    assert_eq!(g.territory_upkeep(P0), Some(9), "k = 1: n^2");
+    g.config.terr_upkeep_cnt = 0;
+    assert_eq!(
+        g.territory_upkeep(P0),
+        Some(1 + 4 + 2),
+        "aus: wie bisher nach Stufe"
+    );
+}
+
+#[test]
+fn without_the_pick_the_weakest_figure_goes_first_under_upkeep_by_count() {
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_cnt = 2;
+    let strong = g.setup_unit(P0, c(&g, 3, 0), 3, 3);
+    let weak = g.setup_unit(P0, c(&g, 4, 0), 1, 1);
+    let mid = g.setup_unit(P0, c(&g, 5, 0), 2, 2);
+    let e = earned(&g, P0);
+    // 36 Unterhalt bei 3 Figuren, 16 bei zwei: 20 Flaeche reichen fuer zwei.
+    give_area(&mut g, P0, 20 - e);
+    let ev = income(&mut g, P0);
+    assert_eq!(dissolved(&ev), vec![(weak, 1)], "die schwaechste zuerst");
+    assert!(g.state.pieces.contains_key(&strong) && g.state.pieces.contains_key(&mid));
+    assert_eq!(g.state.area[0], 4);
+    assert!(!g.state.dissolve_due, "ohne Wahl wartet nichts");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn a_human_picks_the_figure_that_dissolves_and_the_turn_waits_for_it() {
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_cnt = 2;
+    g.config.terr_upkeep_pick = 1; // Spieler A waehlt selbst
+    let strong = g.setup_unit(P0, c(&g, 3, 0), 3, 3);
+    let weak = g.setup_unit(P0, c(&g, 4, 0), 1, 1);
+    let mid = g.setup_unit(P0, c(&g, 5, 0), 2, 2);
+    let e = earned(&g, P0);
+    // Nach dem Ertrag stehen 10 Flaeche da: 36 (drei), 16 (zwei) und 4 (eine Figur): zwei muessen weg.
+    give_area(&mut g, P0, 10 - e);
+    let king = king_id(&g, P0);
+    let to = g.piece_destinations(king)[0];
+    let ev = g.apply(Action::Move { piece: king, to }).unwrap();
+    assert!(g.state.dissolve_due);
+    let have = ev
+        .iter()
+        .find_map(|x| match x {
+            Event::DissolveDue { area, upkeep, .. } => {
+                assert_eq!(*upkeep, 36);
+                Some(*area)
+            }
+            _ => None,
+        })
+        .expect("Meldung, dass gewaehlt werden muss");
+    assert!((4..16).contains(&have), "{have}");
+    assert_eq!(g.current_player(), P0, "der Zug endet erst nach der Wahl");
+    let legal = g.legal_actions();
+    assert_eq!(legal.len(), 3, "jede Figur, nie der Koenig: {legal:?}");
+    assert!(legal.iter().all(|a| matches!(a, Action::Dissolve { .. })));
+    assert!(
+        g.apply(Action::Move { piece: king, to }).is_err(),
+        "nichts anderes geht"
+    );
+    // Der Spieler opfert die starke Figur (nicht die schwache, die ein Bot nehmen wuerde).
+    let ev = g.apply(Action::Dissolve { piece: strong }).unwrap();
+    assert_eq!(dissolved(&ev), vec![(strong, 3)]);
+    assert!(g.state.dissolve_due, "16 > 10: noch eine Figur");
+    assert_eq!(g.current_player(), P0);
+    assert_eq!(g.legal_actions().len(), 2);
+    let ev = g.apply(Action::Dissolve { piece: mid }).unwrap();
+    assert_eq!(dissolved(&ev), vec![(mid, 2)]);
+    assert!(
+        ev.contains(&Event::Upkeep {
+            player: P0,
+            paid: 4
+        }),
+        "{ev:?}"
+    );
+    assert!(!g.state.dissolve_due);
+    assert_eq!(g.state.area[0], have - 4);
+    assert_eq!(g.current_player(), P1, "jetzt ist der Gegner dran");
+    assert!(g.state.pieces.contains_key(&weak));
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn nobody_waits_when_the_area_pays_the_upkeep() {
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_cnt = 2;
+    g.config.terr_upkeep_pick = 1;
+    g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    give_area(&mut g, P0, 50);
+    let king = king_id(&g, P0);
+    let to = g.piece_destinations(king)[0];
+    g.apply(Action::Move { piece: king, to }).unwrap();
+    assert!(!g.state.dissolve_due);
+    assert_eq!(g.current_player(), P1);
+}
+
+#[test]
+fn only_the_seats_in_the_pick_mask_choose_and_a_bot_resolves_a_waiting_state() {
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_cnt = 2;
+    g.config.terr_upkeep_pick = 2; // nur Spieler B waehlt: A loest automatisch auf
+    g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    g.setup_unit(P0, c(&g, 4, 0), 2, 2);
+    give_area(&mut g, P0, 0);
+    let king = king_id(&g, P0);
+    let to = g.piece_destinations(king)[0];
+    g.apply(Action::Move { piece: king, to }).unwrap();
+    assert!(!g.state.dissolve_due, "A steht nicht in der Maske");
+    // Ein Bot, der in den Wartezustand gerat, nimmt die schwaechste Figur.
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_cnt = 2;
+    g.config.terr_upkeep_pick = 1;
+    let weak = g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    g.setup_unit(P0, c(&g, 4, 0), 2, 2);
+    give_area(&mut g, P0, 0);
+    let to = g.piece_destinations(king_id(&g, P0))[0];
+    g.apply(Action::Move {
+        piece: king_id(&g, P0),
+        to,
+    })
+    .unwrap();
+    assert!(g.state.dissolve_due);
+    assert_eq!(
+        g.auto_dissolve_action(),
+        Some(Action::Dissolve { piece: weak })
+    );
+    let mut bot = GreedyBot::new(1);
+    assert_eq!(bot.choose(&g), Action::Dissolve { piece: weak });
+}
+
+#[test]
+fn bots_play_through_waiting_states_without_breaking_the_rules() {
+    for seed in 0..4u64 {
+        let mut cfg = Config::new(2, seed);
+        cfg.set_all("territory=1,terr_v3=1,terr_upkeep_cnt=2,terr_upkeep_pick=3,score_after=60")
+            .unwrap();
+        cfg.max_rounds = 60;
+        let mut g = Game::new(cfg).unwrap();
+        let mut bots: Vec<Box<dyn Bot>> = vec![
+            Box::new(GreedyBot::new(seed)),
+            Box::new(RandomBot::new(seed + 1)),
+        ];
+        let mut waits = 0;
+        for _ in 0..600 {
+            if g.outcome().is_some() {
+                break;
+            }
+            let me = g.current_player().idx();
+            let a = bots[me].choose(&g);
+            g.apply(a).unwrap();
+            waits += u32::from(g.state.dissolve_due);
+            g.check_invariants().unwrap();
+        }
+        let _ = waits;
+    }
+}
+
+#[test]
+fn upkeep_by_count_and_the_pick_have_their_conditions() {
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1,terr_upkeep=0,terr_upkeep_cnt=2")
+        .unwrap();
+    assert!(cfg.validate().is_err(), "ohne Unterhalt");
+    cfg.set_all("terr_upkeep=1").unwrap();
+    assert!(cfg.validate().is_ok());
+    cfg.set_all("terr_upkeep_sq=1").unwrap();
+    assert!(cfg.validate().is_err(), "ersetzt den Unterhalt nach Stufe");
+    cfg.set_all("terr_upkeep_sq=0,terr_upkeep_cnt=21").unwrap();
+    assert!(cfg.validate().is_err(), "k hoechstens 20");
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1,terr_upkeep=0,terr_upkeep_pick=1")
+        .unwrap();
+    assert!(cfg.validate().is_err(), "die Wahl braucht den Unterhalt");
 }

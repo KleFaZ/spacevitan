@@ -76,6 +76,16 @@ impl Session {
             ));
         }
         let seed = config.seed;
+        let mut config = config;
+        // Zu wenig Flaeche fuer den Unterhalt: Menschen suchen die Figur zum Aufloesen selbst aus, Bots
+        // loesen automatisch auf (`Config::terr_upkeep_pick`).
+        if config.territory && config.terr_upkeep {
+            config.terr_upkeep_pick = seats
+                .iter()
+                .enumerate()
+                .filter(|(_, kind)| **kind == SeatKind::Human)
+                .fold(0, |bits, (i, _)| bits | (1 << i));
+        }
         let game = Game::new(config).map_err(|e| e.to_string())?;
         let bots = seats
             .iter()
@@ -305,6 +315,53 @@ mod tests {
             assert!(s.apply_index(0).unwrap_err().contains("vorbei"));
             assert!(s.bot_step().unwrap_err().contains("vorbei"));
         }
+    }
+
+    #[test]
+    fn a_human_picks_the_figure_to_dissolve_and_the_bot_goes_on_afterwards() {
+        let mut config = Config::new(2, 4);
+        config
+            .set_all("territory=1,terr_v3=1,terr_upkeep_cnt=2")
+            .unwrap();
+        let mut s = Session::new(config, &[SeatKind::Human, SeatKind::Greedy]).unwrap();
+        assert_eq!(s.game().config.terr_upkeep_pick, 1, "nur der Mensch waehlt");
+        let a = PlayerId(0);
+        for x in [3, 4, 5] {
+            let cell = s.game.map.board.cell_at(x, 0).unwrap();
+            s.game.setup_unit(a, cell, 1, 1);
+        }
+        s.game.state.area[0] = 0;
+        s.legal = s.game.legal_actions();
+        let king_move = s
+            .legal()
+            .iter()
+            .position(|x| matches!(x, Action::Move { .. }))
+            .expect("ein Zug");
+        let out = s.apply_index(king_move).unwrap();
+        validate(&out).unwrap();
+        assert!(out.contains(r#""dissolve_due":true"#), "{out}");
+        assert!(out.contains(r#""type":"dissolve_due""#), "{out}");
+        assert!(s.human_to_move(), "der Mensch ist weiter am Zug");
+        assert!(s
+            .legal()
+            .iter()
+            .all(|x| matches!(x, Action::Dissolve { .. })));
+        assert!(
+            out.contains(r#""legal":[{"type":"dissolve","piece":"#),
+            "{out}"
+        );
+        let mut picks = 0;
+        while s.human_to_move() {
+            let out = s.apply_index(0).unwrap();
+            validate(&out).unwrap();
+            picks += 1;
+            assert!(picks <= 3, "hoechstens drei Figuren");
+        }
+        assert!(picks >= 1);
+        assert!(!s.game().state.dissolve_due);
+        assert_eq!(s.game().current_player(), PlayerId(1));
+        s.bot_step().unwrap();
+        s.game().check_invariants().unwrap();
     }
 
     #[test]

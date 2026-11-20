@@ -424,6 +424,11 @@ struct Stats {
     by_points: u32,
     rounds: u64,
     spawned: u64,
+    /// Figuren (ohne Koenig) je Spieler, zu Beginn jeder Runde gezaehlt: Summe, Zahl der Messungen
+    /// und der Hoechstwert eines Spielers (zeigt, ob Heere durch den Unterhalt klein bleiben).
+    units_sum: u64,
+    units_samples: u64,
+    units_peak: u32,
     factories: u64,
     captures: u64,
     cards: u64,
@@ -554,6 +559,7 @@ fn run() -> Result<(), String> {
         let mut seen_spawn = false;
         let mut leader20: Option<Option<PlayerId>> = None;
         let mut share20 = 0.0;
+        let mut last_sampled = 0;
         let before = |g: &mut Game| {
             if let Some(gv) = gift {
                 if give_gift(g, gv) {
@@ -568,6 +574,19 @@ fn run() -> Result<(), String> {
             |game, player, action, events| {
                 if let Some(w) = writer.as_mut() {
                     w.record(game, player, action, events);
+                }
+                if game.state.round != last_sampled {
+                    last_sampled = game.state.round;
+                    for p in 0..game.config.players {
+                        let id = PlayerId(p);
+                        if !game.state.alive[id.idx()] {
+                            continue;
+                        }
+                        let n = game.pieces_of(id).filter(|q| !q.is_king()).count() as u32;
+                        stats.units_sum += u64::from(n);
+                        stats.units_samples += 1;
+                        stats.units_peak = stats.units_peak.max(n);
+                    }
                 }
                 let top = top_level(game);
                 for (i, seen) in seen_level.iter_mut().enumerate() {
@@ -770,6 +789,13 @@ fn run() -> Result<(), String> {
             stats.captures as f64 / n,
             stats.cards as f64 / n
         );
+        if stats.units_samples > 0 {
+            println!(
+                "  Figuren gleichzeitig (ohne Koenig, je Spieler zu Rundenbeginn): {:.2} im Mittel, hoechstens {}",
+                stats.units_sum as f64 / stats.units_samples as f64,
+                stats.units_peak
+            );
+        }
         if stats.rebuilds > 0 || stats.trades > 0 {
             println!(
                 "  Version 3: {:.2} Fabrik-Neubauten, {:.2} Kat-3-Tausche ({:.1} Flaeche) pro Partie",

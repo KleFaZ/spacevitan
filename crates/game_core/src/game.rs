@@ -192,7 +192,7 @@ impl Game {
         let mut out: Vec<CellId> = Vec::new();
 
         // Version 3: die Figur, die in diesem Zug eine Karte bekam, ruht bis zum Zugende.
-        if self.state.card_lock == Some(id) {
+        if self.state.card_lock == Some(id) || self.state.card_locks.contains(&id) {
             return out;
         }
         // Version 3.6: eine frisch gekaufte Kamikaze setzt aus; eine brennende greift nur an.
@@ -497,6 +497,14 @@ impl Game {
         if self.state.outcome.is_some() || !self.state.alive[me.idx()] {
             return Vec::new();
         }
+        // Version 3.9: zu wenig Flaeche fuer den Unterhalt, der Spieler waehlt, was sich aufloest.
+        if self.state.dissolve_due {
+            return if me == self.state.current {
+                self.dissolve_actions(me)
+            } else {
+                Vec::new()
+            };
+        }
         // "Fabrik ruecken" wirkt sofort: wer die Karte gekauft hat, muss die Fabrik jetzt rutschen
         // lassen (der einzige erlaubte Zug), auch wenn Figuren ziehen koennten.
         if self.config.territory {
@@ -744,7 +752,11 @@ impl Game {
     /// Erklaert, warum eine Aktion nicht erlaubt ist (best effort, nur fuer Fehlermeldungen).
     fn diagnose(&self, action: &Action) -> IllegalReason {
         let me = self.state.current;
+        if self.state.dissolve_due {
+            return IllegalReason::MustDissolve;
+        }
         match *action {
+            Action::Dissolve { .. } => return IllegalReason::CannotDissolve,
             Action::Move { piece, to } => {
                 let Some(p) = self.state.pieces.get(&piece) else {
                     return IllegalReason::NoSuchPiece;
@@ -838,7 +850,7 @@ impl Game {
                 if !offered {
                     return IllegalReason::CardNotInMarket;
                 }
-                if self.state.bought_this_turn {
+                if self.state.bought_this_turn && !self.config.terr_multibuy {
                     return IllegalReason::AlreadyBoughtThisTurn;
                 }
                 if self.config.territory {
@@ -921,6 +933,16 @@ impl Game {
                 return events;
             }
             Action::Pass => events.push(Event::Passed { player: actor }),
+            Action::Dissolve { piece } => {
+                // Das Ende des Zuges (Ertrag, Unterhalt) ist schon gelaufen; fehlt noch Flaeche, bleibt
+                // der Spieler am Zug und waehlt die naechste Figur.
+                self.do_dissolve(actor, piece, &mut events);
+                self.state.turns_played += 1;
+                if !self.state.dissolve_due && self.state.outcome.is_none() {
+                    self.advance_turn(&mut events);
+                }
+                return events;
+            }
             Action::BuyCard { card, from, target } => {
                 // Ein Kauf ist keine Aktion: der Spieler bleibt am Zug. Ausnahme Version 3 mit
                 // `terr_cardlock = 2`: eine Verbesserung (Figurenkarte, Koenigs-Boost) ist der ganze Zug.
@@ -953,7 +975,7 @@ impl Game {
             self.end_of_turn(actor, &mut events);
         }
         self.state.turns_played += 1;
-        if self.state.outcome.is_none() {
+        if self.state.outcome.is_none() && !self.state.dissolve_due {
             self.advance_turn(&mut events);
         }
         events
@@ -1455,6 +1477,7 @@ impl Game {
         self.kamikaze_end_of_turn(finishing, events);
         self.state.bought_this_turn = false;
         self.state.card_lock = None;
+        self.state.card_locks.clear();
         self.state.extra_actions = 0;
         self.state.charge = false;
         let n = self.config.players as usize;

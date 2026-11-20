@@ -68,6 +68,9 @@ const SMOOTH_ROUNDS: usize = 3;
 const START_CLEAR: u32 = 2;
 /// Wie viele Verteilungen der Generator vergleicht.
 const ATTEMPTS: u64 = 200;
+/// Mit `terr_favor`: Anteile (Promille) von Moor und Erde im Gebiet von Spieler A und in denen der Gegner.
+const FAVOR_A: (usize, usize) = (100, 250);
+const FAVOR_OTHERS: (usize, usize) = (400, 400);
 /// Salz fuer den eigenen Zufallsstrom.
 const SALT: u64 = 0x7E44_A1F5_90C3_5D21;
 
@@ -85,7 +88,8 @@ pub fn make_terrain(config: &Config, board: &Board, territories: &[Option<usize>
         .collect();
     let radius = config.effective_fairness_radius().max(4);
     // Alles, was nicht vom Zufall abhaengt, einmal berechnen (nicht in jedem der Versuche).
-    let layout = Layout::new(board, territories, &dist);
+    let favor = config.terr_favor.then(|| config.player_corners());
+    let layout = Layout::new(board, territories, &dist, favor.as_deref());
     let around_start: Vec<Vec<usize>> = config
         .player_corners()
         .iter()
@@ -97,7 +101,9 @@ pub fn make_terrain(config: &Config, board: &Board, territories: &[Option<usize>
                 .collect()
         })
         .collect();
-    let mut best: Option<(u32, Vec<Terrain>)> = None;
+    // Normal zaehlt der kleinste Unterschied zwischen den Ecken; mit `terr_favor` der groesste Vorsprung von
+    // Spieler A (Index 0) vor dem besten Gegner. Beides als "kleiner ist besser" gefuehrt.
+    let mut best: Option<(i64, Vec<Terrain>)> = None;
     for attempt in 1..=ATTEMPTS {
         let mut rng = base.fork(attempt);
         let terrain = one_attempt(board, &layout, &mut rng);
@@ -106,11 +112,17 @@ pub fn make_terrain(config: &Config, board: &Board, territories: &[Option<usize>
             .iter()
             .map(|cells| cells.iter().map(|&i| terrain[i].quarters()).sum())
             .collect();
-        let spread = sums.iter().max().unwrap_or(&0) - sums.iter().min().unwrap_or(&0);
+        let spread = if config.terr_favor {
+            let mine = i64::from(sums.first().copied().unwrap_or(0));
+            let theirs = sums.iter().skip(1).copied().max().map_or(0, i64::from);
+            theirs - mine
+        } else {
+            i64::from(sums.iter().max().unwrap_or(&0) - sums.iter().min().unwrap_or(&0))
+        };
         if best.as_ref().is_none_or(|(s, _)| spread < *s) {
             best = Some((spread, terrain));
         }
-        if spread == 0 {
+        if spread == 0 && !config.terr_favor {
             break;
         }
     }
@@ -204,7 +216,12 @@ struct Group {
 }
 
 impl Layout {
-    fn new(board: &Board, territories: &[Option<usize>], dist: &[&[u32]]) -> Layout {
+    fn new(
+        board: &Board,
+        territories: &[Option<usize>],
+        dist: &[&[u32]],
+        favor: Option<&[usize]>,
+    ) -> Layout {
         let corners = board.corners().len();
         let nearest = nearest_corner(board, dist);
         let air = corner_air_distance(board);
@@ -224,9 +241,15 @@ impl Layout {
             .enumerate()
             .map(|(g, cells)| {
                 let size = if g < corners { smallest } else { cells.len() };
+                // Kampagne (`terr_favor`): Spieler A bekommt weniger Moor und Erde, die Gegner mehr.
+                let (bog, earth) = match favor {
+                    Some(pc) if pc.first() == Some(&g) => FAVOR_A,
+                    Some(pc) if pc.contains(&g) => FAVOR_OTHERS,
+                    _ => (BOG_PERMILLE, EARTH_PERMILLE),
+                };
                 Group {
-                    bog: share(size, BOG_PERMILLE),
-                    earth: share(size, EARTH_PERMILLE),
+                    bog: share(size, bog),
+                    earth: share(size, earth),
                     open: cells
                         .iter()
                         .copied()
@@ -279,6 +302,39 @@ mod tests {
         let territories = board.territories();
         let t = make_terrain(c, &board, &territories);
         (board, territories, t)
+    }
+
+    #[test]
+    fn favor_gives_player_a_the_better_land_around_the_corner() {
+        // Kampagne: kleine Karte 6x6, Spieler A bekommt mehr Flaechenwert rund um seine Ecke als der Gegner.
+        let mut better = 0;
+        for seed in 1..=20u64 {
+            let mut c = config(2, seed, true);
+            c.set_all("side=6,terr_favor=1").unwrap();
+            let (board, _, t) = terrain_of(&c);
+            let corners = c.player_corners();
+            let cells = board.corners();
+            let a = quarters_within(&board, &t, cells[corners[0]], 3);
+            let b = quarters_within(&board, &t, cells[corners[1]], 3);
+            assert!(a >= b, "Seed {seed}: A {a} gegen B {b}");
+            better += u32::from(a > b);
+        }
+        assert!(
+            better >= 18,
+            "nur {better} von 20 Seeds bevorzugen A deutlich"
+        );
+        // ohne Schalter bleibt es gleich verteilt
+        let mut c = config(2, 3, true);
+        c.set_all("side=6").unwrap();
+        assert!(!c.terr_favor);
+    }
+
+    #[test]
+    fn favor_needs_the_terrain() {
+        let mut c = Config::new(2, 1);
+        c.set_all("territory=1,terr_v3=1,terr_favor=1").unwrap();
+        c.terr_terrain = false;
+        assert!(c.validate().is_err());
     }
 
     #[test]

@@ -34,6 +34,9 @@ impl Bot for RandomBot {
     }
 
     fn choose(&mut self, game: &Game) -> Action {
+        if let Some(a) = game.auto_dissolve_action() {
+            return a;
+        }
         let legal = game.legal_actions_for_bot();
         *self
             .rng
@@ -204,6 +207,9 @@ impl Bot for GreedyBot {
     }
 
     fn choose(&mut self, game: &Game) -> Action {
+        if let Some(a) = game.auto_dissolve_action() {
+            return a;
+        }
         let legal = game.legal_actions_for_bot();
         if legal.len() == 1 {
             return legal[0];

@@ -181,6 +181,7 @@ pub fn action_json(action: &Action) -> String {
         Action::TradeKat3 { factory } => {
             format!(r#"{{"type":"trade","factory":{}}}"#, factory.0)
         }
+        Action::Dissolve { piece } => format!(r#"{{"type":"dissolve","piece":{}}}"#, piece.0),
         Action::Pass => r#"{"type":"pass"}"#.to_string(),
         Action::BuyCard { card, from, target } => format!(
             r#"{{"type":"buy","card":{},"from":{},"target":{}}}"#,
@@ -398,6 +399,14 @@ pub fn event_json(event: &Event) -> String {
             r#"{{"type":"upkeep","player":{},"paid":{}}}"#,
             player.0, paid
         ),
+        Event::DissolveDue {
+            player,
+            upkeep,
+            area,
+        } => format!(
+            r#"{{"type":"dissolve_due","player":{},"upkeep":{},"area":{}}}"#,
+            player.0, upkeep, area
+        ),
         Event::Dissolved {
             piece,
             owner,
@@ -530,7 +539,7 @@ pub fn state_json(game: &Game) -> String {
         String::new()
     };
     format!(
-        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"card_lock":{},"extra_actions":{},"charge":{},"armed_charge":{},"armed_extra":{},"lost_factory":{},"forts":{},"extra_deposits":{}{}"#,
+        r#""round":{},"current":{},"alive":{},"pieces":{},"factories":{},"loot":{},"carried":{},"depleted":{},"regrow":{},"harvested":{},"player_perks":{},"bought_this_turn":{},"card_lock":{},"card_locks":{},"dissolve_due":{},"extra_actions":{},"charge":{},"armed_charge":{},"armed_extra":{},"lost_factory":{},"forts":{},"extra_deposits":{}{}"#,
         st.round,
         st.current.0,
         list(st.alive.iter(), |a| a.to_string()),
@@ -550,6 +559,8 @@ pub fn state_json(game: &Game) -> String {
         player_perks,
         st.bought_this_turn,
         st.card_lock.map_or("null".to_string(), |p| p.0.to_string()),
+        list(st.card_locks.iter(), |p| p.0.to_string()),
+        st.dissolve_due,
         st.extra_actions,
         st.charge,
         list(st.armed_charge.iter(), |a| a.to_string()),
@@ -592,7 +603,7 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         )
     });
     let config = format!(
-        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_rebuild_dist":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{},"terr_bend_tail":{},"terr_cardset3":{},"terr_delay":{},"terr_upkeep_sq":{},"terr_yield_lvl":{},"terr_bread":{},"terr_fort":{},"terr_kamikaze":{},"terr_terrain":{}}}"#,
+        r#"{{"side":{},"max_rounds":{},"score_after":{},"min_factory_distance":{},"deposit_stock":{},"yield_per_round":{},"cat1_distance":{},"regrow_rounds":{},"upgrade_region_min":{},"upgrade_step":{},"max_upgrades":{},"market_size":{},"kat_roles":{},"pawn_cost":{},"territory":{},"terr_pawn":{},"terr_area":{},"terr_area_step":{},"terr_k1":{},"terr_k2":{},"terr_k3":{},"terr_yield":{},"terr_cut_flips":{},"terr_enclose":{},"terr_enclose_edge":{},"terr_reconnect":{},"terr_card_mult":{},"terr_exact":{},"terr_grow":{},"terr_ripen":{},"terr_cats":{},"terr_cards":{},"terr_cycle":{},"terr_move":{},"terr_move_k1":{},"terr_move_k2":{},"terr_rebuild":{},"terr_rebuild_dist":{},"terr_trade":{},"terr_bonus":{},"terr_occupy":{},"terr_cardany":{},"terr_up_mult":{},"terr_cardlock":{},"terr_control":{},"kat3_spread":{},"terr_stack":{},"terr_upkeep":{},"terr_kingup":{},"terr_kingup_price":{},"terr_bend_tail":{},"terr_cardset3":{},"terr_delay":{},"terr_upkeep_sq":{},"terr_yield_lvl":{},"terr_bread":{},"terr_fort":{},"terr_kamikaze":{},"terr_terrain":{},"terr_multibuy":{},"terr_upkeep_cnt":{},"terr_upkeep_pick":{}}}"#,
         c.side,
         c.max_rounds,
         c.score_after,
@@ -651,7 +662,10 @@ pub fn header_json(game: &Game, bots: &[String]) -> String {
         c.terr_bread,
         c.terr_fort,
         c.terr_kamikaze,
-        c.terr_terrain
+        c.terr_terrain,
+        c.terr_multibuy,
+        c.terr_upkeep_cnt,
+        c.terr_upkeep_pick
     );
     // Gelaende (`terr_terrain`): 0 Feld, 1 Erde, 2 Moor je Feld; ohne Schalter fehlt das Feld.
     let terrain = if c.terr_terrain {

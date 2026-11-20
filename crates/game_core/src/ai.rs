@@ -1063,6 +1063,7 @@ impl SearchBot {
             Action::ShiftFactory { .. } => 10_000,
             Action::RebuildFactory => 5_000,
             Action::TradeKat3 { .. } => 45_000,
+            Action::Dissolve { .. } => 0,
             Action::Pass => -100_000,
         }
     }
@@ -1601,6 +1602,20 @@ impl Bot for SearchBot {
     }
 
     fn choose(&mut self, game: &Game) -> Action {
+        if let Some(a) = game.auto_dissolve_action() {
+            return a;
+        }
+        // Waehlt ein Mensch selbst, was sich aufloest (`terr_upkeep_pick`), rechnet der Bot seine Zuege
+        // so, als loeste sich bei den Menschen automatisch die schwaechste Figur auf.
+        let owned;
+        let game = if game.config.terr_upkeep_pick != 0 {
+            let mut copy = game.clone();
+            copy.config.terr_upkeep_pick = 0;
+            owned = copy;
+            &owned
+        } else {
+            game
+        };
         let legal = game.legal_actions_for_bot();
         if legal.len() == 1 {
             self.stats = SearchStats::default();

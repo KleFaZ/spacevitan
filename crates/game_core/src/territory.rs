@@ -777,7 +777,7 @@ impl Game {
     pub(crate) fn territory_buy_actions(&self, me: PlayerId) -> Vec<Action> {
         let mut out = Vec::new();
         let offers = self.territory_offers();
-        if self.state.bought_this_turn || offers.is_empty() {
+        if (self.state.bought_this_turn && !self.config.terr_multibuy) || offers.is_empty() {
             return out;
         }
         let Some(f) = self.standing_factory(me) else {
@@ -2050,45 +2050,127 @@ impl Game {
     /// Koenig zahlt nichts). `None`, wenn die Regel aus ist.
     pub fn territory_upkeep(&self, player: PlayerId) -> Option<u32> {
         self.config.terr_upkeep.then(|| {
+            if self.config.terr_upkeep_cnt > 0 {
+                let n = self.pieces_of(player).filter(|p| !p.is_king()).count() as u32;
+                return Game::count_upkeep(self.config.terr_upkeep_cnt, n);
+            }
             let sq = self.config.terr_upkeep_sq;
             self.pieces_of(player).map(|p| p.upkeep(sq)).sum()
         })
     }
 
+    /// Version 3.9 (`terr_upkeep_cnt = k`): Unterhalt von `n` Figuren, `(k * n)^2`.
+    pub fn count_upkeep(k: u32, n: u32) -> u32 {
+        (k * n) * (k * n)
+    }
+
     /// Zieht den Unterhalt von der Flaeche ab. Reicht sie nicht, loest sich Figur um Figur auf, bis
-    /// sie reicht: zuerst die kleinste Figur, die den fehlenden Betrag allein deckt, gibt es keine,
-    /// die groesste (bei gleicher Stufe die zuletzt gebaute). Jede aufgeloeste Figur spart ihren
-    /// Unterhalt, es wird nichts zurueckerstattet.
-    fn pay_upkeep(&mut self, actor: PlayerId, mut upkeep: u32, events: &mut Vec<Event>) {
+    /// sie reicht (`upkeep_victim`): zuerst die kleinste Figur, die den fehlenden Betrag allein deckt,
+    /// gibt es keine, die groesste (bei gleicher Stufe die zuletzt gebaute); bei `terr_upkeep_cnt` die
+    /// schwaechste. Jede aufgeloeste Figur spart ihren Unterhalt, es wird nichts zurueckerstattet.
+    /// Version 3.9 (`terr_upkeep_pick`): waehlt der Spieler selbst, wartet das Spiel stattdessen auf
+    /// `Action::Dissolve` (`State::dissolve_due`).
+    fn pay_upkeep(&mut self, actor: PlayerId, upkeep: u32, events: &mut Vec<Event>) {
+        if upkeep > self.state.area[actor.idx()]
+            && self.config.terr_upkeep_pick >> actor.idx() & 1 == 1
+            && self.pieces_of(actor).any(|p| !p.is_king())
+        {
+            self.state.dissolve_due = true;
+            events.push(Event::DissolveDue {
+                player: actor,
+                upkeep,
+                area: self.state.area[actor.idx()],
+            });
+            return;
+        }
+        self.settle_upkeep(actor, events);
+    }
+
+    /// Loest automatisch auf, was die Flaeche nicht traegt, und zahlt den Rest.
+    fn settle_upkeep(&mut self, actor: PlayerId, events: &mut Vec<Event>) {
         let have = self.state.area[actor.idx()];
-        let sq = self.config.terr_upkeep_sq;
+        let mut upkeep = self.territory_upkeep(actor).unwrap_or(0);
         while upkeep > have {
-            let missing = upkeep - have;
-            // (Unterhalt, Id, Feld, Stufe)
-            let mut units: Vec<(u32, PieceId, CellId, u8)> = self
-                .pieces_of(actor)
-                .filter(|p| p.upkeep(sq) > 0)
-                .map(|p| (p.upkeep(sq), p.id, p.cell, p.level()))
-                .collect();
-            units.sort_by_key(|&(cost, id, _, _)| (cost, std::cmp::Reverse(id)));
-            let covering = units.iter().find(|&&(cost, _, _, _)| cost >= missing);
-            let Some(&(cost, id, cell, level)) = covering.or(units.last()) else {
+            let Some(id) = self.upkeep_victim(actor, upkeep - have) else {
                 break;
             };
-            self.state.remove_piece(id);
-            upkeep -= cost;
-            events.push(Event::Dissolved {
-                piece: id,
-                owner: actor,
-                cell,
-                level,
-            });
+            self.dissolve_piece(actor, id, events);
+            upkeep = self.territory_upkeep(actor).unwrap_or(0);
         }
+        self.state.dissolve_due = false;
         self.state.area[actor.idx()] = have - upkeep.min(have);
         events.push(Event::Upkeep {
             player: actor,
             paid: upkeep,
         });
+    }
+
+    fn dissolve_piece(&mut self, actor: PlayerId, id: PieceId, events: &mut Vec<Event>) {
+        let (cell, level) = {
+            let p = &self.state.pieces[&id];
+            (p.cell, p.level())
+        };
+        self.state.remove_piece(id);
+        events.push(Event::Dissolved {
+            piece: id,
+            owner: actor,
+            cell,
+            level,
+        });
+    }
+
+    /// Die Figur, die sich als naechste aufloest, wenn der Spieler nicht waehlt: ohne
+    /// `terr_upkeep_cnt` die kleinste, die den fehlenden Betrag `missing` allein deckt, sonst die
+    /// groesste; mit `terr_upkeep_cnt` die schwaechste. Bei gleicher Stufe die zuletzt gebaute.
+    pub fn upkeep_victim(&self, actor: PlayerId, missing: u32) -> Option<PieceId> {
+        if self.config.terr_upkeep_cnt > 0 {
+            return self
+                .pieces_of(actor)
+                .filter(|p| !p.is_king())
+                .map(|p| (p.level(), std::cmp::Reverse(p.id)))
+                .min()
+                .map(|(_, std::cmp::Reverse(id))| id);
+        }
+        let sq = self.config.terr_upkeep_sq;
+        let mut units: Vec<(u32, PieceId)> = self
+            .pieces_of(actor)
+            .filter(|p| p.upkeep(sq) > 0)
+            .map(|p| (p.upkeep(sq), p.id))
+            .collect();
+        units.sort_by_key(|&(cost, id)| (cost, std::cmp::Reverse(id)));
+        let covering = units.iter().find(|&&(cost, _)| cost >= missing);
+        covering.or(units.last()).map(|&(_, id)| id)
+    }
+
+    /// Version 3.9: die Figuren, unter denen der Spieler waehlen darf (alle ausser dem Koenig).
+    pub(crate) fn dissolve_actions(&self, me: PlayerId) -> Vec<Action> {
+        self.pieces_of(me)
+            .filter(|p| !p.is_king())
+            .map(|p| Action::Dissolve { piece: p.id })
+            .collect()
+    }
+
+    /// Version 3.9: die gewaehlte Figur loest sich auf; reicht die Flaeche jetzt, wird der Rest gezahlt
+    /// und der Zug ist zu Ende, sonst muss noch eine Figur gewaehlt werden.
+    pub(crate) fn do_dissolve(&mut self, actor: PlayerId, piece: PieceId, events: &mut Vec<Event>) {
+        self.dissolve_piece(actor, piece, events);
+        let upkeep = self.territory_upkeep(actor).unwrap_or(0);
+        if upkeep <= self.state.area[actor.idx()] || !self.pieces_of(actor).any(|p| !p.is_king()) {
+            self.settle_upkeep(actor, events);
+        }
+    }
+
+    /// Version 3.9: der Spielzug, den ein Bot im Wartezustand `dissolve_due` macht (ein Bot hat keine
+    /// Wahl und loest automatisch auf, wie ohne `terr_upkeep_pick`).
+    pub fn auto_dissolve_action(&self) -> Option<Action> {
+        if !self.state.dissolve_due {
+            return None;
+        }
+        let actor = self.state.current;
+        let upkeep = self.territory_upkeep(actor).unwrap_or(0);
+        let missing = upkeep.saturating_sub(self.state.area[actor.idx()]).max(1);
+        self.upkeep_victim(actor, missing)
+            .map(|piece| Action::Dissolve { piece })
     }
 
     /// Felder, die `player` am Ende seines Zuges bearbeitet (Voraussetzung fuer Erntezaehler und
@@ -2244,8 +2326,14 @@ impl Game {
             } else {
                 None
             };
-            if upgraded.is_some() {
-                self.state.card_lock = upgraded;
+            if let Some(piece) = upgraded {
+                // Mit Mehrfachkauf ruhen auch die Figuren, die vorher eine Karte bekamen.
+                if let Some(before) = self.state.card_lock.filter(|&b| b != piece) {
+                    if !self.state.card_locks.contains(&before) {
+                        self.state.card_locks.push(before);
+                    }
+                }
+                self.state.card_lock = Some(piece);
             }
         }
         events.push(Event::CardBought {

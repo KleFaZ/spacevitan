@@ -238,6 +238,12 @@ pub struct State {
     /// Version 3 (`terr_cardlock = 1`): die Figur, die in diesem Zug eine Karte bekommen hat und
     /// deshalb nicht ziehen darf. Faellt mit dem Zugende weg.
     pub card_lock: Option<PieceId>,
+    /// Version 3.9 (`terr_multibuy`): die Figuren, die in diesem Zug schon vor `card_lock` eine Karte
+    /// bekamen und ebenfalls nicht ziehen duerfen (ohne Mehrfachkauf immer leer). Faellt mit dem Zugende weg.
+    pub card_locks: Vec<PieceId>,
+    /// Version 3.9 (`terr_upkeep_pick`): der Spieler am Zug muss noch Figuren waehlen, die sich wegen des
+    /// Unterhalts aufloesen; bis dahin endet sein Zug nicht (siehe `Action::Dissolve`).
+    pub dissolve_due: bool,
     /// Weitere Aktionen in diesem Zug (Doppelzug).
     pub extra_actions: u8,
     /// Sturmangriff: in diesem Zug haben alle Figuren des Spielers am Zug Reichweite +1.
@@ -297,6 +303,8 @@ impl State {
             player_perks: vec![PlayerPerks::default(); players],
             bought_this_turn: false,
             card_lock: None,
+            card_locks: Vec::new(),
+            dissolve_due: false,
             extra_actions: 0,
             charge: false,
             armed_charge: vec![false; players],

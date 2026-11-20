@@ -136,7 +136,7 @@ impl Map {
             else {
                 continue;
             };
-            let map = Map {
+            let mut map = Map {
                 board: board.clone(),
                 resource_types: resource_types.clone(),
                 deposits,
@@ -146,6 +146,17 @@ impl Map {
                 attempts_used: attempt,
             };
             if map.fairness_issues(config).is_empty() {
+                // Kampagne (`terr_dep`): erst nach der Fairnesspruefung fallen die nicht gewaehlten Kategorien
+                // weg, fuer alle Ecken gleich.
+                if config.terr_dep != 15 {
+                    let types = &map.resource_types;
+                    for cell in map.deposits.iter_mut() {
+                        cell.retain(|&r| {
+                            let cat = u32::from(types[r.idx()].category);
+                            (1..=4).contains(&cat) && config.terr_dep & (1 << (cat - 1)) != 0
+                        });
+                    }
+                }
                 return Ok(map);
             }
         }
@@ -704,6 +715,40 @@ mod tests {
             .cells()
             .filter(|&c| map.deposits_at(c).contains(&ty))
             .collect()
+    }
+
+    #[test]
+    fn terr_dep_keeps_only_the_chosen_categories_on_every_seed() {
+        // Kampagne: 0 = keine Vorkommen, 1 = nur Eisen, 5 = Eisen und Brot; die Karte bleibt erzeugbar.
+        for seed in 1..=10u64 {
+            for (mask, allowed) in [
+                (0u32, vec![]),
+                (1, vec![1u8]),
+                (5, vec![1, 3]),
+                (15, vec![1, 2, 3]),
+            ] {
+                let mut c = cfg(2, seed);
+                c.set_all("territory=1,terr_v3=1,side=6").unwrap();
+                c.set_all(&format!("terr_dep={mask}")).unwrap();
+                let m = Map::generate(&c).expect("Karte sollte erzeugbar sein");
+                let mut seen: Vec<u8> = m
+                    .deposits
+                    .iter()
+                    .flatten()
+                    .map(|&r| m.category(r))
+                    .collect();
+                seen.sort();
+                seen.dedup();
+                if mask == 15 {
+                    assert!(!seen.is_empty());
+                } else {
+                    assert_eq!(seen, allowed, "Seed {seed}, Maske {mask}");
+                }
+            }
+        }
+        let mut c = cfg(2, 1);
+        c.set_all("terr_dep=16").unwrap();
+        assert!(Map::generate(&c).is_err());
     }
 
     #[test]

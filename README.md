@@ -857,6 +857,55 @@ aendern, und man kann eigene Karten bauen.
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
 
+### Version 3.9 (Wuensche vom 20.11.2026, zweiter Teil)
+
+- **Startmenue: Form des Bretts.** Neue Zeile "Form des Bretts" (Automatisch, Quadrat, Dreieck, Fuenfeck, Sechseck,
+  Siebeneck, Achteck). "Automatisch" verhaelt sich wie bisher (die Form folgt der Spielerzahl); wer eine Form waehlt,
+  behaelt sie, und die Spielerzahl-Knoepfe darueber werden gesperrt (hoechstens so viele Spieler wie Ecken). Passen die
+  Spieler nicht auf die Ecken (zum Beispiel 3 auf dem Quadrat), fuellt der Spielkern wie bisher mit Bots auf. Die Wahl
+  wird mit dem Menue gespeichert (`shapeAuto`); aeltere Staende gelten als "Automatisch".
+- **Ungerade Feldgroessen.** Die Zeile "Feldgroesse" bietet jetzt alle Groessen von 6 bis 16 (gesperrt, was die Form nicht
+  hergibt: Dreieck ab 6, Vielecke ab 8). Test `odd_field_sizes_start_and_play_on_every_board_shape`: Seiten 7, 9, 11, 13, 15
+  starten und laufen auf jeder Form, mit Gelaende, 2 und voller Spielerzahl.
+- **Ist die Mitte fuer alle gleich weit?** `Board::centre_report_for` (Wasm: `sv_centre`) nimmt als Mittelfelder die Felder,
+  deren weiteste Ecke am naechsten liegt, und vergleicht, wie weit jede genutzte Ecke zum naechsten Mittelfeld hat. Das
+  Menue schreibt das Ergebnis unter die Auswahl. Gemessen (Seitenlaengen 6 bis 30, siehe Tests im `board.rs`):
+  - Quadrat: immer gleich; ungerade Seite = **ein** Mittelfeld fuer alle, gerade Seite = vier Mittelfelder, jede Ecke hat
+    eines gleich nah. Gleich weit ist die Mitte also auch bei gerader Seite, nur gemeinsam ist sie erst bei ungerader.
+  - Dreieck: immer gleich (ein Mittelfeld, bei Seiten durch 3 drei).
+  - Sechseck: immer gleich, ein Mittelfeld.
+  - Fuenfeck: gleich nur bei Seite 6 bis 9 (und einzelnen grossen Seiten); bei 10 bis 17 nicht.
+  - Siebeneck: im Menuebereich (8 bis 16) nur bei 11, 13 und 16 gleich.
+  - Achteck: nie. Bei zwei gegenueberliegenden Spielern gilt die Pruefung nur fuer deren Ecken, dort ist sie gleich.
+- **Karten kaufen: `terr_multibuy=1`** (Standard aus, im Menue "Karten kaufen": "Eine je Zug" oder "So viele du bezahlen
+  kannst"). Statt einer Karte je Zug darf man so viele kaufen, wie das Lager bezahlen kann und die Karte noch passt
+  (die Karte neben der Fabrik hat weiter nur einen Platz, eine Figur nimmt nur auf, was zu ihr passt). Jede Figur, die
+  eine Karte bekommt, ruht in diesem Zug (`terr_cardlock=1`), auch wenn sie nicht die letzte war: dafuer gibt es
+  `State::card_locks` (die vorher verbesserten Figuren; `card_lock` bleibt die zuletzt verbesserte). Zusammen mit
+  `terr_cardlock=2` (eine Verbesserung ist der ganze Zug) geht der Schalter nicht, `Config::validate` meldet das. Bots
+  wissen nichts von dem Schalter und kaufen, was ihre Bewertung ergibt (20 Partien stark gegen stark, Seite 9,
+  `market_size=12`: kein Absturz, 1,9 Karten je Partie).
+- **Unterhalt nach Anzahl: `terr_upkeep_cnt=k`** (Standard 0 = aus; im Menue Regelpaket "Unterhalt nach Anzahl" mit k=2).
+  Alle Figuren zusammen (ohne Koenig, jede zaehlt gleich, die Stufe ist egal) kosten je Runde `(k*n)^2` Flaeche, bei
+  k=2: eine Figur 4, zwei 16, drei 36, vier 64, fuenf 100. Das ersetzt den Unterhalt nach Stufe (geht also nicht mit
+  `terr_upkeep_sq`, braucht `terr_upkeep`, k hoechstens 20). Reicht die Flaeche nicht, faellt zuerst die
+  schwaechste Figur weg (bei gleicher Stufe die zuletzt gebaute); der Unterhalt wird nach jeder Figur neu gerechnet.
+  Im Menue "Unterhalt nach Anzahl (k)" bei den erweiterten Regeln. Die Kommandozeile zeigt jetzt
+  "Figuren gleichzeitig (ohne Koenig, je Spieler zu Rundenbeginn)" als Mittel und Hoechstwert.
+- **Welche Figur sich aufloest, waehlt der Mensch (`terr_upkeep_pick`, Bitmaske der Spieler).** Reicht die Flaeche nicht fuer
+  den Unterhalt, wartet das Spiel (`State::dissolve_due`, `Event::DissolveDue`): erlaubt ist nur noch `Action::Dissolve`
+  mit einer eigenen Figur (nie der Koenig); danach wird neu gerechnet, reicht es immer noch nicht, kommt die naechste
+  Wahl, sonst wird der Unterhalt gezahlt und der Zug ist zu Ende. Die Sitzung (`Session::new`) setzt die Bits der
+  Menschen-Plaetze selbst, Bots loesen weiter automatisch auf und rechnen ihre Zuege so, als taeten das auch die
+  Menschen (`SearchBot`/`AreaBot` setzen die Maske in ihrer Kopie auf 0). Im Browser: Fenster "Zu wenig Flaeche fuer den
+  Unterhalt" mit der Liste der Figuren (Stufe, Feld, wie viel Unterhalt sie spart; der Zeiger auf einem Eintrag
+  markiert die Figur auf dem Brett rot), Klick = "Wirklich diese Figur aufloesen?" mit "Zurueck" / "Ja, aufloesen",
+  danach ist sie weg. Gilt auch fuer den Unterhalt nach Stufe.
+- **Kampagne, Spielkern (noch ohne Oberflaeche):** `terr_favor=1` gibt Spieler A die besseren Flaechen (mehr Feld, weniger Moor in
+  seiner Ecke; Bedingung `terr_terrain`), `terr_dep=N` laesst nur die gewaehlten Rohstoffkategorien als Vorkommen stehen
+  (Bit 0 Eisen, 1 Gold, 2 Brot, 3 Kat 4; 15 = alle, 1 = nur Eisen); die Karte wird erst gewuerfelt, auf Fairness geprueft und
+  dann gefiltert, bleibt also fuer alle gleich.
+
 ### Version 3.8 (Wuensche vom 20.11.2026)
 
 - **Startmenue:** Spielerzahl (2 bis 8) und Feldgroesse (6, 8, 10, 12, 14, 16 Felder je Kante) stehen direkt im

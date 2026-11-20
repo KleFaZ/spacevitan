@@ -198,6 +198,37 @@ pub extern "C" fn sv_plan(len: u32) -> i32 {
     finish(result)
 }
 
+/// Wie gleich weit die Mitte fuer die Startecken liegt (fuer den Hinweis im Startmenue). Eingabe
+/// `ecken,seitenlaenge[,eckennummer...]` (ohne Nummern: alle Ecken); Antwort
+/// `{"cells":n,"equal":bool}`: Zahl der Mittelfelder und ob jede dieser Ecken gleich schnell dort
+/// ist (siehe `Board::centre_report_for`).
+#[no_mangle]
+pub extern "C" fn sv_centre(len: u32) -> i32 {
+    let result = (|| {
+        let nums = parse_numbers(&read_input(len)?, ',')?;
+        let [corners, side, used @ ..] = &nums[..] else {
+            return Err("Erwartet: ecken,seitenlaenge[,eckennummer...]".to_string());
+        };
+        let (corners, side) = (*corners, *side);
+        if !(3..=8).contains(&corners) {
+            return Err(format!("{corners} Ecken gibt es nicht (3 bis 8)"));
+        }
+        let mut config = Config::new(2, 1);
+        config.board_corners =
+            u8::try_from(corners).map_err(|_| "Eckenzahl zu gross".to_string())?;
+        config.side = u32::try_from(side).map_err(|_| "Seitenlaenge unpassend".to_string())?;
+        let board = config.make_board().map_err(|e| e.to_string())?;
+        let (cells, equal) = if used.is_empty() {
+            board.centre_report()
+        } else {
+            let used: Vec<usize> = used.iter().map(|&c| c as usize).collect();
+            board.centre_report_for(&used)
+        };
+        Ok(format!("{{\"cells\":{cells},\"equal\":{equal}}}"))
+    })();
+    finish(result)
+}
+
 /// Neue Partie mit frei gewaehlter Brettform und einzeln gewaehlten Plaetzen. Der Text im
 /// Eingabepuffer lautet `seed|side|ecken|plaetze`: `side` 0 = Standard, `ecken` 0 = Brett nach
 /// Spielerzahl, sonst 3 bis 8; `plaetze` sind die Platzarten (siehe oben) durch Kommas, ihre
@@ -388,6 +419,20 @@ mod tests {
             "5 Spieler auf 4 Ecken"
         );
         assert_eq!(sv_new_game_list(put("5|0|4")), 1);
+    }
+
+    #[test]
+    fn the_centre_report_tells_odd_squares_from_unfair_octagons() {
+        assert_eq!(sv_centre(put("4,9")), 0, "{}", out());
+        assert_eq!(out(), "{\"cells\":1,\"equal\":true}");
+        assert_eq!(sv_centre(put("4,10")), 0);
+        assert_eq!(out(), "{\"cells\":4,\"equal\":true}");
+        assert_eq!(sv_centre(put("8,12")), 0);
+        assert!(out().contains("\"equal\":false"), "{}", out());
+        assert_eq!(sv_centre(put("8,12,0,4")), 0);
+        assert!(out().contains("\"equal\":true"), "{}", out());
+        assert_eq!(sv_centre(put("4")), 1);
+        assert_eq!(sv_centre(put("9,10")), 1, "9 Ecken gibt es nicht");
     }
 
     #[test]

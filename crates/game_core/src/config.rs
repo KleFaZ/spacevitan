@@ -199,6 +199,18 @@ pub struct Config {
     /// Version 3.1: der Unterhalt einer Figur ist ihre Stufe im Quadrat (Stufe 4 = 16 Flaeche je
     /// Runde) statt ihre Stufe. Der Koenig zahlt weiterhin nichts. Braucht `terr_upkeep`.
     pub terr_upkeep_sq: bool,
+    /// Version 3.9: Unterhalt nach Anzahl statt nach Stufe. Alle Figuren zusammen kosten `(k * n)^2`
+    /// Flaeche je Runde, `n` ist die Zahl der Figuren (ohne Koenig, jede zaehlt gleich, egal welche
+    /// Stufe), `k` dieser Wert (2 = `(2n)^2`: eine Figur 4, zwei 16, drei 36, vier 64). Das zwingt zu
+    /// grossen Flaechen oder kleinen Heeren, und starke Figuren kosten nicht mehr als schwache. Reicht die
+    /// Flaeche nicht, loest sich zuerst die schwaechste Figur auf (bei gleicher Stufe die zuletzt gebaute).
+    /// 0 = aus (Standard); braucht `terr_upkeep`, ersetzt den Unterhalt nach Stufe und geht nicht mit
+    /// `terr_upkeep_sq`.
+    pub terr_upkeep_cnt: u32,
+    /// Version 3.9: Spieler, die sich bei zu wenig Flaeche fuer den Unterhalt die Figur zum Aufloesen selbst
+    /// aussuchen (Bit `i` = Spieler `i`; Standard 0). Alle anderen loesen automatisch auf, zuerst die
+    /// schwaechste Figur. Die Oberflaeche setzt die Bits der Menschen. Braucht `terr_upkeep`.
+    pub terr_upkeep_pick: u32,
     /// Version 3.1: eine Figur der Stufe `n` auf einem Vorkommen erntet `n` mal so viel je Ernte
     /// (der Takt bleibt, Karten wie Schmiede addieren danach ihr +1). Der Koenig erntet einfach.
     /// Braucht `terr_occupy` (die Figur steht auf dem Feld).
@@ -222,6 +234,19 @@ pub struct Config {
     /// Version 3.4: Gelaende. Jedes Feld ist Feld (Flaechenwert 1), Erde (1/2) oder Moor (1/4); das
     /// zaehlt im Einkommen an Flaeche (siehe `terrain`). Standard aus.
     pub terr_terrain: bool,
+    /// Version 3.9: im Gebietsmodus beliebig viele Karten je Zug kaufen (statt einer), solange das Lager
+    /// bezahlen kann und die Karte noch passt (ein Kartenplatz neben der Fabrik, eine Figur, die sie
+    /// aufnehmen kann). Jede Figur, die eine Karte bekommt, ruht in diesem Zug (`terr_cardlock = 1`).
+    /// Geht nicht mit `terr_cardlock = 2` (dort ist eine Verbesserung schon der ganze Zug). Standard aus.
+    pub terr_multibuy: bool,
+    /// Kampagne: Spieler A bekommt die besseren Flaechen rund um seine Ecke. Der Generator waehlt dann unter
+    /// seinen Verteilungen nicht die gleichmaessigste, sondern die, die A am meisten bevorzugt. Braucht
+    /// `terr_terrain`. Standard aus.
+    pub terr_favor: bool,
+    /// Kampagne: welche Rohstoffkategorien als Vorkommen auf der Karte bleiben (Bit 0 = Eisen, 1 = Gold, 2 = Brot,
+    /// 3 = Kat 4). 15 = alle (Standard), 0 = keine Vorkommen, 1 = nur Eisen. Die Karte wird wie sonst gewuerfelt, danach
+    /// fallen die nicht gewaehlten Kategorien weg (fuer alle Ecken gleich, also bleibt sie fair).
+    pub terr_dep: u32,
     /// Eigene Preise, Karten, die nicht gezogen werden, und selbst gebaute Karten (Version 3).
     pub card_tweaks: crate::cards::CardTweaks,
     /// Brettform unabhaengig von der Spielerzahl: 0 = wie bisher nach Spielerzahl, sonst die
@@ -331,11 +356,16 @@ impl Config {
             terr_cardset3: false,
             terr_delay: false,
             terr_upkeep_sq: false,
+            terr_upkeep_cnt: 0,
+            terr_upkeep_pick: 0,
             terr_yield_lvl: false,
             terr_bread: 0,
             terr_fort: false,
             terr_kamikaze: false,
             terr_terrain: false,
+            terr_multibuy: false,
+            terr_favor: false,
+            terr_dep: 15,
             card_tweaks: crate::cards::CardTweaks::standard(),
             board_corners: 0,
         }
@@ -495,11 +525,16 @@ impl Config {
             "terr_cardset3" => self.terr_cardset3 = value != 0,
             "terr_delay" => self.terr_delay = value != 0,
             "terr_upkeep_sq" => self.terr_upkeep_sq = value != 0,
+            "terr_upkeep_cnt" => self.terr_upkeep_cnt = as_u32(value)?,
+            "terr_upkeep_pick" => self.terr_upkeep_pick = as_u32(value)?,
             "terr_yield_lvl" => self.terr_yield_lvl = value != 0,
             "terr_bread" => self.terr_bread = as_u32(value)?,
             "terr_fort" => self.terr_fort = value != 0,
             "terr_kamikaze" => self.terr_kamikaze = value != 0,
             "terr_terrain" => self.terr_terrain = value != 0,
+            "terr_multibuy" => self.terr_multibuy = value != 0,
+            "terr_favor" => self.terr_favor = value != 0,
+            "terr_dep" => self.terr_dep = as_u32(value)?,
             "board_corners" => self.board_corners = as_u32(value)?.min(255) as u8,
             "veins1" => self.veins_per_type[0] = as_u32(value)?,
             "veins2" => self.veins_per_type[1] = as_u32(value)?,
@@ -691,6 +726,51 @@ impl Config {
         if self.terr_terrain && !self.territory {
             return Err(ConfigError::Invalid(
                 "terr_terrain braucht den Gebietsmodus (territory)",
+            ));
+        }
+        if self.terr_multibuy && !self.territory {
+            return Err(ConfigError::Invalid(
+                "terr_multibuy braucht den Gebietsmodus (territory)",
+            ));
+        }
+        if self.terr_multibuy && self.terr_cardlock == 2 {
+            return Err(ConfigError::Invalid(
+                "terr_multibuy geht nicht mit terr_cardlock=2 (dort ist eine Verbesserung der ganze Zug)",
+            ));
+        }
+        if self.terr_dep > 15 {
+            return Err(ConfigError::Invalid(
+                "terr_dep: 0 bis 15 (Bit 0 Eisen, 1 Gold, 2 Brot, 3 Kat 4)",
+            ));
+        }
+        if self.terr_favor && !self.terr_terrain {
+            return Err(ConfigError::Invalid(
+                "terr_favor braucht das Gelaende (terr_terrain)",
+            ));
+        }
+        if self.terr_upkeep_cnt > 0 && !self.terr_upkeep {
+            return Err(ConfigError::Invalid(
+                "terr_upkeep_cnt braucht terr_upkeep (den Unterhalt)",
+            ));
+        }
+        if self.terr_upkeep_cnt > 0 && self.terr_upkeep_sq {
+            return Err(ConfigError::Invalid(
+                "terr_upkeep_cnt ersetzt den Unterhalt nach Stufe, geht also nicht mit terr_upkeep_sq",
+            ));
+        }
+        if self.terr_upkeep_pick > 0 && !self.terr_upkeep {
+            return Err(ConfigError::Invalid(
+                "terr_upkeep_pick braucht terr_upkeep (den Unterhalt)",
+            ));
+        }
+        if self.terr_upkeep_pick >> 8 != 0 {
+            return Err(ConfigError::Invalid(
+                "terr_upkeep_pick: Bit i fuer Spieler i, hoechstens 8 Spieler",
+            ));
+        }
+        if self.terr_upkeep_cnt > 20 {
+            return Err(ConfigError::Invalid(
+                "terr_upkeep_cnt: 0 (aus) bis 20 (k in (k*n)^2)",
             ));
         }
         if self.terr_upkeep_sq && !self.terr_upkeep {

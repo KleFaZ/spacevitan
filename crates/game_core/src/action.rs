@@ -43,6 +43,10 @@ pub enum Action {
         from: PaySource,
         target: Option<PieceId>,
     },
+    /// Version 3.9 (`terr_upkeep_pick`): der Unterhalt ist groesser als die Flaeche, der Spieler waehlt
+    /// selbst, welche Figur sich aufloest. Erlaubt nur in diesem Zustand (`State::dissolve_due`),
+    /// und dann ist es die einzige Art von Aktion.
+    Dissolve { piece: PieceId },
     /// Nur erlaubt, wenn es sonst keine Aktion gibt.
     Pass,
 }
@@ -206,6 +210,13 @@ pub enum Event {
         player: PlayerId,
         paid: u32,
     },
+    /// Version 3.9 (`terr_upkeep_pick`): der Unterhalt ist groesser als die Flaeche; der Spieler muss
+    /// waehlen, welche Figur sich aufloest (`Action::Dissolve`).
+    DissolveDue {
+        player: PlayerId,
+        upkeep: u32,
+        area: u32,
+    },
     /// Version 3 (`terr_upkeep`): die Flaeche haette nicht gereicht, die Figur hat sich aufgeloest.
     /// Ihr Unterhalt entfaellt.
     Dissolved {
@@ -245,6 +256,10 @@ pub enum IllegalReason {
     PassNotAllowed,
     CardNotInMarket,
     AlreadyBoughtThisTurn,
+    /// Version 3.9: erst muss eine Figur gewaehlt werden, die sich wegen des Unterhalts aufloest.
+    MustDissolve,
+    /// Version 3.9: aufloesen geht nur, wenn der Unterhalt die Flaeche uebersteigt (und nie den Koenig).
+    CannotDissolve,
     CannotPayCard,
     InvalidCardTarget,
     /// Gebiet: Flaeche oder Rohstoffe reichen fuer diese Stufe nicht.
@@ -285,6 +300,12 @@ impl std::fmt::Display for IllegalReason {
             IllegalReason::PassNotAllowed => "Passen ist nur ohne andere Aktion erlaubt",
             IllegalReason::CardNotInMarket => "diese Karte liegt nicht im Markt",
             IllegalReason::AlreadyBoughtThisTurn => "in diesem Zug wurde schon eine Karte gekauft",
+            IllegalReason::MustDissolve => {
+                "der Unterhalt ist groesser als die Flaeche: waehle zuerst eine Figur, die sich aufloest"
+            }
+            IllegalReason::CannotDissolve => {
+                "aufloesen geht nur bei zu wenig Flaeche fuer den Unterhalt und nie beim Koenig"
+            }
             IllegalReason::CannotPayCard => "die Rohstoffe an diesem Ort reichen nicht",
             IllegalReason::InvalidCardTarget => {
                 "die Karte kann so nicht wirken (Figur nicht am Zahlfeld oder schon verbessert)"

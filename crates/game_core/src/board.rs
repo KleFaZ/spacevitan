@@ -476,6 +476,34 @@ impl Board {
         self.distances_from(a)[b.idx()]
     }
 
+    /// Wie gleich weit die Mitte fuer alle Startecken liegt (siehe `centre_report_for`).
+    pub fn centre_report(&self) -> (usize, bool) {
+        let all: Vec<usize> = (0..self.corners.len()).collect();
+        self.centre_report_for(&all)
+    }
+
+    /// Wie gleich weit die Mitte fuer die Startecken `used` (Nummern in `corners()`) liegt: (Anzahl
+    /// Mittelfelder, ob jede dieser Ecken gleich schnell dort ist). Mittelfelder sind die Felder,
+    /// deren weiteste Ecke am naechsten liegt (aller Ecken des Bretts): meist eines, beim Quadrat
+    /// mit gerader Seite vier. „Gleich“ heisst: der Weg jeder genutzten Ecke zum naechsten
+    /// Mittelfeld ist gleich lang.
+    pub fn centre_report_for(&self, used: &[usize]) -> (usize, bool) {
+        let rows: Vec<&[u32]> = self
+            .corners
+            .iter()
+            .map(|&c| self.distances_from(c))
+            .collect();
+        let far = |cell: CellId| rows.iter().map(|r| r[cell.idx()]).max().unwrap_or(0);
+        let best = self.cells().map(far).min().unwrap_or(0);
+        let centre: Vec<CellId> = self.cells().filter(|&c| far(c) == best).collect();
+        let nearest: Vec<u32> = used
+            .iter()
+            .filter_map(|&i| rows.get(i))
+            .map(|r| centre.iter().map(|c| r[c.idx()]).min().unwrap_or(0))
+            .collect();
+        (centre.len(), nearest.windows(2).all(|w| w[0] == w[1]))
+    }
+
     /// Gebiet jeder Startecke: Jedes Feld gehoert der naechsten Ecke des Vielecks (Luftlinie von
     /// der Feldmitte zum Eckpunkt; damit sind die Gebiete auch dann gleich gross, wenn das
     /// Gitter nicht genau auf die Ecken passt). Gleich weit von mehreren Ecken = neutral (`None`).
@@ -907,6 +935,69 @@ mod tests {
                 let d = b.distance(c[i], c[(i + 1) % n]);
                 assert!((9..=12).contains(&d), "{n} Ecken: Abstand {d}");
             }
+        }
+    }
+
+    #[test]
+    fn the_centre_is_equally_far_on_square_triangle_and_hexagon_at_every_size() {
+        for side in 6..=30u32 {
+            let sq = Board::square(side).unwrap().centre_report();
+            // ungerade Seite: ein Mittelfeld, gerade: vier (je eines naeher an einer Ecke)
+            assert_eq!(
+                sq,
+                (if side % 2 == 1 { 1 } else { 4 }, true),
+                "Quadrat {side}"
+            );
+            assert!(
+                Board::triangle(side).unwrap().centre_report().1,
+                "Dreieck {side}"
+            );
+        }
+        for side in 8..=30u32 {
+            let (cells, equal) = Board::hex_polygon(6, side).unwrap().centre_report();
+            assert_eq!((cells, equal), (1, true), "Sechseck {side}");
+        }
+    }
+
+    #[test]
+    fn two_opposite_players_are_equally_far_from_the_centre_even_on_an_octagon() {
+        let b = Board::hex_polygon(8, 12).unwrap();
+        assert!(!b.centre_report().1);
+        assert!(b.centre_report_for(&[0, 4]).1);
+    }
+
+    #[test]
+    fn the_centre_is_not_equally_far_on_most_five_seven_and_eight_corner_boards() {
+        // Gemessene Faelle (siehe README, Version 3.9): gleich weit nur auf Teilen der Groessen.
+        for side in 8..=9u32 {
+            assert!(
+                Board::hex_polygon(5, side).unwrap().centre_report().1,
+                "Fuenfeck {side}"
+            );
+        }
+        for side in 10..=17u32 {
+            assert!(
+                !Board::hex_polygon(5, side).unwrap().centre_report().1,
+                "Fuenfeck {side}"
+            );
+        }
+        for side in [11u32, 13, 16] {
+            assert!(
+                Board::hex_polygon(7, side).unwrap().centre_report().1,
+                "Siebeneck {side}"
+            );
+        }
+        for side in [8u32, 9, 10, 12, 14, 15] {
+            assert!(
+                !Board::hex_polygon(7, side).unwrap().centre_report().1,
+                "Siebeneck {side}"
+            );
+        }
+        for side in 8..=30u32 {
+            assert!(
+                !Board::hex_polygon(8, side).unwrap().centre_report().1,
+                "Achteck {side}"
+            );
         }
     }
 }

@@ -344,7 +344,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 @media (max-width: 700px) {
   .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #qPlayers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  #qSide { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #qSide { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  #qShape { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #qSide button { padding: 8px 4px; }
   .seg button { padding: 8px 10px; }
   .qgo { flex-direction: column; align-items: stretch; }
   .qgo .btn.big { width: 100%; }
@@ -400,6 +402,20 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .cardpop .cp-info .cp-st { font-weight: 700; color: var(--muted); }
 .cardpop .cp-info .cp-st.ok { color: #2b7a3f; }
 .cardpop .cp-need { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 6px; font-size: 0.9rem; }
+.dissolvepop { z-index: 65; background: rgb(0 0 0 / 0.28); align-items: flex-end; }
+@media (min-width: 900px) { .dissolvepop { align-items: center; } }
+.dissolvepop .dp-box { width: min(440px, 100%); max-height: 100%; overflow: auto; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-top: 6px solid #d64545; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 16px 44px rgb(0 0 0 / 0.55); }
+.dissolvepop .dp-box h3 { margin: 0; font-family: var(--font-display); font-size: 1.15rem; }
+.dissolvepop .dp-box p { margin: 0; font-size: 0.9rem; line-height: 1.4; }
+.dissolvepop .dp-list { display: grid; gap: 6px; }
+.dissolvepop .dp-item { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.dissolvepop .dp-item:hover, .dissolvepop .dp-item:focus-visible { border-color: #d64545; outline: none; background: rgb(214 69 69 / 0.1); }
+.dissolvepop .dp-item .chip { flex: none; }
+.dissolvepop .dp-item span { flex: 1; min-width: 0; }
+.dissolvepop .dp-item small { color: var(--muted); white-space: nowrap; }
+.dissolvepop .dp-btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.dissolvepop .dp-btns .btn { min-height: 44px; }
+.dissolvepop .dp-btns .btn.danger { background: #c93a3a; border-color: #c93a3a; color: #fff; }
 .endpop { z-index: 70; }
 .endpop .ep-box { width: min(380px, 100%); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-top: 8px solid var(--muted); border-radius: 16px; padding: 20px 18px 16px; text-align: center; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 18px 50px rgb(0 0 0 / 0.6); }
 .endpop .ep-box.win { border-top-color: #2fa35b; }
@@ -552,13 +568,30 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         </div>
       </div>
       <div class="qrow">
+        <span class="qlabel" id="qShapeLabel">Form des Bretts</span>
+        <div class="seg" id="qShape" role="radiogroup" aria-labelledby="qShapeLabel">
+          <button type="button" role="radio" aria-checked="false" data-shape="auto" title="Das Brett passt zur Spielerzahl: Quadrat für 2 oder 4, Dreieck für 3, sonst ein Vieleck mit so vielen Ecken wie Spielern">Automatisch</button>
+          <button type="button" role="radio" aria-checked="false" data-shape="4">Quadrat</button>
+          <button type="button" role="radio" aria-checked="false" data-shape="3">Dreieck</button>
+          <button type="button" role="radio" aria-checked="false" data-shape="5">Fünfeck</button>
+          <button type="button" role="radio" aria-checked="false" data-shape="6">Sechseck</button>
+          <button type="button" role="radio" aria-checked="false" data-shape="7">Siebeneck</button>
+          <button type="button" role="radio" aria-checked="false" data-shape="8">Achteck</button>
+        </div>
+      </div>
+      <div class="qrow">
         <span class="qlabel" id="qSideLabel">Feldgröße (Felder je Kante)</span>
         <div class="seg" id="qSide" role="radiogroup" aria-labelledby="qSideLabel">
           <button type="button" role="radio" aria-checked="false" data-side="6">6</button>
+          <button type="button" role="radio" aria-checked="false" data-side="7">7</button>
           <button type="button" role="radio" aria-checked="false" data-side="8">8</button>
+          <button type="button" role="radio" aria-checked="false" data-side="9">9</button>
           <button type="button" role="radio" aria-checked="false" data-side="10">10</button>
+          <button type="button" role="radio" aria-checked="false" data-side="11">11</button>
           <button type="button" role="radio" aria-checked="false" data-side="12">12</button>
+          <button type="button" role="radio" aria-checked="false" data-side="13">13</button>
           <button type="button" role="radio" aria-checked="false" data-side="14">14</button>
+          <button type="button" role="radio" aria-checked="false" data-side="15">15</button>
           <button type="button" role="radio" aria-checked="false" data-side="16">16</button>
         </div>
       </div>
@@ -569,7 +602,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           <button type="button" role="radio" aria-checked="false" data-preset="ideas">Neue Regelideen</button>
           <button type="button" role="radio" aria-checked="false" data-preset="oldbread">Alter Brot-Bonus</button>
           <button type="button" role="radio" aria-checked="false" data-preset="fast">Schnelle Partie</button>
+          <button type="button" role="radio" aria-checked="false" data-preset="upcount">Unterhalt nach Anzahl</button>
           <button type="button" role="radio" aria-checked="false" data-preset="cards">Viele Karten</button>
+        </div>
+      </div>
+      <div class="qrow">
+        <span class="qlabel" id="qBuyLabel">Karten kaufen</span>
+        <div class="seg" id="qBuy" role="radiogroup" aria-labelledby="qBuyLabel">
+          <button type="button" role="radio" aria-checked="false" data-buy="0" title="Standard: in einem Zug höchstens eine Karte">Eine je Zug</button>
+          <button type="button" role="radio" aria-checked="false" data-buy="1" title="So viele Karten pro Zug, wie das Lager bezahlen kann; jede verbesserte Figur ruht in diesem Zug">So viele du bezahlen kannst</button>
         </div>
       </div>
       <p class="note qnote" id="qNote"></p>
@@ -714,6 +755,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 </main>
 <div id="cardPop" class="cardpop" hidden role="dialog" aria-modal="true" aria-label="Karte"></div>
 <div id="endPop" class="cardpop endpop" hidden role="dialog" aria-modal="true" aria-label="Spielende"></div>
+<div id="dissolvePop" class="cardpop dissolvepop" hidden role="dialog" aria-modal="true" aria-label="Figur auflösen"></div>
 
 <script type="application/json" id="samples">[]</script>
 <script type="application/octet-stream" id="wasm"></script>
@@ -1645,8 +1687,19 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const controlOn = () => !!(R.config && R.config.terr_control);
   /** Version 3: 0 = Karte kostet nichts, 1 = die verbesserte Figur ruht in diesem Zug, 2 = Kauf ist der ganze Zug. */
   const cardLockMode = () => (R.config && R.config.terr_cardlock) || 0;
+  /** Version 3.9: beliebig viele Karten je Zug (`terr_multibuy`)? */
+  const multiBuyOn = () => !!(R.config && R.config.terr_multibuy);
   /** Die Figur, die in diesem Zug eine Karte bekam und ruht (nur im Zug danach sichtbar). */
   const lockedPiece = (f) => (f.card_lock === null || f.card_lock === undefined ? null : f.byId.get(f.card_lock) || null);
+  /** Alle Figuren, die in diesem Zug eine Karte bekamen (mit Mehrfachkauf `terr_multibuy` koennen es mehrere sein). */
+  const lockedPieces = (f) => {
+    const ids = new Set(Array.isArray(f.card_locks) ? f.card_locks : []);
+    if (f.card_lock !== null && f.card_lock !== undefined) ids.add(f.card_lock);
+    return [...ids].map((id) => f.byId.get(id)).filter(Boolean);
+  };
+  const isLockedId = (f, id) => lockedPieces(f).some((q) => q.id === id);
+  /** Ist in diesem Zug schon eine Karte gekauft und gibt es keinen Mehrfachkauf? Dann ist der Markt zu. */
+  const buyBlocked = (f) => !!f.bought_this_turn && !(R.config && R.config.terr_multibuy);
   /** Steht auf dem Feld eine Figur seines Besitzers (also: laeuft dort der Erntezaehler)? */
   function isWorked(f, cell) {
     if (f.workedSet) return f.workedSet.has(cell); // der Spielkern sagt es selbst (auch Kontrollfelder)
@@ -2507,6 +2560,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     canvas.dataset.frame = String(fi);
 
     drawLockBadge(f);
+    drawDissolveMark(f);
     drawFx(now);
     drawMini();
     if (tween || fx.length) requestAnimationFrame(draw);
@@ -2557,8 +2611,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
   }
   function drawLockBadge(f) {
-    const piece = lockedPiece(f);
-    if (!piece) return;
+    for (const piece of lockedPieces(f)) drawLockBadgeFor(piece);
+  }
+  function drawLockBadgeFor(piece) {
     const [x, y] = R.board.cells[piece.cell];
     const [cx, cy] = iso(x, y);
     const u = geo.W, r = Math.max(7, u * 0.2);
@@ -2821,6 +2876,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       text = !ev ? "König baut die Fabrik neu"
         : ev.from === null ? `König baut die zerstörte Fabrik auf ${cellName(ev.to)} neu: ${runden}, bis dahin wehrlos`
         : `König zieht mit der Fabrik um (${cellName(ev.from)} → ${cellName(ev.to)}): ${runden}, bis dahin kein Ertrag, wehrlos`;
+    } else if (a.type === "dissolve") {
+      const gone = f.events.find((e) => e.type === "dissolved");
+      text = gone ? `wählt die Figur Stufe ${gone.level} auf ${cellName(gone.cell)}: sie löst sich wegen des Unterhalts auf` : "löst eine Figur auf (Unterhalt)";
     } else if (a.type === "trade") {
       const ev = f.events.find((e) => e.type === "traded");
       text = ev ? `tauscht ${ev.count}× Kat 3 gegen ${ev.area} Fläche` : "tauscht Kat 3 gegen Fläche";
@@ -2871,7 +2929,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       case "enclosed": return `${playerName(e.player)} umschließt ${e.cells.length} neutrale${e.cells.length === 1 ? "s Feld" : " Felder"}: ${e.cells.length === 1 ? "es geht" : "sie gehen"} an ${playerName(e.player)} (${e.cells.slice(0, 6).map(cellName).join(", ")}${e.cells.length > 6 ? " …" : ""}).`;
       case "reconnected": return `Figur von ${playerName(e.owner)} auf ${cellName(e.cell)} grenzt wieder an ihr Land: wieder aktiv, das Feld gehört jetzt ${playerName(e.owner)}.`;
       case "income": return `Fabrik von ${playerName(e.player)} sammelt ${e.area} Fläche${e.bonus ? `, dazu ${e.bonus} Bonus-Fläche (${e.kat3}× Brot: 2^${e.kat3})` : ""}${e.gained.length ? ` und ${invText(e.gained)}` : ""}.`;
-      case "upkeep": return `Unterhalt von ${playerName(e.player)}: −${e.paid} Fläche (${upkeepSqOn() ? "Summe der Stufen im Quadrat" : "Summe der Figurenstufen"}).`;
+      case "upkeep": return `Unterhalt von ${playerName(e.player)}: −${e.paid} Fläche (${upkeepCnt() > 0 ? `(${upkeepCnt()}·Anzahl)² für alle Figuren` : upkeepSqOn() ? "Summe der Stufen im Quadrat" : "Summe der Figurenstufen"}).`;
+      case "dissolve_due": return `Unterhalt von ${playerName(e.player)}: ${e.upkeep} Fläche, aber nur ${e.area} da. ${playerName(e.player)} muss eine Figur wählen, die sich auflöst.`;
       case "dissolved": return `Figur Stufe ${e.level} von ${playerName(e.owner)} auf ${cellName(e.cell)} löst sich auf: die Fläche reichte nicht für den Unterhalt.`;
       case "captured": return `${playerName(e.by)} schlägt auf ${cellName(e.at)} eine Figur von ${playerName(e.owner)}.`;
       case "factory_built": return `${playerName(e.owner)} baut eine Fabrik auf ${cellName(e.cell)}.`;
@@ -2962,8 +3021,20 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Version 3.1: Unterhalt = Stufe im Quadrat. */
   const upkeepSqOn = () => !!(R && R.config && R.config.terr_upkeep_sq);
   const upkeepLevel = (lvl) => (upkeepSqOn() ? lvl * lvl : lvl);
-  /** Unterhalt je Runde: Summe der Stufen aller Figuren des Spielers, der Koenig zahlt nichts. */
-  const upkeepOf = (f, p) => (upkeepOn() ? f.pieces.filter((x) => x.owner === p && !x.king).reduce((a, x) => a + upkeepLevel(x.level || 1), 0) : 0);
+  /** Version 3.9: Unterhalt nach Anzahl, alle Figuren zusammen (k·n)² (k = `terr_upkeep_cnt`, 0 = aus). */
+  const upkeepCnt = () => (R && R.config && R.config.terr_upkeep_cnt) || 0;
+  const upkeepCount = (n) => { const k = upkeepCnt(); return (k * n) * (k * n); };
+  /** Unterhalt je Runde: Summe der Stufen aller Figuren des Spielers (mit Unterhalt nach Anzahl: (k·n)²), der Koenig zahlt nichts. */
+  const upkeepOf = (f, p) => {
+    if (!upkeepOn()) return 0;
+    const mine = f.pieces.filter((x) => x.owner === p && !x.king);
+    return upkeepCnt() > 0 ? upkeepCount(mine.length) : mine.reduce((a, x) => a + upkeepLevel(x.level || 1), 0);
+  };
+  /** Kurzer Hinweis „Unterhalt …“ an einer Figur, die man bauen koennte (mit Unterhalt nach Anzahl: was sie zusaetzlich kostet). */
+  const upkeepNote = (f, p, level) => {
+    if (upkeepCnt() > 0) { const n = f.pieces.filter((x) => x.owner === p && !x.king).length; return `Unterhalt +${upkeepCount(n + 1) - upkeepCount(n)}`; }
+    return `Unterhalt ${upkeepLevel(level)}`;
+  };
   const signed = (n) => (n < 0 ? `−${fmtNum(-n)}` : `+${fmtNum(n)}`);
   /** Immer zwei Nachkommastellen: +0,33 oder +1,00 (Durchschnitt je Runde in der Uebersicht). */
   const fmt2 = (n) => (Math.round(n * 100) / 100).toFixed(2).replace(".", ",");
@@ -3131,7 +3202,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       rows.push(`<div class="warn">Die Fläche reicht am Zugende nicht für den Unterhalt: eine Figur löst sich auf.</div>`);
     }
     rows.push(explain(`Am Ende deines Zugs sammelt die Fabrik alle Felder, die an ihr hängen (${terrainOn() ? "Feld 1, Erde ½, Moor ¼ Fläche" : "je 1 Fläche"}), dazu das Eisen, Gold und Brot auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.` +
-      (upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ${upkeepSqOn() ? "ihre Stufe im Quadrat (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16)" : "ihre Stufe"} in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
+      (upkeepOn() && upkeepCnt() > 0 ? ` Unterhalt nach Anzahl: alle Figuren zusammen (außer dem König) kosten je Runde (${upkeepCnt()}·Anzahl)² Fläche, egal welche Stufe (eine ${upkeepCount(1)}, zwei ${upkeepCount(2)}, drei ${upkeepCount(3)}, vier ${upkeepCount(4)}, fünf ${upkeepCount(5)}), abgezogen nach dem Einkommen. Reicht die Fläche nicht, suchst du aus, welche Figur sich auflöst (keine Rückerstattung); Bots lösen die schwächste auf. Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ${upkeepSqOn() ? "ihre Stufe im Quadrat (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16)" : "ihre Stufe"} in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
     // --- Figuren: grau, solange nicht bezahlbar; Farbe, wenn bereit
     rows.push("\u0001");   // Trennmarke: ab hier kommt der Figurenteil (eigene Box unter den Karten)
     rows.push(`<p class="sec">Figuren bauen</p>`);
@@ -3142,7 +3213,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const reqs = st.needs.map((n) => reqHtml(n.kind, n.have, n.need, color)).join("");
       const tip = `${unitTitle(level)} (Stufe ${level}): ${terrPriceText(level)}${st.ok ? "" : never ? ` – es kommt kein ${st.needs.filter((n) => !Number.isFinite(n.rounds)).map((n) => KAT_NAME[n.kind]).join(" / ")} dazu` : ` – ${roundsText(st.rounds)}`}`;
       rows.push(`<div class="loc lad${st.ok ? " ok" : ""}${never ? " never" : ""}" title="${escapeHtml(tip)}">${symSvg("u" + level, 28, color, !st.ok, `${unitTitle(level)} (Stufe ${level})`)}` +
-        `<div class="lb"><b>${unitTitle(level)}</b><small>Stufe ${level}${upkeepOn() ? ` · Unterhalt ${upkeepLevel(level)}` : ""}</small></div><span class="st">${when}</span><div class="need">${reqs}</div></div>`);
+        `<div class="lb"><b>${unitTitle(level)}</b><small>Stufe ${level}${upkeepOn() ? ` · ${upkeepNote(f, p, level)}` : ""}</small></div><span class="st">${when}</span><div class="need">${reqs}</div></div>`);
     }
     // --- Koenig mit Gold verbessern
     const ku = kingUpInfo(f, p);
@@ -3198,7 +3269,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const needs = [[1, k.color * m], [2, k.k2 * m], [3, k.k3 * m]].filter(([, n]) => n > 0);
     const miss = needs.filter(([kind, n]) => catUnits(store, kind) < n).map(([kind, n]) => `${n - catUnits(store, kind)}× ${KAT_NAME[kind]}`).join(", ");
     const opts = cardBuys(c.key), can = opts.length > 0, needPiece = can && buyNeedsPiece(opts);
-    const go = can ? (needPiece ? "Figur wählen" : "Kaufen") : !acting ? "nicht am Zug" : f.bought_this_turn ? "schon gekauft"
+    const go = can ? (needPiece ? "Figur wählen" : "Kaufen") : !acting ? "nicht am Zug" : buyBlocked(f) ? "schon gekauft"
       : miss ? `fehlt: ${miss}`
       : cardAnyOn() && c.target === "unit" ? "keine passende Figur"
       : c.key === "factory_shift" ? "kein Zielfeld"
@@ -3424,7 +3495,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         const go = can ? "Bauen" : !st.ok ? (never ? "nie" : roundsText(st.rounds)) : !info.free ? "Fabrik besetzt" : !acting ? "nicht am Zug" : "nicht möglich";
         const tip = `${unitTitle(st.level)} (Stufe ${st.level}): ${terrPriceText(st.level)}${st.ok ? "" : ` – es fehlt: ${missingText(st)}`}`;
         return act(can ? "ok" : "", can ? `data-build="${st.level}"` : "disabled", symSvg("u" + st.level, 28, color, !st.ok, unitTitle(st.level)),
-          unitTitle(st.level), compactUi() ? (upkeepOn() ? `Unterhalt ${upkeepLevel(st.level)}` : "") : `Stufe ${st.level}${upkeepOn() ? ` · Unterhalt ${upkeepLevel(st.level)}` : ""}`, go,
+          unitTitle(st.level), compactUi() ? (upkeepOn() ? upkeepNote(f, info.p, st.level) : "") : `Stufe ${st.level}${upkeepOn() ? ` · ${upkeepNote(f, info.p, st.level)}` : ""}`, go,
           st.needs.map((n) => reqHtml(n.kind, n.have, n.need, color)).join(""), tip);
       });
       // Koenig mit Gold
@@ -3449,7 +3520,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       });
       let cardsNote = "";
       if (!(R.market || []).length && !ku) cardsNote = "In dieser Partie gibt es keine Karten.";
-      else if (acting && f.bought_this_turn) cardsNote = "In diesem Zug hast du schon eine Karte gekauft (eine je Zug).";
+      else if (acting && buyBlocked(f)) cardsNote = "In diesem Zug hast du schon eine Karte gekauft (eine je Zug).";
       const stockCard = stockCards ? `<p class="muted">Liegt bereit: ${escapeHtml(CARD(stockCards).name)}</p>` : "";
       let nextLine = "";
       if (next && !Number.isFinite(next.rounds)) nextLine = `<p class="muted">${escapeHtml(`${unitTitle(next.level)} (Stufe ${next.level}) kommt nicht: ${missingText(next)}. Verbinde Land mit passenden Vorkommen.`)}</p>`;
@@ -3876,6 +3947,93 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     if (ev.target === box || (t && t.dataset.ep === "close")) { closeEndPop(); return; }
     if (t && t.dataset.ep === "new") { closeEndPop(); $("newGame").click(); }
   });
+  // ----- Version 3.9: zu wenig Flaeche fuer den Unterhalt, der Spieler waehlt, welche Figur sich aufloest ----
+  let dissolveSel = null;     // gewaehlte Figur, die noch bestaetigt werden muss
+  let dissolveHover = null;   // Figur unter dem Zeiger oder Fokus: auf dem Brett markiert
+  /** Wartet das Spiel auf die Wahl einer Figur? { f, p, opts: [{ a, i }] } mit den Aktionen aus `live.legal`. */
+  function dissolveState() {
+    if (!live || !liveR || !canAct()) return null;
+    const f = liveR.frames[liveR.frames.length - 1];
+    if (!f.dissolve_due) return null;
+    const opts = live.legal.map((a, i) => ({ a, i })).filter((x) => x.a.type === "dissolve");
+    return opts.length ? { f, p: f.current, opts } : null;
+  }
+  const dissolveMark = () => (dissolveSel !== null ? dissolveSel : dissolveHover);
+  /** Unterhalt des Spielers, wenn die Figur `q` wegfaellt. */
+  function upkeepWithout(f, p, q) {
+    if (upkeepCnt() > 0) return upkeepCount(f.pieces.filter((x) => x.owner === p && !x.king).length - 1);
+    return upkeepOf(f, p) - upkeepLevel(q.level || 1);
+  }
+  function renderDissolvePop() {
+    const box = $("dissolvePop");
+    const st = dissolveState();
+    if (!st) { dissolveSel = null; dissolveHover = null; box.hidden = true; return; }
+    const { f, p } = st;
+    const area = (f.area || [])[p] || 0, upkeep = upkeepOf(f, p);
+    if (dissolveSel !== null && !st.opts.some((x) => x.a.piece === dissolveSel)) dissolveSel = null;
+    const name = (q) => `${unitTitle(q.level)} (Stufe ${q.level}) auf ${cellName(q.cell)}`;
+    if (dissolveSel === null) {
+      const items = st.opts.map(({ a }) => {
+        const q = f.byId.get(a.piece);
+        if (!q) return "";
+        const save = upkeep - upkeepWithout(f, p, q);
+        return `<button type="button" class="dp-item" data-dp="pick" data-piece="${q.id}"><i class="chip" style="background:${PLAYER[q.owner].color}"></i>` +
+          `<span><b>${escapeHtml(unitTitle(q.level))}</b> Stufe ${q.level} auf ${escapeHtml(cellName(q.cell))}</span><small>spart ${save} Unterhalt</small></button>`;
+      }).join("");
+      box.innerHTML = `<div class="dp-box"><h3>Zu wenig Fläche für den Unterhalt</h3>` +
+        `<p>Der Unterhalt beträgt <b>${upkeep}</b> Fläche, du hast nur <b>${area}</b>. Eine Figur muss sich auflösen. Welche?</p><div class="dp-list">${items}</div></div>`;
+    } else {
+      const q = f.byId.get(dissolveSel);
+      const after = upkeepWithout(f, p, q);
+      const rest = after <= area ? `Danach reicht die Fläche (Unterhalt ${after}, du hast ${area}).` : `Danach beträgt der Unterhalt noch ${after} bei ${area} Fläche: du musst dann noch eine weitere Figur wählen.`;
+      box.innerHTML = `<div class="dp-box"><h3>Wirklich diese Figur auflösen?</h3>` +
+        `<p><b>${escapeHtml(name(q))}</b> ist danach weg, es gibt nichts zurück. ${escapeHtml(rest)}</p>` +
+        `<div class="dp-btns"><button type="button" class="btn" data-dp="back">Zurück</button><button type="button" class="btn danger" data-dp="yes">Ja, auflösen</button></div></div>`;
+    }
+    box.hidden = false;
+    const b = box.querySelector("[data-dp='yes']") || box.querySelector("[data-dp='pick']");
+    if (b) b.focus({ preventScroll: true });
+  }
+  $("dissolvePop").addEventListener("click", (ev) => {
+    const t = ev.target.closest("[data-dp]");
+    const st = dissolveState();
+    if (!t || !st) return;
+    if (t.dataset.dp === "pick") { dissolveSel = Number(t.dataset.piece); dissolveHover = null; renderDissolvePop(); requestAnimationFrame(draw); }
+    else if (t.dataset.dp === "back") { dissolveSel = null; renderDissolvePop(); requestAnimationFrame(draw); }
+    else if (t.dataset.dp === "yes") {
+      const o = st.opts.find((x) => x.a.piece === dissolveSel);
+      if (!o) return;
+      dissolveSel = null; dissolveHover = null;
+      humanAct(o.i);
+    }
+  });
+  const dissolveHoverTo = (id) => { if (dissolveHover !== id) { dissolveHover = id; requestAnimationFrame(draw); } };
+  $("dissolvePop").addEventListener("mouseover", (ev) => { const t = ev.target.closest("[data-piece]"); dissolveHoverTo(t ? Number(t.dataset.piece) : null); });
+  $("dissolvePop").addEventListener("mouseleave", () => dissolveHoverTo(null));
+  $("dissolvePop").addEventListener("focusin", (ev) => { const t = ev.target.closest("[data-piece]"); dissolveHoverTo(t ? Number(t.dataset.piece) : null); });
+  /** Rotes Zeichen um die Figur, die sich auflosen koennte (Zeiger auf der Liste) oder soll (gewaehlt). */
+  function drawDissolveMark(f) {
+    const id = dissolveMark();
+    if (id === null || id === undefined) return;
+    const piece = f.byId.get(id);
+    if (!piece) return;
+    const [x, y] = R.board.cells[piece.cell];
+    const [cx, cy] = iso(x, y);
+    const u = geo.W, r = Math.max(10, u * 0.5);
+    const my = cy - (geo.flat ? 0 : u * 0.3);
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = Math.max(2.5, r * 0.18);
+    ctx.strokeStyle = "#e0453a";
+    ctx.setLineDash([r * 0.5, r * 0.3]);
+    ctx.beginPath(); ctx.arc(cx, my, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(cx - r * 0.5, my - r * 0.5); ctx.lineTo(cx + r * 0.5, my + r * 0.5);
+    ctx.moveTo(cx + r * 0.5, my - r * 0.5); ctx.lineTo(cx - r * 0.5, my + r * 0.5);
+    ctx.stroke();
+    ctx.restore();
+  }
   /** Fenster zu einer Karte: grosse Karte, Erklaerung, Preis mit Lager, Kaufen. */
   function renderCardPop() {
     const box = $("cardPop");
@@ -3918,7 +4076,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     $("marketBox").hidden = market.length === 0 && !ku;
     if (market.length === 0 && !ku) { closeCardPop(); return; }
     $("marketTitle").textContent = "Karten";
-    $("marketNote").textContent = "Eine Karte je Zug, bezahlt aus dem Lager der Fabrik. Bunte Karten kannst du jetzt kaufen, graue noch nicht. Tippe eine Karte an: das Fenster erklärt sie und kauft sie." +
+    $("marketNote").textContent = `${multiBuyOn() ? "So viele Karten wie das Lager bezahlen kann" : "Eine Karte je Zug"}, bezahlt aus dem Lager der Fabrik. Bunte Karten kannst du jetzt kaufen, graue noch nicht. Tippe eine Karte an: das Fenster erklärt sie und kauft sie.` +
       (cardLockMode() === 1 ? " Die verbesserte Figur ruht danach in diesem Zug." : cardLockMode() === 2 ? " Eine Verbesserung ist dein ganzer Zug." : "");
     $("marketLegend").innerHTML = "";
     const ul = $("market");
@@ -3959,11 +4117,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const acting = canAct();
     const own = p === null || p === undefined ? -1 : ownColorOf(p);
     $("marketNote").textContent = isTerr() && cardAnyOn()
-      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König)"+(stackOn() ? ", und mehrmals auf dieselbe Figur (Stufe n höchstens n−1 mal; Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld)" : "")+"; klicke die Karte, dann die Figur. „Fabrik rücken“ wirkt sofort: gleich nach dem Kauf musst du die Fabrik diagonal auf ein markiertes Feld rücken (das ersetzt deinen Zug); der Königs-Boost wirkt sofort auf den König." +
+      ? (multiBuyOn() ? "So viele Karten pro Zug, wie das Lager bezahlen kann (jede Karte zusätzlich zum Zug)" : "Eine Karte pro Zug, zusätzlich zum Zug") + ", aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Kürzer, Ecke und Sprung wirken sofort auf eine Figur deiner Wahl, auch auf eine schon gebaute (ab Stufe 2, nicht auf den König)"+(stackOn() ? ", und mehrmals auf dieselbe Figur (Stufe n höchstens n−1 mal; Stufe 3 mit zweimal Kürzer zieht 3, 2 oder 1 Feld)" : "")+"; klicke die Karte, dann die Figur. „Fabrik rücken“ wirkt sofort: gleich nach dem Kauf musst du die Fabrik diagonal auf ein markiertes Feld rücken (das ersetzt deinen Zug); der Königs-Boost wirkt sofort auf den König." +
         (cardLockMode() === 1 ? " Eine verbesserte Figur (auch der König beim Boost) ruht dafür in diesem Zug: mit ihr kannst du nicht ziehen, mit allen anderen schon."
           : cardLockMode() === 2 ? " Eine Verbesserung (Figurenkarte, Königs-Boost) ist dein ganzer Zug." : "")
       : isTerr()
-      ? "Eine Karte pro Zug, zusätzlich zum Zug, aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Sie liegt neben der Fabrik und wirkt auf die nächste gebaute Figur; es passt nur eine."
+      ? (multiBuyOn() ? "So viele Karten pro Zug, wie das Lager bezahlen kann (jede zusätzlich zum Zug)" : "Eine Karte pro Zug, zusätzlich zum Zug") + ", aus dem Lager der Fabrik (nur nach Kategorie, kein Farbzwang). Sie liegt neben der Fabrik und wirkt auf die nächste gebaute Figur; es passt nur eine."
       : acting
       ? "Eine Karte pro Zug, zusätzlich zu deinem Zug. Bezahlt wird aus einem Ort: dem Gepäck des Königs oder einer Fabrik."
       : "Eine Karte pro Zug, zusätzlich zum Zug. Bezahlt wird aus einem Ort: Gepäck des Königs oder eine Fabrik.";
@@ -4022,7 +4180,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           }
           li.appendChild(box);
           if (lockNote(c)) li.insertAdjacentHTML("beforeend", `<span class="where">${escapeHtml(lockNote(c))}</span>`);
-        } else if (f.bought_this_turn) {
+        } else if (buyBlocked(f)) {
           li.insertAdjacentHTML("beforeend", `<span class="missing">In diesem Zug wurde schon eine Karte gekauft.</span>`);
         } else {
           const miss = best ? shortfall(cost, best.inv, own) : [];
@@ -4071,10 +4229,11 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           c.terr_move ? `Fabrik-Umzug ${c.terr_move_k1} Eisen + ${c.terr_move_k2} Gold, Dauer = halbe Entfernung aufgerundet, nach Zerstörung ${rebuildDistOn() ? "ebenso nach Entfernung" : `${c.terr_rebuild} Runden`}` : "kein Fabrik-Umzug",
           c.terr_bonus && !(c.terr_bread > 0) ? "Kat 3: k verbundene Felder bringen je Runde 2^k Fläche zusätzlich" : c.terr_bread > 0 ? `Brot im Lager: alle ${c.terr_bread} Runden geerntet (Figur muss draufstehen), bezahlt Tempo-Karten und Nachschub` : c.terr_trade ? "Kat 3: k Stück gegen 2^k Fläche" : "kein Kat-3-Bonus",
           c.terr_occupy ? (c.terr_control ? "Erntezähler läuft mit eigener Figur auf dem Feld oder in ihrem Einflussbereich" : "Erntezähler läuft nur mit eigener Figur auf dem Feld") : "Erntezähler läuft ohne Figur",
-          c.terr_upkeep ? `Unterhalt: jede Figur kostet je Runde ${c.terr_upkeep_sq ? "ihre Stufe im Quadrat" : "ihre Stufe"} in Fläche (bei Minus löst sich eine Figur auf)` : "",
+          c.terr_upkeep && c.terr_upkeep_cnt > 0 ? `Unterhalt nach Anzahl: alle Figuren zusammen (${c.terr_upkeep_cnt}·Anzahl)² Fläche je Runde, Stufe egal (bei Minus wählst du, welche Figur sich auflöst)` : c.terr_upkeep ? `Unterhalt: jede Figur kostet je Runde ${c.terr_upkeep_sq ? "ihre Stufe im Quadrat" : "ihre Stufe"} in Fläche (bei Minus löst sich eine Figur auf)` : "",
           c.terr_yield_lvl ? "Ertrag je Stufe: eine Figur der Stufe n erntet n Stück je Ernte" : "",
           c.terr_delay ? "Sturmangriff und Doppelzug wirken erst im nächsten eigenen Zug" : "",
           c.terr_terrain ? "Gelände: Feld zählt 1 Fläche (meist in der Mitte), Erde ½ (⅓ der Felder, zwischen Mitte und Ecke), Moor ¼ (¼ der Felder, meist in den Ecken)" : "",
+          c.terr_multibuy ? "Karten: so viele je Zug, wie das Lager bezahlen kann (jede verbesserte Figur ruht in diesem Zug)" : "",
           c.terr_kamikaze ? "Kamikaze-Karte: die gewählte Figur brennt, setzt eine Runde aus und greift dann einmal an (Ziel genau in Reichweite, eine Figur davor wird übersprungen und stirbt auch); sie stirbt dabei, der Weg wird neutral" : "",
           c.terr_fort ? "Fort-Karte: eine Figur auf dem Fort zieht n oder n+1 Felder; es verschwindet, wenn das Feld nicht mehr dem Besitzer gehört" : "",
           c.terr_kingup ? `König-Upgrade mit Gold (${c.terr_kingup_price || 1} je Zugfeld)` : "",
@@ -4319,7 +4478,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         : `${unitTitle(piece.level)} von ${playerName(piece.owner)} (Stufe ${piece.level}, Reichweite ${piece.range}${extra ? `; ${extra}` : ""}): ${abilityText(piece)}`);
       if (hoverReachValid() && hoverReach.id === piece.id) {
         const n = hoverReach.cells.length;
-        rows.push(piece.id === f.card_lock ? "Hat in diesem Zug eine Karte bekommen und ruht bis zum nächsten Zug."
+        rows.push(isLockedId(f, piece.id) ? "Hat in diesem Zug eine Karte bekommen und ruht bis zum nächsten Zug."
           : n ? `Ziehfelder jetzt: ${n} (auf dem Brett markiert, rot = schlagen).` : "Hat gerade kein Ziehfeld.");
       }
     }
@@ -4674,7 +4833,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const who = piece.owner === R.frames[fi].current ? "" : ` von Spieler ${playerName(piece.owner)}`;
     const n = inspect.cells.length;
     const what = `${pieceLabel(piece)}${who} auf ${cellName(piece.cell)}`;
-    if (piece.id === R.frames[fi].card_lock) return `${what}: hat in diesem Zug eine Karte bekommen und ruht bis zum nächsten Zug.`;
+    if (isLockedId(R.frames[fi], piece.id)) return `${what}: hat in diesem Zug eine Karte bekommen und ruht bis zum nächsten Zug.`;
     if (!n) return `${what}: hat gerade kein Ziehfeld.`;
     return `${what}: ${n} ${n === 1 ? "Ziehfeld" : "Ziehfelder"} (rot = schlagen). Noch einmal anklicken oder Esc blendet sie aus.`;
   }
@@ -5038,6 +5197,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   // Gesendet wird nur, was jemand eintippt: leere Felder lassen dem Spielkern seinen Standard.
   /** Brett (Eckenzahl), verlangte Spielerzahl und der Plan des Spielkerns (Plaetze samt Auffuell-Bots). */
   const menuBoard = () => Number($("setBoard").value) || 4;
+  /** Form „Automatisch“: das Brett folgt der Spielerzahl (3: Dreieck, 2 und 4: Quadrat, ab 5: Vieleck mit so vielen Ecken);
+   *  sonst hat jemand die Form selbst gewaehlt und die Spielerzahl muss auf sie passen. */
+  let shapeAuto = true;
+  const autoBoard = (n) => (n === 3 ? 3 : n >= 5 ? n : 4);
   const menuAsked = () => Number($("setPlayers").value) || 2;
   const BOARD_NAME = { 3: "Dreieck", 4: "Quadrat", 5: "Fünfeck", 6: "Sechseck", 7: "Siebeneck", 8: "Achteck" };
   /** Platzarten: Code im Spielkern, Anzeige. Die Reihenfolge ist die in der Liste. */
@@ -5128,7 +5291,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     { title: "Version 3.1: neue Regelideen (Standard aus)", wide: true, grid: true, note: "Vier Ideen zum Ausprobieren, alle sind ohne Eintrag aus. Zusammen einschalten geht über den Knopf „Neue Regelideen“ oben. Sie brauchen Regelstufe 3.", fields: [
       { key: "terr_delay", label: "Verzögerung: Sturmangriff und Doppelzug", ph: () => "0", hint: () => "1 = beide Karten wirken erst in deinem nächsten Zug. Der Gegner sieht sie bereitliegen und kann reagieren. 0 = sie wirken sofort." },
       { key: "terr_upkeep_sq", label: "Unterhalt: Stufe im Quadrat", ph: () => "0", hint: () => "1 = eine Figur der Stufe n kostet je Runde n×n Fläche (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16). Braucht den Unterhalt." },
+      { key: "terr_upkeep_cnt", label: "Unterhalt nach Anzahl (k)", ph: () => "0", hint: () => "Leer oder 0 = aus (Unterhalt nach Stufe). Eine Zahl k von 1 bis 20 = alle Figuren zusammen (ohne König) kosten je Runde (k·n)² Fläche, n ist ihre Anzahl, die Stufe zählt nicht. k = 2: eine Figur 4, zwei 16, drei 36, vier 64, fünf 100. Das zwingt zu großen Flächen oder kleinen Heeren. Reicht die Fläche nicht, wählst du selbst, welche Figur sich auflöst (Bots: die schwächste). Ersetzt „Unterhalt: Stufe im Quadrat“ und braucht den Unterhalt je Figur." },
       { key: "terr_terrain", label: "Gelände (Feld, Erde, Moor)", ph: () => "0", hint: () => "1 = jedes Feld ist Feld (zählt 1 Fläche, rund 42 % der Felder, eher in der Mitte), Erde (½, ein Drittel, eher zwischen Mitte und Ecke) oder Moor (¼, ein Viertel, eher in den Ecken). Jede Ecke bekommt gleich viele Erd- und Moorfelder, die Umgebung des Starts bleibt Feld. Das Gelände ändert nur die Fläche je Runde, nicht Rohstoffe oder Zugweite; ein Rest unter einer ganzen Fläche geht in die nächste Runde." },
+      { key: "terr_multibuy", label: "Beliebig viele Karten je Zug", ph: () => "0", hint: () => "1 = du darfst in einem Zug so viele Karten kaufen, wie das Lager bezahlen kann (Standard: eine). Jede Figur, die eine Karte bekommt, ruht in diesem Zug; die Karte neben der Fabrik hat weiter nur einen Platz. Geht nicht mit „Karte = ganzer Zug“ (Sperre 2)." },
       { key: "terr_kamikaze", label: "Kamikaze-Karte", ph: () => "1", hint: () => "1 (Standard) = die Karte „Kamikaze“ liegt immer im Markt: Die gewählte eigene Figur (nie der König) brennt, setzt eine Runde aus und greift dann in deinem nächsten Zug einmal an: eine gegnerische Figur genau in Reichweite, eine gegnerische davor darf sie überspringen und tötet sie auch. Sie stirbt dabei, alle Felder des Weges werden neutral. Wer sie nicht zieht, verliert sie am Zugende. Bots kaufen die Karte nicht. 0 = aus." },
       { key: "terr_fort", label: "Fort-Karte", ph: () => "0", hint: () => "1 = die Karte „Fort“ liegt immer im Markt: sie setzt ein Fort auf das Feld einer gewählten eigenen Figur (nicht der König, eigenes verbundenes Land, höchstens ein Fort je Spieler). Eine eigene Figur auf dem Fort zieht n oder n+1 Felder (der König nicht). Das Fort verschwindet, sobald das Feld nicht mehr dir gehört. Braucht den neuen Kartensatz und „Karten auf jede Figur“." },
       { key: "terr_yield_lvl", label: "Ertrag je Stufe", ph: () => "0", hint: () => "1 = eine Figur der Stufe n erntet n Stück je Ernte (Takt bleibt gleich; Schmiede und Bergbau addieren danach ihr +1). Der König erntet einfach. Braucht „Zähler nur mit eigener Figur“." },
@@ -5597,7 +5762,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         else if (input.value.trim() !== "") rules[input.dataset.rule] = input.value.trim();
       }
       localStorage.setItem(MENU_KEY, JSON.stringify({
-        board: $("setBoard").value, players: $("setPlayers").value, fill: $("setFill").checked, seats: seatChoice, rules, cards: cardsState(),
+        board: $("setBoard").value, shapeAuto, players: $("setPlayers").value, fill: $("setFill").checked, seats: seatChoice, rules, cards: cardsState(),
       }));
     } catch (err) { /* Speicher gesperrt: dann eben ohne Merken */ }
   }
@@ -5606,6 +5771,8 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       const saved = JSON.parse(localStorage.getItem(MENU_KEY) || "null");
       if (!saved || typeof saved !== "object") return;
       if (saved.board !== undefined && [...$("setBoard").options].some((o) => o.value === String(saved.board))) $("setBoard").value = String(saved.board);
+      shapeAuto = saved.shapeAuto !== false;   // aeltere Staende kannten nur „nach Spielerzahl“
+      if (shapeAuto) $("setBoard").value = String(autoBoard(Number(saved.players) || 2));
       fillPlayerOptions(Number(saved.players));
       if (typeof saved.fill === "boolean") $("setFill").checked = saved.fill;
       if (saved.cards && typeof saved.cards === "object") pendingCards = saved.cards;
@@ -5633,6 +5800,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       rules: { terr_bread: 0 },
     },
     fast: { note: "Wertung schon nach Runde 40: kurze Partien zum Ausprobieren (mit einer kleineren Feldgröße oben noch kürzer).", rules: { score_after: 40 } },
+    upcount: {
+      note: "Unterhalt nach Anzahl: alle Figuren zusammen kosten je Runde (2·Anzahl)² Fläche, egal welche Stufe (eine 4, zwei 16, drei 36, vier 64). Das zwingt zu großen Flächen oder kleinen Heeren. Reicht die Fläche nicht, wählst du, welche Figur sich auflöst.",
+      rules: { terr_upkeep_cnt: 2 },
+    },
     cards: { note: "12 Karten im Markt statt 2 je Spieler: viele Möglichkeiten, jede Partie wird stark von den Karten bestimmt.", rules: { market_size: 12 } },
   };
   /** Einstellung als sortierte Liste `name=wert` (belegte Regelfelder plus Karten-Editor). */
@@ -5649,7 +5820,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   const presetSig = (p) => Object.entries(p.rules).map(([k, v]) => `${k}=${v}`).sort().join(",");
   /** Das Regelpaket, das zur Einstellung passt. Die Feldgroesse hat eine eigene Zeile und gehoert zu keinem Paket. */
   function activePreset() {
-    const noSide = (t) => t.split(",").filter((x) => x && !x.startsWith("side=")).join(",");
+    const noSide = (t) => t.split(",").filter((x) => x && !x.startsWith("side=") && !x.startsWith("terr_multibuy=")).join(",");
     const sig = noSide(ruleSig());
     return Object.keys(QUICK_PRESETS).find((k) => noSide(presetSig(QUICK_PRESETS[k])) === sig) || null;
   }
@@ -5659,8 +5830,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const p = QUICK_PRESETS[name];
     if (!p) return;
     const keepSide = $("rule_side").value;   // die Feldgroesse hat eine eigene Zeile und bleibt beim Paketwechsel
+    const keepBuy = $("rule_terr_multibuy").value;   // ebenso „Karten kaufen“
     clearRuleFields();
     $("rule_side").value = keepSide;
+    $("rule_terr_multibuy").value = keepBuy;
     pendingCards = null;
     renderCardEditor();
     for (const [k, v] of Object.entries(p.rules)) {
@@ -5686,7 +5859,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     for (let i = 1; i < total; i++) levels.push(seatChoice[i]);
     const uni = levels.length && levels.every((v) => v === levels[0]) ? levels[0] : null;
     for (const b of $("qBot").querySelectorAll("button")) b.setAttribute("aria-checked", String(uni !== null && Number(b.dataset.bot) === uni));
-    for (const b of $("qPlayers").querySelectorAll("button")) b.setAttribute("aria-checked", String(Number(b.dataset.n) === asked));
+    for (const b of $("qPlayers").querySelectorAll("button")) {
+      const n = Number(b.dataset.n);
+      b.setAttribute("aria-checked", String(n === asked));
+      b.disabled = !shapeAuto && n > menuBoard();   // eine gewaehlte Form hat nur so viele Startecken
+    }
+    for (const b of $("qShape").querySelectorAll("button")) {
+      b.setAttribute("aria-checked", String(shapeAuto ? b.dataset.shape === "auto" : Number(b.dataset.shape) === menuBoard()));
+    }
+    const multi = $("rule_terr_multibuy").value.trim() === "1" ? "1" : "0";
+    for (const b of $("qBuy").querySelectorAll("button")) b.setAttribute("aria-checked", String(b.dataset.buy === multi));
     const preset = activePreset();
     for (const b of $("qPreset").querySelectorAll("button")) b.setAttribute("aria-checked", String(b.dataset.preset === preset));
     const side = menuSide(), [lo, hi] = sideRange(menuBoard());
@@ -5699,7 +5881,19 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const who = seatChoice[0] === 2 ? "Du spielst Spieler A" : "Spieler A ist ein Bot";
     const plan = `${who} · ${asked} Spieler auf dem ${board}, ${side} Felder je Kante${menuPlan.added ? `, dazu ${menuPlan.added === 1 ? "ein Auffüll-Bot" : menuPlan.added + " Auffüll-Bots"}` : ""}.`;
     const rules = preset ? QUICK_PRESETS[preset].note : "Eigene Regeln (siehe Erweiterte Einstellungen).";
-    $("qNote").textContent = `${plan} ${rules}`;
+    $("qNote").textContent = `${plan} ${centreNote()} ${rules}`;
+  }
+  /** Hinweis zur Brettmitte: ob jede Startecke gleich schnell dort ist (Spielkern, `Board::centre_report_for`). */
+  function centreNote() {
+    if (!wasm || typeof wasm.sv_centre !== "function") return "";
+    try {
+      const used = menuPlan.corners && menuPlan.corners.length ? `,${menuPlan.corners.join(",")}` : "";
+      const c = callWasm("sv_centre", putInput(`${menuBoard()},${menuSide()}${used}`));
+      if (!c.equal) return "Achtung: Die Mitte ist nicht für alle gleich weit, manche Ecken sind im Vorteil.";
+      return c.cells === 1 ? "Die Mitte ist ein einzelnes Feld, für alle gleich weit." : `Die Mitte hat ${c.cells} Felder, jede Ecke hat eines gleich nah.`;
+    } catch (err) {
+      return "";
+    }
   }
   function openMenu(canGoBack) {
     menuOpen = true;
@@ -5868,6 +6062,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     if (a.type === "shift_factory") return `Fabrik rücken nach ${cellName(a.to)} (Karte „Fabrik rücken“, statt eines Zuges)`;
     if (a.type === "pass") return "Runde beenden";
+    if (a.type === "dissolve") { const q = f.byId.get(a.piece); return `${pieceLabel(q)} auf ${q ? cellName(q.cell) : "?"} auflösen`; }
     return a.type;
   }
   /** Hinweis im Gebietsmodus: was gerade wichtig ist. */
@@ -5889,6 +6084,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return `Tippe eine Figur an: das Land färbt sich auf dem ganzen Weg. Was nicht mehr an der Fabrik hängt, ist nichts wert.${note}`;
   }
   function renderTurnBox() {
+    safely("Unterhalt: Figur wählen", renderDissolvePop);
     const box = $("turnBox");
     if (mode !== "play" || !live || R !== liveR) { box.hidden = true; return; }
     box.hidden = false;
@@ -5933,6 +6129,10 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         ? `Premove über ${ctrlPath.cells.length - 1} ${ctrlPath.cells.length === 2 ? "Feld" : "Felder"}: weiteres Feld antippen verlängert ihn, dasselbe Feld nochmal startet ihn, die Figur antippen verwirft ihn.`
         : `Weg mit ${ctrlPath.cells.length - 1} Kacheln: weiter mit Strg+Klick, Strg loslassen oder Enter = los, Esc = verwerfen.`;
       if (routeNote) sub = `${routeNote} ${sub}`;
+      if (now.dissolve_due) {
+        hint = "Zu wenig Fläche für den Unterhalt: eine Figur muss sich auflösen.";
+        sub = "Wähle im Fenster die Figur, dann bestätigst du. Das Spiel geht danach weiter.";
+      }
     }
     if (canAct()) {
       const burning = now.pieces.filter((q) => q.perks && q.perks.kamikaze);
@@ -5948,8 +6148,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     }
     if (canAct() && now.charge) sub = `Sturmangriff: in diesem Zug ziehen alle Figuren ein Feld weiter. ${sub}`;
     if (canAct() && now.extra_actions > 0) sub = `Doppelzug: du hast ${now.extra_actions === 1 ? "noch eine weitere Aktion" : `noch ${now.extra_actions} weitere Aktionen`} in diesem Zug. ${sub}`;
-    const resting = canAct() && !(inspectValid() && inspect.id === now.card_lock) ? lockedPiece(now) : null;
-    if (resting) sub = `${pieceLabel(resting)} auf ${cellName(resting.cell)} hat eine Karte bekommen und ruht in diesem Zug (Pausenzeichen). ${sub}`;
+    const resting = canAct() ? lockedPieces(now).filter((q) => !(inspectValid() && inspect.id === q.id)) : [];
+    if (resting.length === 1) sub = `${pieceLabel(resting[0])} auf ${cellName(resting[0].cell)} hat eine Karte bekommen und ruht in diesem Zug (Pausenzeichen). ${sub}`;
+    else if (resting.length > 1) sub = `${resting.length} Figuren haben eine Karte bekommen und ruhen in diesem Zug (Pausenzeichen). ${sub}`;
     if (inspectValid()) sub = inspectText() + (sub ? " " + sub : "");
     if (fi < last) sub = "Du siehst einen früheren Zug. " + sub;
     $("hint").innerHTML = escapeHtml(hint) + (sub ? `<small>${escapeHtml(sub)}</small>` : "");
@@ -6158,9 +6359,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const b = e.target.closest("button[data-n]");
     if (!b) return;
     const n = Number(b.dataset.n);
-    // 3 Spieler: Dreieck, 2 und 4: Quadrat, ab 5: Vieleck mit so vielen Ecken (alle stehen gleich)
-    $("setBoard").value = n === 3 ? "3" : n >= 5 ? String(n) : "4";
+    // Automatisch: 3 Spieler Dreieck, 2 und 4 Quadrat, ab 5 Vieleck mit so vielen Ecken (alle stehen gleich)
+    if (shapeAuto) $("setBoard").value = String(autoBoard(n));
     fillPlayerOptions(n); clampSide(); refreshSeats(); saveMenu();
+  });
+  $("qShape").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-shape]");
+    if (!b || b.disabled) return;
+    shapeAuto = b.dataset.shape === "auto";
+    $("setBoard").value = shapeAuto ? String(autoBoard(menuAsked())) : b.dataset.shape;
+    fillPlayerOptions(menuAsked()); clampSide(); refreshSeats(); saveMenu();
   });
   /** Liegt die gewaehlte Feldgroesse ausserhalb dessen, was die Brettform erlaubt (Sechseck ab 8), ruecken. */
   function clampSide() {
@@ -6178,11 +6386,17 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     $("rule_side").value = v === 10 ? "" : String(v);   // 10 ist der Standard: Feld leer lassen
     refreshMenu(); saveMenu();
   });
+  $("qBuy").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-buy]");
+    if (!b) return;
+    $("rule_terr_multibuy").value = b.dataset.buy === "1" ? "1" : "";   // 0 ist der Standard: Feld leer lassen
+    refreshMenu(); saveMenu();
+  });
   $("qPreset").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-preset]");
     if (b) applyPreset(b.dataset.preset);
   });
-  $("setBoard").addEventListener("change", () => { fillPlayerOptions(menuAsked()); refreshSeats(); saveMenu(); });
+  $("setBoard").addEventListener("change", () => { shapeAuto = false; fillPlayerOptions(menuAsked()); clampSide(); refreshSeats(); saveMenu(); });
   $("setPlayers").addEventListener("change", () => { refreshSeats(); saveMenu(); });
   $("setFill").addEventListener("change", () => { refreshSeats(); saveMenu(); });
   $("newGame").addEventListener("click", () => {
@@ -6197,7 +6411,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     scheduleBots();
   });
   $("menuReset").addEventListener("click", () => {
-    $("setBoard").value = "4"; fillPlayerOptions(2); $("setFill").checked = true; seatChoice = SEAT_DEFAULT.slice(); $("setSeed").value = "";
+    shapeAuto = true; $("setBoard").value = "4"; fillPlayerOptions(2); $("setFill").checked = true; seatChoice = SEAT_DEFAULT.slice(); $("setSeed").value = "";
     clearRuleFields();
     pendingCards = null;
     renderCardEditor();
@@ -6326,7 +6540,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     get routes() { return routes; }, get ctrlPath() { return ctrlPath; },
     get cardMode() { return cardMode; }, get lockedId() { const f = R && R.frames[fi]; return f ? f.card_lock : null; }, get inspect() { return inspect; }, get hoverReach() { return hoverReachValid() ? hoverReach : null; }, get fx() { return fx; },
     get ready() { return wasm !== null; },
-    get ghost() { return ghostBuild(); }, get kingUp() { return kingUpIdx(); }, get cardPop() { return cardPopKey; }, get endPop() { const b = $("endPop"); return { open: !b.hidden, html: b.textContent }; }, showEndPop, scheduleEndPop, get kingPopOpen() { return kingPopOpen; }, get facOpen() { return facOpen; },
+    get ghost() { return ghostBuild(); }, get kingUp() { return kingUpIdx(); }, get cardPop() { return cardPopKey; }, get dissolve() { const b = $("dissolvePop"); return { open: !b.hidden, html: b.textContent, sel: dissolveSel }; }, get endPop() { const b = $("endPop"); return { open: !b.hidden, html: b.textContent }; }, showEndPop, scheduleEndPop, get kingPopOpen() { return kingPopOpen; }, get facOpen() { return facOpen; },
     get shiftForced() { return shiftForced(); }, get shiftMode() { return shiftMode; },
     /** Die angezeigte Partie (nur lesen; fuer automatische Tests). */
     get replay() { return R; },
