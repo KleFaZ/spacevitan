@@ -12,6 +12,7 @@
 
 use crate::ids::CellId;
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::OnceLock;
 
 pub const MAX_SQUARE_SIDE: u32 = 64;
 pub const MAX_TRIANGLE_SIDE: u32 = 40;
@@ -59,6 +60,31 @@ impl std::fmt::Display for BoardError {
 
 impl std::error::Error for BoardError {}
 
+/// Entfernungszeilen (kuerzeste Schrittzahl von einem Feld zu allen), erst beim ersten Bedarf berechnet.
+/// Das Brett aendert sich nie, die Zeilen bleiben also gueltig; die Bots fragen sie millionenfach ab
+/// (bei 6 Spielern machte die Breitensuche vorher zwei Drittel der Rechenzeit aus). Zaehlt weder
+/// beim Vergleich noch beim Ausgeben mit: zwei gleiche Bretter bleiben gleich, egal wie voll der Speicher ist.
+#[derive(Default)]
+struct DistRows(Vec<OnceLock<Vec<u32>>>);
+
+impl Clone for DistRows {
+    fn clone(&self) -> DistRows {
+        DistRows(self.0.iter().map(|_| OnceLock::new()).collect())
+    }
+}
+
+impl PartialEq for DistRows {
+    fn eq(&self, _: &DistRows) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for DistRows {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DistRows({})", self.0.len())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Board {
     kind: GridKind,
@@ -73,6 +99,7 @@ pub struct Board {
     corners: Vec<CellId>,
     outline: Vec<(f64, f64)>,
     lookup: BTreeMap<(i32, i32), CellId>,
+    dist_rows: DistRows,
 }
 
 struct Raw {
@@ -93,6 +120,7 @@ impl Board {
             .enumerate()
             .map(|(i, &c)| (c, CellId(i as u32)))
             .collect();
+        let dist_rows = DistRows((0..raw.coords.len()).map(|_| OnceLock::new()).collect());
         Board {
             kind,
             side,
@@ -104,6 +132,7 @@ impl Board {
             corners: raw.corners,
             outline: raw.outline,
             lookup,
+            dist_rows,
         }
     }
 
@@ -420,8 +449,13 @@ impl Board {
         &self.corners
     }
 
-    /// Kuerzeste Schrittzahl von `src` zu allen Feldern (`u32::MAX` = nicht erreichbar).
-    pub fn distances_from(&self, src: CellId) -> Vec<u32> {
+    /// Kuerzeste Schrittzahl von `src` zu allen Feldern (`u32::MAX` = nicht erreichbar); die Zeile wird
+    /// beim ersten Aufruf berechnet und danach wiederverwendet.
+    pub fn distances_from(&self, src: CellId) -> &[u32] {
+        self.dist_rows.0[src.idx()].get_or_init(|| self.bfs_from(src))
+    }
+
+    fn bfs_from(&self, src: CellId) -> Vec<u32> {
         let mut dist = vec![u32::MAX; self.len()];
         let mut queue = VecDeque::new();
         dist[src.idx()] = 0;

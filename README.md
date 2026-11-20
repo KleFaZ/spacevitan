@@ -857,6 +857,34 @@ aendern, und man kann eigene Karten bauen.
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
 
+### Version 3.8 (Wuensche vom 20.11.2026)
+
+- **Startmenue:** Spielerzahl (2 bis 8) und Feldgroesse (6, 8, 10, 12, 14, 16 Felder je Kante) stehen direkt im
+  Schnellstart, die erweiterten Einstellungen muessen nicht mehr geoeffnet werden. Die Brettform folgt der
+  Spielerzahl (3 Dreieck, 2 und 4 Quadrat, ab 5 Vieleck mit so vielen Ecken). Gesperrt ist, was die Form nicht
+  hergibt (ab 5 Spielern mindestens 8). Die Feldgroesse bleibt beim Wechsel des Regelpakets erhalten und gehoert zu
+  keinem Paket; "Schnelle Partie" setzt nur noch die Wertung nach Runde 40.
+- **Uebersicht:** Die Klammer hinter Eisen, Gold und Brot ist jetzt der Durchschnitt je Runde mit zwei Nachkommastellen
+  (Ertrag der besetzten Vorkommen geteilt durch ihre Erntezeit, zum Beispiel ein Eisenfeld mit Erntezeit 3 = +0,33);
+  Flaeche zeigt Land plus Brot-Bonus minus Unterhalt ebenfalls mit zwei Stellen. Besetzt man ein Vorkommen, sieht man
+  den ungefaehren Gewinn sofort. Der Tooltip nennt zusaetzlich, was am Ende des naechsten Zugs konkret dazukommt.
+  Das "in N Runden" bei Figuren, Koenig-Upgrade und Karten rechnet die Ernte jetzt Runde fuer Runde durch (vorher stand
+  dort "nie", wenn gerade nichts reif war, obwohl bald etwas kam).
+- **PC-Layout:** In der rechten Spalte stehen unter den Ressourcen jetzt die Karten, klein und vier je Reihe (halb so
+  breit wie vorher); "Figuren bauen", Koenig-Upgrade und Kartenplatz rutschen darunter. Auf dem Handy bleibt alles wie
+  zuvor.
+- **Tempo bei vielen Spielern:** "super stark" brauchte bei 6 Spielern nativ im Schnitt etwa 1,15 s je Zug (im
+  Browser 1 bis 3 s). Zwei Aenderungen, die Zuege bleiben bei gleichem Budget dieselben:
+  1. `Board::distances_from` liefert die Entfernungszeile jetzt aus einem Speicher am Brett (das Brett aendert sich nie).
+     Die Breitensuche machte im Profil 66 % aller Rechenschritte aus (Bewertung der Blaetter, `press_value`,
+     `exposure`); danach 13,6 statt 48,8 Milliarden Schritte im selben Lauf.
+  2. `ai::scaled_budget`: Bis 110 Felder (Quadrat mit Seitenlaenge 10, also 2 bis 4 Spieler) gilt das volle
+     Knotenbudget, darueber weniger (144 Felder 55 %, 194 = 35 %, 331 = 15 % (6 Spieler), 561 = 8 % (8 Spieler)).
+     Stufen statt Gleitkomma, damit Browser und Kommandozeile gleich rechnen. `--nodes-sehr` ist das Budget fuer das
+     kleine Brett.
+  Messung (6 Spieler, 40 Runden, nativ): vorher rund 1,15 s je Zug (Runde 1 bis 11), nachher 0,28 s im Schnitt und
+  hoechstens 0,95 s; im Browser etwa das Doppelte. Bei 2 bis 4 Spielern aendert sich nichts.
+
 ### Version 3.7 (Wuensche vom 19.11.2026, dritter Teil): ohne Fabrik wehrlos, Rangfolge der Bots
 
 - **Ohne stehende Fabrik sind alle Figuren wehrlos** (Fehler laut Meldung mit Bild: "meine Fabrik wurde zerstoert, aber meine Figuren koennen alle

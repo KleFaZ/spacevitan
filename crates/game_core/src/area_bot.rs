@@ -505,7 +505,7 @@ pub(crate) fn enclosure_chance(g: &Game, p: PlayerId) -> i64 {
 /// Fabrik, stärker bei vollem Brett (dann gibt es Land nur noch vom Gegner).
 fn press_value(g: &Game, p: PlayerId, weight: i64) -> i64 {
     let board = &g.map.board;
-    let mut targets: Vec<Vec<u32>> = Vec::new();
+    let mut targets: Vec<&[u32]> = Vec::new();
     for q in g.alive_players().into_iter().filter(|&q| q != p) {
         if let Some(k) = g.king(q) {
             targets.push(board.distances_from(k.cell));
@@ -559,7 +559,7 @@ pub(crate) fn opening_move(g: &Game, me: PlayerId, d: &Drive, legal: &[Action]) 
         && (here >= d.open
             || legal.contains(&Action::RebuildFactory)
                 && here >= 1
-                && !has_step(g, king.cell, &from_fac, &progress, legal, king.id))
+                && !has_step(g, king.cell, from_fac, &progress, legal, king.id))
     {
         if legal.contains(&Action::RebuildFactory) {
             return Some(Action::RebuildFactory);
@@ -693,10 +693,9 @@ fn risk(g: &Game, me: PlayerId) -> i64 {
 /// gegnerische Figur, desto mehr (Naehe 5 = direkt daneben).
 pub(crate) fn exposure(g: &Game, me: PlayerId) -> i64 {
     let board = &g.map.board;
-    let mut rows: std::collections::HashMap<crate::ids::CellId, Vec<u32>> = Default::default();
     g.weak_exposure(
         me,
-        |a, b| rows.entry(a).or_insert_with(|| board.distances_from(a))[b.idx()],
+        |a, b| board.distances_from(a)[b.idx()],
         |w, close| {
             let king = if w.king { TETHER * close } else { 0 };
             i64::from(w.cells) * LAND * close / 6 + king

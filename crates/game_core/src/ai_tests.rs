@@ -261,3 +261,23 @@ fn evaluation_prefers_more_material() {
         "aus Sicht von B ist es schlechter"
     );
 }
+
+#[test]
+fn the_node_budget_shrinks_on_big_boards_but_never_on_the_usual_ones() {
+    use crate::ai::scaled_budget;
+    // Quadrat mit Seitenlaenge 10 (2 bis 4 Spieler) und kleiner: volles Budget
+    assert_eq!(scaled_budget(20_000, 64), 20_000);
+    assert_eq!(scaled_budget(20_000, 100), 20_000);
+    // 6 Spieler (331 Felder): nur ein Bruchteil, damit ein Zug nicht Sekunden dauert
+    assert_eq!(scaled_budget(20_000, 331), 3_000);
+    // mit der Feldzahl nie mehr, und nie weniger als 500 (oder das Budget selbst, wenn es kleiner ist)
+    let mut last = u64::MAX;
+    for cells in [50, 110, 144, 194, 256, 331, 416, 561, 817, 1433] {
+        let b = scaled_budget(20_000, cells);
+        assert!(b <= last, "{cells} Felder: {b} > {last}");
+        assert!(b >= 500);
+        last = b;
+    }
+    assert_eq!(scaled_budget(50, 1433), 50);
+    assert_eq!(scaled_budget(300, 1433), 300);
+}

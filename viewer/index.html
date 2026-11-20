@@ -343,7 +343,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .adv > .menuhead { margin-top: 8px; }
 @media (max-width: 700px) {
   .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #qPlayers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #qPlayers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #qSide { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .seg button { padding: 8px 10px; }
   .qgo { flex-direction: column; align-items: stretch; }
   .qgo .btn.big { width: 100%; }
 }
@@ -427,7 +429,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
 .kingpop button.go.armed, .faccard .fc-shift.armed, #actions .btn.armed { background: #b3261e; color: #fff; border-color: #8f1d16; }
 .kingpop .kp-sec + .kp-sec { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line, rgb(128 128 128 / 0.35)); }
 .market.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-@media (min-width: 701px) { .market.cards .pcard { aspect-ratio: 5 / 6.4; } }
+/* PC: Karten klein, vier je Reihe direkt unter den Ressourcen (nur halb so breit wie vorher) */
+@media (min-width: 701px) {
+  .market.cards { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .market.cards .pcard { aspect-ratio: 5 / 8.4; border-width: 1.5px; border-radius: 8px; }
+  .market.cards .pc-name { font-size: 0.7em; padding: 2px 2px 1px; }
+  .market.cards .pc-fx { font-size: 0.6em; min-height: 2.6em; padding: 2px; }
+  .market.cards .pc-price { font-size: 0.62em; gap: 0 3px; padding: 2px 2px 3px; }
+  .market.cards li.copt.note { grid-column: 1 / -1; }
+}
 .faccard.open.slim { width: min(300px, calc(100% - 12px)); }
 .faccard.slim .fc-head { padding: 6px 9px; }
 .faccard.slim .fc-sum small:empty { display: none; }
@@ -465,6 +475,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   html.v2d .board-wrap { order: 2; margin: 0 calc(-1 * var(--gutr)) 0 calc(-1 * var(--gutl)); }
   html.v2d #facDock { order: 3; }
   html.v2d #marketBox { order: 4; gap: 0; }
+  html.v2d #figBox { display: none; }
   html.v2d #turnBox { order: 5; margin-top: 0; padding: 6px 10px; gap: 4px; }
   html.v2d .controls { order: 6; margin-top: 0; }
   html.v2d .status { order: 7; margin: 0 2px; }
@@ -534,6 +545,21 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
           <button type="button" role="radio" aria-checked="false" data-n="2">2</button>
           <button type="button" role="radio" aria-checked="false" data-n="3">3</button>
           <button type="button" role="radio" aria-checked="false" data-n="4">4</button>
+          <button type="button" role="radio" aria-checked="false" data-n="5">5</button>
+          <button type="button" role="radio" aria-checked="false" data-n="6">6</button>
+          <button type="button" role="radio" aria-checked="false" data-n="7">7</button>
+          <button type="button" role="radio" aria-checked="false" data-n="8">8</button>
+        </div>
+      </div>
+      <div class="qrow">
+        <span class="qlabel" id="qSideLabel">Feldgröße (Felder je Kante)</span>
+        <div class="seg" id="qSide" role="radiogroup" aria-labelledby="qSideLabel">
+          <button type="button" role="radio" aria-checked="false" data-side="6">6</button>
+          <button type="button" role="radio" aria-checked="false" data-side="8">8</button>
+          <button type="button" role="radio" aria-checked="false" data-side="10">10</button>
+          <button type="button" role="radio" aria-checked="false" data-side="12">12</button>
+          <button type="button" role="radio" aria-checked="false" data-side="14">14</button>
+          <button type="button" role="radio" aria-checked="false" data-side="16">16</button>
         </div>
       </div>
       <div class="qrow">
@@ -654,6 +680,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       <details class="explain"><summary>So funktioniert der Kauf</summary><p class="note" id="marketNote"></p></details>
       <div class="legend" id="marketLegend"></div>
       <ul class="market" id="market"></ul>
+    </div>
+    <div id="figBox" class="panel" hidden>
+      <div class="stock terr" id="figs"></div>
     </div>
     <details class="more" id="more">
       <summary>Weitere Angaben</summary>
@@ -2936,6 +2965,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   /** Unterhalt je Runde: Summe der Stufen aller Figuren des Spielers, der Koenig zahlt nichts. */
   const upkeepOf = (f, p) => (upkeepOn() ? f.pieces.filter((x) => x.owner === p && !x.king).reduce((a, x) => a + upkeepLevel(x.level || 1), 0) : 0);
   const signed = (n) => (n < 0 ? `−${fmtNum(-n)}` : `+${fmtNum(n)}`);
+  /** Immer zwei Nachkommastellen: +0,33 oder +1,00 (Durchschnitt je Runde in der Uebersicht). */
+  const fmt2 = (n) => (Math.round(n * 100) / 100).toFixed(2).replace(".", ",");
+  const signed2 = (n) => (n < 0 ? `−${fmt2(-n)}` : `+${fmt2(n)}`);
   /** Koenigs-Upgrade mit Gold (Regel terr_kingup): naechste Stufe, Zusatzfelder und Preis in Gold; null, wenn aus. */
   const kingUpOn = () => !!(R && R.king_up && R.king_up.on);
   function kingUpInfo(f, p) {
@@ -2947,7 +2979,9 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return { done: false, level, extra, gold: extra * R.king_up.price };
   }
   function terrIncome(f, p) {
-    const inc = { area: 0, 1: 0, 2: 0, 3: 0, 4: 0, k3: 0, bonus: 0, upkeep: 0, net: 0 };
+    // rate: Durchschnitt je Runde (Vorkommen mit Erntezeit n bringen alle n Runden ihren Ertrag); dep: der Plan je
+    // Vorkommen (h = Runden bis zur ersten Ernte, p = Abstand, amt = Menge), daraus rechnet roundsFor.
+    const inc = { area: 0, 1: 0, 2: 0, 3: 0, 4: 0, k3: 0, bonus: 0, upkeep: 0, net: 0, rate: { 1: 0, 2: 0, 3: 0, 4: 0 }, dep: { 1: [], 2: [], 3: [], 4: [] } };
     if (!f.land || !f.anchored[p]) return inc;
     const y = (R.config && R.config.terr_yield) || 1;
     // Mit der Besetzungsregel zaehlt nur, wo am Ende des Zugs eine eigene Figur steht (so wie es jetzt aussieht).
@@ -2962,7 +2996,12 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       for (const res of liveDeposits(f, c)) {
         if (bonusOn() && category(res) === 3) { inc.k3++; continue; }
         if (mine && !mine.has(c)) continue;
-        if (cycleOn() ? harvestIn(f, c, res) === 1 : !ripenLeft(f, c, res)) inc[category(res)] += y * (yieldLvlOn() && mine ? mine.get(c) || 1 : 1) + (more[category(res)] || 0);
+        const cat = category(res);
+        const amt = y * (yieldLvlOn() && mine ? mine.get(c) || 1 : 1) + (more[cat] || 0);
+        if (cycleOn() ? harvestIn(f, c, res) === 1 : !ripenLeft(f, c, res)) inc[cat] += amt;
+        const per = cycleOn() ? Math.max(1, harvestPeriod(res)) : 1;
+        inc.dep[cat].push({ h: Math.max(1, cycleOn() ? harvestIn(f, c, res) : ripenLeft(f, c, res) + 1), p: per, amt });
+        inc.rate[cat] += amt / per;
       }
     }
     if (terrainOn()) inc.area = quarters / 4;
@@ -2971,18 +3010,32 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     inc.net = inc.area + inc.bonus - inc.upkeep;
     return inc;
   }
+  /** Eigene Zugenden, bis `miss` mehr von Kategorie `kind` (0 = Flaeche) da ist; Infinity, wenn nichts dazukommt.
+   *  Eisen, Gold und Brot kommen stossweise (Erntezeit je Vorkommen), darum wird die Ernte Runde fuer Runde durchgespielt. */
+  function roundsFor(inc, kind, miss) {
+    if (miss <= 0) return 0;
+    if (kind === 0) return inc.net > 0 ? Math.ceil(miss / inc.net) : Infinity;
+    const deps = (inc.dep && inc.dep[kind]) || [];
+    if (!deps.length) return Infinity;
+    for (let r = 1; r <= 200; r++) {
+      let got = 0;
+      for (const d of deps) if (r >= d.h) got += d.amt * (1 + Math.floor((r - d.h) / d.p));
+      if (got >= miss) return r;
+    }
+    return Infinity;
+  }
   /** Was fuer eine Stufe schon da ist und wie viele eigene Zugenden es bei dem Einkommen noch dauert. */
   function terrLevelStatus(level, area, storage, inc) {
     const pr = terrPrice(level), needs = [];
-    const add = (kind, have, need, rate) => {
+    const add = (kind, have, need) => {
       if (!need) return;
       const miss = Math.max(0, need - have);
-      needs.push({ kind, have, need, miss, rounds: miss === 0 ? 0 : rate > 0 ? Math.ceil(miss / rate) : Infinity });
+      needs.push({ kind, have, need, miss, rounds: roundsFor(inc, kind, miss) });
     };
-    add(0, area, pr.area, inc.net);
-    add(1, catUnits(storage, 1), pr.k1, inc[1]);
-    add(2, catUnits(storage, 2), pr.k2, inc[2]);
-    add(3, catUnits(storage, 3), pr.k3, inc[3]);
+    add(0, area, pr.area);
+    add(1, catUnits(storage, 1), pr.k1);
+    add(2, catUnits(storage, 2), pr.k2);
+    add(3, catUnits(storage, 3), pr.k3);
     const rounds = needs.reduce((m, n) => Math.max(m, n.rounds), 0);
     return { level, price: pr, needs, rounds, ok: rounds === 0 };
   }
@@ -3009,7 +3062,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return `<span class="req${ok ? " ok" : ""}" title="${KAT_NAME[kind]}: ${have} von ${need}">${symSvg(sym, 15, kind === 0 ? color : null, false)}${Math.min(have, need)}/${need}</span>`;
   }
   /** Zahl mit Zuwachs je Runde in Klammern, zum Beispiel "(+5)"; negativ rot. */
-  const growthHtml = (n, tip) => `<span class="gr${n < 0 ? " neg" : n === 0 ? " zero" : ""}" title="${escapeHtml(tip || "")}">(${signed(n)})</span>`;
+  const growthHtml = (n, tip) => `<span class="gr${n < 0 ? " neg" : n === 0 ? " zero" : ""}" title="${escapeHtml(tip || "")}">(${signed2(n)})</span>`;
   /** Version 2: Satz zur Reifezeit der Vorkommen. */
   function ripenSub() {
     const r = R.config && R.config.terr_ripen;
@@ -3059,13 +3112,14 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const tiles = [];
     const areaTip = `Fläche ${area}. Am Ende deines Zugs: ${fmtNum(inc.area)} Land${inc.bonus ? `, +${inc.bonus} durch ${inc.k3}× Brot` : ""}${inc.upkeep ? `, −${inc.upkeep} Unterhalt` : ""} = ${signed(inc.net)}`;
     tiles.push(rsHtml(symSvg(areaKind(), 24, color, false, "Fläche"), area, growthHtml(inc.net, areaTip), areaTip));
-    tiles.push(rsHtml(symSvg("iron", 24, null, false, "Eisen"), stock(1), growthHtml(inc[1], "Eisen im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Eisen (Kat 1)"));
-    tiles.push(rsHtml(symSvg("gold", 24, null, false, "Gold"), stock(2), growthHtml(inc[2], "Gold im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Gold (Kat 2)"));
+    const rateTip = (name, c) => `${name} im Lager. In Klammern: Durchschnitt je Runde (Ertrag der besetzten Vorkommen geteilt durch ihre Erntezeit), ${signed2(inc.rate[c])}. Am Ende deines nächsten Zugs kommen konkret ${inc[c]} dazu.`;
+    tiles.push(rsHtml(symSvg("iron", 24, null, false, "Eisen"), stock(1), growthHtml(inc.rate[1], rateTip("Eisen", 1)), "Eisen (Kat 1)"));
+    tiles.push(rsHtml(symSvg("gold", 24, null, false, "Gold"), stock(2), growthHtml(inc.rate[2], rateTip("Gold", 2)), "Gold (Kat 2)"));
     if (bonusOn()) {
       const tip = `Brot (Kat 3) wird nicht gelagert: ${inc.k3} verbundene${inc.k3 === 1 ? "s Feld" : " Felder"} bringen dir je Runde ${inc.bonus} Fläche (2^${inc.k3}); das nächste brächte ${bonusArea(inc.k3 + 1)}.`;
       tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), inc.k3, growthHtml(inc.bonus, tip) + `<small class="u">Fläche je Runde</small>`, tip));
     } else {
-      tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), stock(3), growthHtml(inc[3], "Brot im Lager; in Klammern, was am Ende deines Zugs dazukommt"), "Brot (Kat 3)"));
+      tiles.push(rsHtml(symSvg("bread", 24, null, false, "Brot"), stock(3), growthHtml(inc.rate[3], rateTip("Brot", 3)), "Brot (Kat 3)"));
     }
     rows.push(`<div class="resbar">${tiles.join("")}</div>`);
     // --- Fläche je Runde und Unterhalt
@@ -3079,6 +3133,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     rows.push(explain(`Am Ende deines Zugs sammelt die Fabrik alle Felder, die an ihr hängen (${terrainOn() ? "Feld 1, Erde ½, Moor ¼ Fläche" : "je 1 Fläche"}), dazu das Eisen, Gold und Brot auf diesen Feldern${ripenSub()}. Gebaut wird auf der Fabrik, sie muss frei sein.` +
       (upkeepOn() ? ` Unterhalt: jede Figur kostet je Runde ${upkeepSqOn() ? "ihre Stufe im Quadrat (Stufe 2 = 4, Stufe 3 = 9, Stufe 4 = 16)" : "ihre Stufe"} in Fläche (der König nichts), abgezogen nach dem Einkommen. Wird die Fläche dadurch negativ, löst sich so lange eine Figur auf, bis sie wieder bei 0 liegt (zuerst die kleinste Figur, die den Fehlbetrag allein deckt, sonst die größte; keine Rückerstattung). Der Unterhalt ist ein Teil des Einkommens: steht die Fabrik nicht, fällt er auch nicht an.` : "")));
     // --- Figuren: grau, solange nicht bezahlbar; Farbe, wenn bereit
+    rows.push("\u0001");   // Trennmarke: ab hier kommt der Figurenteil (eigene Box unter den Karten)
     rows.push(`<p class="sec">Figuren bauen</p>`);
     for (let level = 1; level <= terrMaxLevel(); level++) {
       const st = terrLevelStatus(level, area, fac.storage, inc);
@@ -3097,7 +3152,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
         rows.push(`<div class="loc lad ok">${symSvg("crown", 28, null, false, "König")}<div class="lb"><b>König</b><small>alle 3 Stufen erreicht</small></div><span class="st">fertig</span></div>`);
       } else {
         const have = stock(2), ok = have >= ku.gold;
-        const rounds = ok ? 0 : inc[2] > 0 ? Math.ceil((ku.gold - have) / inc[2]) : Infinity;
+        const rounds = roundsFor(inc, 2, ku.gold - have);
         const when = ok ? "bereit" : Number.isFinite(rounds) ? roundsText(rounds) : "nie";
         rows.push(`<div class="loc lad${ok ? " ok" : ""}${!ok && !Number.isFinite(rounds) ? " never" : ""}" title="${escapeHtml(`König-Upgrade ${ku.level}/3: der König zieht ${ku.extra} Felder mehr (auf freiem Brett), kostet ${ku.gold}× Gold`)}">` +
           `${symSvg("crown", 28, null, !ok, "König")}<div class="lb"><b>Stufe ${ku.level} von 3</b><small>+${ku.extra} Zugfelder</small></div><span class="st">${when}</span>` +
@@ -3579,12 +3634,21 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   function renderStock(f) {
     const p = focusPlayer(f);
     const box = $("stockBox");
-    if (p === undefined || p === null || !f.alive[p]) { box.hidden = true; return; }
+    if (p === undefined || p === null || !f.alive[p]) { box.hidden = true; $("figBox").hidden = true; return; }
     box.hidden = false;
+    $("figBox").hidden = true;
     const me = mode === "play" && live && R === liveR && live.seats[p] === "mensch";
     $("stockTitle").textContent = `Übersicht · Spieler ${playerName(p)}${me ? " (du)" : ""}`;
     $("stock").classList.toggle("terr", isTerr());
-    if (isTerr()) { $("stock").innerHTML = renderTerritoryStock(f, p).join(""); return; }
+    if (isTerr()) {
+      // Oben die Ressourcen, darunter (im Layout) die Karten, dann der Figurenteil: Bauen, Koenig verbessern, Kartenplatz.
+      const all = renderTerritoryStock(f, p), cut = all.indexOf("\u0001");
+      $("stock").innerHTML = (cut < 0 ? all : all.slice(0, cut)).join("");
+      const figs = cut < 0 ? [] : all.slice(cut + 1);
+      $("figs").innerHTML = figs.join("");
+      $("figBox").hidden = figs.length === 0;
+      return;
+    }
     const rows = [];
     const carried = (f.carried || [])[p] || [];
     rows.push(`<div class="loc"><b>König trägt</b><div class="res">${resHtml(carried)}</div>` +
@@ -5568,7 +5632,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
       note: "Der alte Stand bis 3.2: Brot ist kein Lager, sondern k verbundene Brot-Felder bringen 2^k Fläche je Runde. Die Karten kosten nur Eisen und Gold, die Fläche wächst schneller.",
       rules: { terr_bread: 0 },
     },
-    fast: { note: "Kleineres Brett (8 Felder je Kante) und Wertung schon nach Runde 40: kurze Partien zum Ausprobieren.", rules: { side: 8, score_after: 40 } },
+    fast: { note: "Wertung schon nach Runde 40: kurze Partien zum Ausprobieren (mit einer kleineren Feldgröße oben noch kürzer).", rules: { score_after: 40 } },
     cards: { note: "12 Karten im Markt statt 2 je Spieler: viele Möglichkeiten, jede Partie wird stark von den Karten bestimmt.", rules: { market_size: 12 } },
   };
   /** Einstellung als sortierte Liste `name=wert` (belegte Regelfelder plus Karten-Editor). */
@@ -5583,14 +5647,20 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     return list.sort().join(",");
   }
   const presetSig = (p) => Object.entries(p.rules).map(([k, v]) => `${k}=${v}`).sort().join(",");
+  /** Das Regelpaket, das zur Einstellung passt. Die Feldgroesse hat eine eigene Zeile und gehoert zu keinem Paket. */
   function activePreset() {
-    const sig = ruleSig();
-    return Object.keys(QUICK_PRESETS).find((k) => presetSig(QUICK_PRESETS[k]) === sig) || null;
+    const noSide = (t) => t.split(",").filter((x) => x && !x.startsWith("side=")).join(",");
+    const sig = noSide(ruleSig());
+    return Object.keys(QUICK_PRESETS).find((k) => noSide(presetSig(QUICK_PRESETS[k])) === sig) || null;
   }
+  /** Gewaehlte Feldgroesse (Felder je Kante); ohne Eintrag gilt der Standard 10. */
+  const menuSide = () => { const v = $("rule_side"); return v && v.value.trim() !== "" ? Number(v.value) : 10; };
   function applyPreset(name) {
     const p = QUICK_PRESETS[name];
     if (!p) return;
+    const keepSide = $("rule_side").value;   // die Feldgroesse hat eine eigene Zeile und bleibt beim Paketwechsel
     clearRuleFields();
+    $("rule_side").value = keepSide;
     pendingCards = null;
     renderCardEditor();
     for (const [k, v] of Object.entries(p.rules)) {
@@ -5619,9 +5689,15 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     for (const b of $("qPlayers").querySelectorAll("button")) b.setAttribute("aria-checked", String(Number(b.dataset.n) === asked));
     const preset = activePreset();
     for (const b of $("qPreset").querySelectorAll("button")) b.setAttribute("aria-checked", String(b.dataset.preset === preset));
+    const side = menuSide(), [lo, hi] = sideRange(menuBoard());
+    for (const b of $("qSide").querySelectorAll("button")) {
+      const v = Number(b.dataset.side);
+      b.setAttribute("aria-checked", String(v === side));
+      b.disabled = v < lo || v > hi;
+    }
     const board = BOARD_NAME[menuBoard()];
     const who = seatChoice[0] === 2 ? "Du spielst Spieler A" : "Spieler A ist ein Bot";
-    const plan = `${who} · ${asked} Spieler auf dem ${board}${menuPlan.added ? `, dazu ${menuPlan.added === 1 ? "ein Auffüll-Bot" : menuPlan.added + " Auffüll-Bots"}` : ""}.`;
+    const plan = `${who} · ${asked} Spieler auf dem ${board}, ${side} Felder je Kante${menuPlan.added ? `, dazu ${menuPlan.added === 1 ? "ein Auffüll-Bot" : menuPlan.added + " Auffüll-Bots"}` : ""}.`;
     const rules = preset ? QUICK_PRESETS[preset].note : "Eigene Regeln (siehe Erweiterte Einstellungen).";
     $("qNote").textContent = `${plan} ${rules}`;
   }
@@ -6082,8 +6158,25 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     const b = e.target.closest("button[data-n]");
     if (!b) return;
     const n = Number(b.dataset.n);
-    $("setBoard").value = n === 3 ? "3" : "4";   // 3 Spieler: Dreieck (alle gleich), sonst Quadrat
-    fillPlayerOptions(n); refreshSeats(); saveMenu();
+    // 3 Spieler: Dreieck, 2 und 4: Quadrat, ab 5: Vieleck mit so vielen Ecken (alle stehen gleich)
+    $("setBoard").value = n === 3 ? "3" : n >= 5 ? String(n) : "4";
+    fillPlayerOptions(n); clampSide(); refreshSeats(); saveMenu();
+  });
+  /** Liegt die gewaehlte Feldgroesse ausserhalb dessen, was die Brettform erlaubt (Sechseck ab 8), ruecken. */
+  function clampSide() {
+    const el = $("rule_side");
+    if (el.value.trim() === "") return;   // leer = Standard 10, passt auf jede Brettform
+    const [lo, hi] = sideRange(menuBoard());
+    const v = Number(el.value);
+    if (v < lo) el.value = String(lo);
+    else if (v > hi) el.value = String(hi);
+  }
+  $("qSide").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-side]");
+    if (!b || b.disabled) return;
+    const v = Number(b.dataset.side);
+    $("rule_side").value = v === 10 ? "" : String(v);   // 10 ist der Standard: Feld leer lassen
+    refreshMenu(); saveMenu();
   });
   $("qPreset").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-preset]");

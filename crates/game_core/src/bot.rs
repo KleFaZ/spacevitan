@@ -160,8 +160,8 @@ impl GreedyBot {
             }
             // Figuren ruecken auf das Ziel vor: zaehlt, wie viel naeher sie dem Ziel kommen.
             if !is_king {
-                let here = nearest(&board.distances_from(state.pieces[&piece].cell), goals) as i64;
-                let there = nearest(&board.distances_from(to), goals) as i64;
+                let here = nearest(board.distances_from(state.pieces[&piece].cell), goals) as i64;
+                let there = nearest(board.distances_from(to), goals) as i64;
                 s += (here - there) * 4;
             }
             if is_king && threatened.contains(&to) {
@@ -334,7 +334,7 @@ impl Bot for GreedyBot {
             None // steht auf Kat 1 und sammelt
         };
         if let Some(goals) = king_goal.filter(|g| !g.is_empty()) {
-            let here = nearest(&board.distances_from(king.cell), &goals);
+            let here = nearest(board.distances_from(king.cell), &goals);
             let candidates = if safe_king_moves.is_empty() {
                 &king_moves
             } else {
@@ -345,11 +345,11 @@ impl Bot for GreedyBot {
                 .copied()
                 .filter(|a| {
                     let t = target(a).unwrap();
-                    nearest(&board.distances_from(t), &goals) < here || goals.contains(&t)
+                    nearest(board.distances_from(t), &goals) < here || goals.contains(&t)
                 })
                 .collect();
             if let Some(a) = self.best_by(&improving, |a| {
-                -(nearest(&board.distances_from(target(a).unwrap()), &goals) as i64)
+                -(nearest(board.distances_from(target(a).unwrap()), &goals) as i64)
             }) {
                 return a;
             }
@@ -358,7 +358,7 @@ impl Bot for GreedyBot {
         // 7. Figuren auf den naechsten gegnerischen Koenig zu.
         if let Some(a) = self.best_by(&unit_moves, |a| {
             let t = target(a).unwrap();
-            let d = nearest(&board.distances_from(t), &enemy_kings) as i64;
+            let d = nearest(board.distances_from(t), &enemy_kings) as i64;
             -d * 2 - threatened.contains(&t) as i64
         }) {
             return a;

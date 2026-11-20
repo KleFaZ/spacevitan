@@ -388,7 +388,7 @@ pub fn effective_center_colors(config: &Config, board: &Board) -> u32 {
 /// Abstand jedes Feldes zur Kartenmitte. Mitte = die Felder, deren groesster Abstand zu einer
 /// Ecke am kleinsten ist (bei geraden Seitenlaengen mehrere).
 pub fn center_distances(board: &Board) -> Vec<u32> {
-    let corner_dists: Vec<Vec<u32>> = board
+    let corner_dists: Vec<&[u32]> = board
         .corners()
         .iter()
         .map(|&c| board.distances_from(c))
@@ -403,7 +403,7 @@ pub fn center_distances(board: &Board) -> Vec<u32> {
     let best = board.cells().map(ecc).min().unwrap_or(0);
     let mut out = vec![u32::MAX; board.len()];
     for c in board.cells().filter(|&c| ecc(c) == best) {
-        for (i, d) in board.distances_from(c).into_iter().enumerate() {
+        for (i, &d) in board.distances_from(c).iter().enumerate() {
             out[i] = out[i].min(d);
         }
     }
@@ -444,7 +444,7 @@ fn place_all(
     let cap = config.max_resources_per_cell;
     let start_cells: Vec<CellId> = board.corners().to_vec();
     let corners = board.corners().len();
-    let dists: Vec<Vec<u32>> = start_cells
+    let dists: Vec<&[u32]> = start_cells
         .iter()
         .map(|&c| board.distances_from(c))
         .collect();
@@ -610,7 +610,7 @@ fn place_all(
                 } else {
                     let mut nearest = vec![u32::MAX; board.len()];
                     for &p in &placed {
-                        for (i, d) in board.distances_from(p).into_iter().enumerate() {
+                        for (i, &d) in board.distances_from(p).iter().enumerate() {
                             nearest[i] = nearest[i].min(d);
                         }
                     }
@@ -1496,7 +1496,7 @@ mod tests {
                 let mut sum = 0u64;
                 let mut near = vec![u32::MAX; m.board.len()];
                 for &a in &cells3 {
-                    for (i, d) in m.board.distances_from(a).into_iter().enumerate() {
+                    for (i, &d) in m.board.distances_from(a).iter().enumerate() {
                         near[i] = near[i].min(d);
                     }
                 }

@@ -79,7 +79,7 @@ pub fn make_terrain(config: &Config, board: &Board, territories: &[Option<usize>
     }
     let mut base = Rng::new(config.seed ^ SALT);
     let corner_cells = board.corners().to_vec();
-    let dist: Vec<Vec<u32>> = corner_cells
+    let dist: Vec<&[u32]> = corner_cells
         .iter()
         .map(|&c| board.distances_from(c))
         .collect();
@@ -160,7 +160,7 @@ fn noise_ranks(board: &Board, rng: &mut Rng) -> Vec<u64> {
 }
 
 /// Abstand jedes Feldes zur naechsten Startecke in Feldschritten.
-pub(crate) fn nearest_corner(board: &Board, dist: &[Vec<u32>]) -> Vec<u32> {
+pub(crate) fn nearest_corner(board: &Board, dist: &[&[u32]]) -> Vec<u32> {
     board
         .cells()
         .map(|c| dist.iter().map(|d| d[c.idx()]).min().unwrap_or(0))
@@ -204,7 +204,7 @@ struct Group {
 }
 
 impl Layout {
-    fn new(board: &Board, territories: &[Option<usize>], dist: &[Vec<u32>]) -> Layout {
+    fn new(board: &Board, territories: &[Option<usize>], dist: &[&[u32]]) -> Layout {
         let corners = board.corners().len();
         let nearest = nearest_corner(board, dist);
         let air = corner_air_distance(board);
@@ -364,7 +364,7 @@ mod tests {
             for seed in 1..=12u64 {
                 let c = config(players, seed, true);
                 let (board, _, t) = terrain_of(&c);
-                let dist: Vec<Vec<u32>> = board
+                let dist: Vec<&[u32]> = board
                     .corners()
                     .iter()
                     .map(|&k| board.distances_from(k))

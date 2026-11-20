@@ -65,6 +65,25 @@ pub struct SearchParams {
 /// Rechenbudget von "sehr stark" (Standard von "stark": 20000).
 pub const VERY_STRONG_BUDGET: u64 = 20_000;
 
+/// Rechenbudget fuer ein Brett mit `cells` Feldern. Bis 110 Felder (Quadrat mit Seitenlaenge 10) gilt das volle
+/// Budget; darueber wird es kleiner, weil jede untersuchte Stellung auf einem grossen Brett viel mehr kostet
+/// (gemessen: bei 6 Spielern, 331 Felder, etwa das Siebenfache wie bei 2 Spielern; "super stark" brauchte dort
+/// 1 bis 3 Sekunden je Zug im Browser). Stufen statt Gleitkomma, damit Browser und Kommandozeile gleich rechnen.
+pub fn scaled_budget(base: u64, cells: usize) -> u64 {
+    let percent = match cells {
+        0..=110 => 100,
+        111..=150 => 55,
+        151..=220 => 35,
+        221..=300 => 22,
+        301..=380 => 15,
+        381..=480 => 11,
+        481..=650 => 8,
+        651..=900 => 5,
+        _ => 3,
+    };
+    (base * percent / 100).max(base.min(500))
+}
+
 impl SearchParams {
     pub const DEFAULT: SearchParams = SearchParams {
         node_budget: 20_000,
@@ -299,8 +318,8 @@ impl DistCache {
         }
         let row: Box<[u16]> = board
             .distances_from(from)
-            .into_iter()
-            .map(|d| d.min(u16::MAX as u32) as u16)
+            .iter()
+            .map(|&d| d.min(u16::MAX as u32) as u16)
             .collect();
         let d = row[to.idx()] as u32;
         if self.filled < DIST_ROW_LIMIT {
@@ -336,6 +355,8 @@ pub struct SearchBot {
     drive: Option<crate::area_bot::Drive>,
     /// Zuschlaege auf Wurzelzuege der laufenden Suche (sinnvolle Schlaege, `Drive::hunt`).
     root_bonus: Vec<(Action, i32)>,
+    /// Knotenbudget des laufenden Zugs: `params.node_budget`, auf grossen Brettern gekuerzt (`scaled_budget`).
+    budget: u64,
 }
 
 impl SearchBot {
@@ -362,6 +383,7 @@ impl SearchBot {
             area_eval: false,
             drive: None,
             root_bonus: Vec::new(),
+            budget: params.node_budget,
         }
     }
 
@@ -446,7 +468,8 @@ impl SearchBot {
         self.root = game.current_player();
         self.prepare(game);
         self.nodes = 0;
-        self.limit = self.params.node_budget;
+        self.budget = scaled_budget(self.params.node_budget, game.map.board.len());
+        self.limit = self.budget;
         self.aborted = false;
         self.killers.clear();
 
@@ -530,7 +553,7 @@ impl SearchBot {
                 return b;
             }
         }
-        self.limit = self.params.node_budget;
+        self.limit = self.budget;
         self.aborted = false;
         let (best, best_score, depth_done) = self.root_search(game, moves, self.params.max_depth);
         self.root_bonus.clear();
@@ -658,7 +681,7 @@ impl SearchBot {
             }
         }
         // Ein Drittel des Budgets fuer die Kaufentscheidung, gleich verteilt.
-        let share = (self.params.node_budget / 3 / (candidates.len() as u64 + 1)).max(50);
+        let share = (self.budget / 3 / (candidates.len() as u64 + 1)).max(50);
         let probe_depth = 2;
         let moves: Vec<Action> = game
             .legal_actions()
