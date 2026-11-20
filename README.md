@@ -869,7 +869,23 @@ aendern, und man kann eigene Karten bauen.
   sie `territory_upkeep` benutzen. Im Browser: eine orange Leiste ueber dem Zug sagt die naechste Hungersnot an ("in 3 Runden,
   dann kostet eine Figur 4 statt 1, zwei 16 statt 4 ..."), in der Runde selbst ist sie kraeftiger ("Hungersnot in Runde 10!"); die
   Anzeige der Figurenkosten und die Auflose-Auswahl rechnen mit dem k der Runde. Paket "Mit Hungersnot" (k=1, jede 10. Runde) und
-  zwei Felder in den erweiterten Einstellungen. FAMINE_MESSUNG
+  zwei Felder in den erweiterten Einstellungen. Messung (starker Bot gegen starken Bot, Seite 10, 16 Partien, Seeds 11-26, Wertung nach Runde 120, Unterhalt k=1):
+
+  | | ohne Hungersnot | jede 10. Runde (k=2) | jede 5. Runde (k=2) |
+  |---|---|---|---|
+  | Figuren gleichzeitig je Spieler (Mittel / Hoechstwert) | 1,9 / 6 | 2,0 / 5 | 1,9 / 5 |
+  | Figuren gebaut je Partie | 8,2 | 9,0 | 9,6 |
+  | Unterhalt je Partie (Flaeche) | - | 1409 | 1765 |
+  | Aufgeloeste Figuren je Partie | - | 0 | 0 |
+  | Ernte Kat 1 / 2 / 3 je Partie | 26 / - / - | 31 / 13 / 15 | 33 / 17 / 14 |
+  | Partien mit gefangenem Koenig | 13 von 16 | 10 von 16 | 7 von 16 |
+  | Runden im Schnitt | 81,9 | 99,8 | 108,2 |
+
+  Lesart: Die Hungersnot macht die Partien laenger und der Koenigsfang seltener (die Bots haben seltener genug Figuren zum
+  Angriff), aber sie zwingt die Bots nicht zum Aufloesen: die Flaeche reicht auch in der Hungersnotrunde. Der Unterschied
+  zwischen "ohne" und "mit" ist bei nur 16 Partien an der Rauschgrenze, die Tendenz (laenger, mehr Wertungssiege) ist es nicht
+  ganz. Die Bots planen die Hungersnot nicht voraus (sie rechnen sie nur in der Suche mit); ein Mensch, der Flaeche
+  zurueckhaelt, spielt sie deutlich besser. Deshalb ist 10 der Standard im Paket und 5 nur ueber das Feld einstellbar.
 - **Kampagne: Aenderungen an Level 1 und 2.** Level 1 ist jetzt 7x7 (ungerade: die Mitte erreichen beide gleich schnell, Wertung nach
   Runde 40, dritter Stern bis Runde 30; Messung: starker Bot gegen leichten 30 von 30, 25 davon per Koenigsfang, im Schnitt Runde 31).
   Beide Level schalten das Koenigs-Upgrade ab (`terr_kingup=0`, es gibt ja kein Gold); in Level 1 sind zudem Karten und
@@ -952,9 +968,9 @@ aendern, und man kann eigene Karten bauen.
   gefangen (Bonus), 3 Koenig gefangen bis Runde `fast` (Level 1: 20, Level 2: 30). Der beste Stand je Level steht im
   `localStorage` (`spacevitan.campaign.v1`, ohne Speicher gilt er nur fuer die Sitzung). Im Spiel zeigt eine gelbe Leiste Level
   und Ziel; am Ende kommt das Ergebnisfenster mit Sternen und "Nochmal" / "Naechstes Level" / "Kampagne".
-  - Level 1 "Der Ueberfall": 6x6, nur Flaeche (`terr_dep=0`, keine Karten, `terr_pawn=15`), mehr Flaeche fuer den Spieler
-    (`terr_favor=1`), Gegner leicht, Wertung nach Runde 30. Messung: ein starker Bot als Spieler gewinnt 29 von 30 Partien
-    gegen den leichten Bot, im Schnitt in Runde 23; Seed 7 (der feste Seed des Levels) in Runde 20 durch Koenigsfang.
+  - Level 1 "Der Ueberfall": nur Flaeche (`terr_dep=0`, keine Karten, `terr_pawn=15`), mehr Flaeche fuer den Spieler
+    (`terr_favor=1`), Gegner leicht. (In 3.9 war es 6x6 mit Wertung nach Runde 30; seit 3.10 siehe oben: 7x7, Wertung nach
+    Runde 40.) Messung der 3.9-Fassung: starker Bot gewinnt 29 von 30 gegen den leichten Bot.
   - Level 2 "Das erste Eisen": 8x8, nur Eisen (`terr_dep=1`), im Markt nur die Karte "Kuerzer" (3 Eisen), Gegner mittel,
     Wertung nach Runde 40. Messung: starker Bot gegen mittleren Bot gewinnt 16 von 20 (80 %).
   - Spielkern-Schalter dafuer (seit dc8d07f): `terr_favor=1` gibt Spieler A die besseren Flaechen (mehr Feld, weniger Moor in
