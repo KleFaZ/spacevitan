@@ -857,6 +857,36 @@ aendern, und man kann eigene Karten bauen.
   bewerten jeden Kauf mit der Vorausrechnung, planen aber nicht gezielt mit Siedler oder Durchzug. Eigene Karten sind
   ungeprueft im Gleichgewicht: ein Preis unter dem Richtwert macht sie schnell zur besten Karte.
 
+### Version 3.11 (Wuensche vom 20.11.2026, vierter Teil)
+
+- **Kampagne: Level 1-3 "Die Hungersnot".** Level 1 und 2 bleiben wie in 3.10, die Belohnung (Flaechenboost nach Sternen) bleibt
+  unveraendert und wird spaeter neu entschieden. Das dritte Level ist die Hungersnot als eigenes Level, in dem man deutlich
+  weniger Figuren halten kann. Regeln (`CAMPAIGN` im Viewer): wie Level 2 (8x8, nur Eisen, im Markt nur "Kuerzer", Gegner mittel,
+  Wertung nach Runde 40, `terr_pawn=15`, kein Koenigs-Upgrade, fester Seed 14), dazu `terr_upkeep_cnt=1`, `terr_famine=5`,
+  `terr_famine_k=3`: normal kostet der Unterhalt (1·n)² (1, 4, 9, 16 ...), in jeder 5. Runde (5, 10, 15 ... 40) (3·n)²
+  (9, 36, 81 ...). Der Mensch waehlt, welche Figur sich aufloest (`terr_upkeep_pick`, setzt die Spiel-Sitzung selbst). Dritter
+  Stern wie in Level 2: Koenig gefangen bis Runde 30. Die orange Hungersnot-Leiste laeuft im Level mit. Als letztes Level hat es
+  kein "Naechstes Level" (Knopf "Kampagne").
+  - Messung (starker Bot als Spieler A gegen den mittleren Bot, Seite 8, 20 Partien, Seeds 11-30, Wertung nach Runde 40,
+    Rest wie Level 2):
+
+    | Unterhalt | Figuren gleichzeitig je Spieler (Mittel / Hoechstwert) | aufgeloeste Figuren je Partie | Siege des starken Bots |
+    |---|---|---|---|
+    | Level 2 (Unterhalt nach Stufe) | 2,6 / 8 | 0 | 16 von 20 |
+    | k=1, keine Hungersnot | 1,9 / 5 | 0,2 | 13 von 20 |
+    | k=2, keine Hungersnot | 0,9 / 3 | 1,3 | 20 von 20 |
+    | **k=1, jede 5. Runde k=3 (Level 3)** | **1,2 / 3** | **3,3** | **16 von 20** |
+    | k=1, jede 4. Runde k=4 | 0,95 / 3 | 3,4 | 20 von 20 |
+    | k=2, jede 5. Runde k=4 | 0,9 / 3 | 1,8 | 20 von 20 |
+
+    Ausgewaehlt wurde k=1 mit Hungersnot alle 5 Runden (k=3): Figuren im Schnitt halbiert (2,6 auf 1,2), Hoechstwert 8 auf 3, im
+    Schnitt muessen mehr als drei Figuren je Partie aufgeloest werden (die Hungersnot greift also wirklich), und der starke Bot
+    gewinnt wie in Level 2 etwa vier von fuenf Partien. Die haerteren Werte lassen den mittleren Bot einbrechen (20 von 20 Siege
+    fuer den starken). Seed 14: starker Bot gewinnt 37 zu 16. Vorbehalt: nur 20 Partien, die Bots planen den Unterhalt nicht
+    voraus; ein Mensch kann die Hungersnot gezielt vorbereiten.
+  - Test: `camp61.js` (Liste mit drei Leveln und Freischaltung, Geschichte, Regeln, Hungersnot-Leiste in Runde 5, Ende-Fenster
+    ohne "Naechstes Level"), der alte Kampagnentest prueft jetzt drei Level.
+
 ### Version 3.10 (Wuensche vom 20.11.2026, dritter Teil)
 
 - **Paket "Unterhalt nach Anzahl" jetzt mit k=1** (eine Figur 1, zwei 4, drei 9, vier 16, fuenf 25). Messung siehe 3.9: k=1

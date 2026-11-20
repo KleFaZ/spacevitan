@@ -6463,6 +6463,17 @@ body.camp-nocards #marketBox { display: none !important; }
           rules: `${CAMP_BASE},terr_dep=1,market_size=1,${CAMP_ONLY_SHORTEN},price.shorten=3/0/0,side=8,score_after=40,terr_pawn=15`,
           seats: [2, 4], corners: 4, seed: 11, fast: 30, res: [1],
         },
+        {
+          id: "1-3", title: "Die Hungersnot", sub: "Nur wenige Figuren, alle 5 Runden Hungersnot",
+          story: [
+            "Ein Sommer ohne Regen. Die Felder sind verdorrt, und jede Figur in deinem Heer will essen. Dein Land kann nur noch wenige ernähren: Die erste Figur kostet 1 Fläche je Runde, zwei kosten 4, drei kosten 9, vier kosten 16.",
+            "Alle fünf Runden ist Hungersnot. Dann zählt jede Figur dreifach: eine Figur kostet 9 Fläche, zwei kosten 36, drei kosten 81. Der Feind leidet genauso.",
+            "Reicht deine Fläche nicht, musst du eine Figur auflösen. Du wählst selbst, welche. Spare vor der Hungersnot Fläche und baue nur, was du halten kannst.",
+          ],
+          goal: "Fange den gegnerischen König. Hast du ihn bis Runde 40 nicht, gewinnt, wer mehr Punkte hat.",
+          rules: `${CAMP_BASE},terr_dep=1,market_size=1,${CAMP_ONLY_SHORTEN},price.shorten=3/0/0,side=8,score_after=40,terr_pawn=15,terr_upkeep_cnt=1,terr_famine=5,terr_famine_k=3`,
+          seats: [2, 4], corners: 4, seed: 14, fast: 30, res: [1],
+        },
       ],
     },
   ];
