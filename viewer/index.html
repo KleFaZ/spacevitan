@@ -346,6 +346,7 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
   #qPlayers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   #qSide { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   #qShape { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #qShape [data-shape="auto"] { grid-column: span 3; }
   #qSide button { padding: 8px 4px; }
   .seg button { padding: 8px 10px; }
   .qgo { flex-direction: column; align-items: stretch; }
@@ -4033,6 +4034,16 @@ details.buys summary { cursor: pointer; font-weight: 650; font-size: 0.88rem; ma
     ctx.moveTo(cx + r * 0.5, my - r * 0.5); ctx.lineTo(cx - r * 0.5, my + r * 0.5);
     ctx.stroke();
     ctx.restore();
+    placeDissolvePop(my);
+  }
+  /** Auf dem Handy sitzt das Fenster unten; liegt die markierte Figur in der unteren Haelfte, rutscht es nach oben, damit es sie nicht verdeckt. */
+  function placeDissolvePop(canvasY) {
+    const box = $("dissolvePop");
+    if (box.hidden) return;
+    if (window.innerWidth >= 900) { box.style.alignItems = ""; return; }
+    const rect = canvas.getBoundingClientRect();
+    const clientY = rect.top + canvasY * (rect.height / (geo.cssH || rect.height || 1));
+    box.style.alignItems = clientY > window.innerHeight * 0.45 ? "flex-start" : "flex-end";
   }
   /** Fenster zu einer Karte: grosse Karte, Erklaerung, Preis mit Lager, Kaufen. */
   function renderCardPop() {
