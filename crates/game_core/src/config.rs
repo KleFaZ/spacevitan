@@ -211,6 +211,15 @@ pub struct Config {
     /// aussuchen (Bit `i` = Spieler `i`; Standard 0). Alle anderen loesen automatisch auf, zuerst die
     /// schwaechste Figur. Die Oberflaeche setzt die Bits der Menschen. Braucht `terr_upkeep`.
     pub terr_upkeep_pick: u32,
+    /// Version 3.10: Hungersnot. Jede `terr_famine`-te Runde (N, 2N, 3N ...) rechnet der Unterhalt nach Anzahl
+    /// mit `terr_famine_k` statt `terr_upkeep_cnt` (zum Beispiel k=1 gegen k=2). Gilt fuer alle Spieler gleich und
+    /// laesst sich voraussagen. 0 = aus (Standard); braucht `terr_upkeep_cnt`.
+    pub terr_famine: u32,
+    /// Version 3.10: das k der Hungersnot-Runde (Standard 2).
+    pub terr_famine_k: u32,
+    /// Version 3.10 (Kampagne): Flaeche, mit der Spieler A (der Mensch) beginnt, zum Beispiel als Belohnung aus
+    /// dem vorigen Level. Die anderen Spieler beginnen wie immer mit 0. Standard 0.
+    pub camp_bonus_area: u32,
     /// Version 3.1: eine Figur der Stufe `n` auf einem Vorkommen erntet `n` mal so viel je Ernte
     /// (der Takt bleibt, Karten wie Schmiede addieren danach ihr +1). Der Koenig erntet einfach.
     /// Braucht `terr_occupy` (die Figur steht auf dem Feld).
@@ -358,6 +367,9 @@ impl Config {
             terr_upkeep_sq: false,
             terr_upkeep_cnt: 0,
             terr_upkeep_pick: 0,
+            terr_famine: 0,
+            terr_famine_k: 2,
+            camp_bonus_area: 0,
             terr_yield_lvl: false,
             terr_bread: 0,
             terr_fort: false,
@@ -527,6 +539,9 @@ impl Config {
             "terr_upkeep_sq" => self.terr_upkeep_sq = value != 0,
             "terr_upkeep_cnt" => self.terr_upkeep_cnt = as_u32(value)?,
             "terr_upkeep_pick" => self.terr_upkeep_pick = as_u32(value)?,
+            "terr_famine" => self.terr_famine = as_u32(value)?,
+            "terr_famine_k" => self.terr_famine_k = as_u32(value)?,
+            "camp_bonus_area" => self.camp_bonus_area = as_u32(value)?,
             "terr_yield_lvl" => self.terr_yield_lvl = value != 0,
             "terr_bread" => self.terr_bread = as_u32(value)?,
             "terr_fort" => self.terr_fort = value != 0,
@@ -771,6 +786,26 @@ impl Config {
         if self.terr_upkeep_cnt > 20 {
             return Err(ConfigError::Invalid(
                 "terr_upkeep_cnt: 0 (aus) bis 20 (k in (k*n)^2)",
+            ));
+        }
+        if self.terr_famine > 0 && self.terr_upkeep_cnt == 0 {
+            return Err(ConfigError::Invalid(
+                "terr_famine braucht den Unterhalt nach Anzahl (terr_upkeep_cnt)",
+            ));
+        }
+        if self.terr_famine > 1000 {
+            return Err(ConfigError::Invalid(
+                "terr_famine: 0 (aus) bis 1000 (jede N-te Runde)",
+            ));
+        }
+        if self.terr_famine_k == 0 || self.terr_famine_k > 20 {
+            return Err(ConfigError::Invalid(
+                "terr_famine_k: 1 bis 20 (k in (k*n)^2)",
+            ));
+        }
+        if self.camp_bonus_area > 1000 {
+            return Err(ConfigError::Invalid(
+                "camp_bonus_area: 0 bis 1000 Flaeche zum Start",
             ));
         }
         if self.terr_upkeep_sq && !self.terr_upkeep {

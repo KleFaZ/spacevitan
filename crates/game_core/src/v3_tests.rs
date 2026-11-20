@@ -4427,3 +4427,86 @@ fn upkeep_by_count_and_the_pick_have_their_conditions() {
         .unwrap();
     assert!(cfg.validate().is_err(), "die Wahl braucht den Unterhalt");
 }
+
+#[test]
+fn a_famine_round_charges_upkeep_with_the_second_factor() {
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_cnt = 1;
+    g.config.terr_famine = 3;
+    g.config.terr_famine_k = 2;
+    g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    g.setup_unit(P0, c(&g, 4, 0), 1, 1);
+    for (round, upkeep) in [(1, 4), (2, 4), (3, 16), (4, 4), (5, 4), (6, 16)] {
+        g.state.round = round;
+        assert_eq!(
+            g.famine_round(),
+            round.is_multiple_of(3),
+            "Runde {round}: Hungersnot nur jede dritte"
+        );
+        assert_eq!(
+            g.territory_upkeep(P0),
+            Some(upkeep),
+            "Runde {round}: zwei Figuren"
+        );
+    }
+    g.config.terr_famine = 0;
+    g.state.round = 3;
+    assert_eq!(g.territory_upkeep(P0), Some(4), "ohne Hungersnot immer k=1");
+}
+
+#[test]
+fn a_famine_round_can_dissolve_a_figure_that_the_normal_round_keeps() {
+    let mut g = v3_game(&[]);
+    g.config.terr_upkeep_cnt = 1;
+    g.config.terr_famine = 3;
+    g.config.terr_famine_k = 2;
+    g.setup_unit(P0, c(&g, 3, 0), 1, 1);
+    g.setup_unit(P0, c(&g, 4, 0), 1, 1);
+    let e = earned(&g, P0);
+    // 4 Unterhalt in der normalen Runde, 16 in der Hungersnot: 6 Flaeche reichen nur fuer die erste.
+    give_area(&mut g, P0, 6 - e);
+    g.state.round = 2;
+    let ev = income(&mut g, P0);
+    assert!(
+        dissolved(&ev).is_empty(),
+        "normale Runde: nichts loest sich auf"
+    );
+    give_area(&mut g, P0, 6 - e);
+    g.state.round = 3;
+    let ev = income(&mut g, P0);
+    assert_eq!(dissolved(&ev).len(), 1, "Hungersnot: eine Figur geht");
+    g.check_invariants().unwrap();
+}
+
+#[test]
+fn famine_and_the_bonus_area_have_their_conditions() {
+    let mut cfg = Config::new(2, 1);
+    cfg.set_all("territory=1,terr_v3=1,terr_famine=5").unwrap();
+    assert!(
+        cfg.validate().is_err(),
+        "Hungersnot braucht den Unterhalt nach Anzahl"
+    );
+    cfg.set_all("terr_upkeep_cnt=1").unwrap();
+    assert!(cfg.validate().is_ok());
+    assert_eq!(cfg.terr_famine_k, 2, "Standard k=2");
+    cfg.set_all("terr_famine_k=0").unwrap();
+    assert!(cfg.validate().is_err(), "k mindestens 1");
+    cfg.set_all("terr_famine_k=21").unwrap();
+    assert!(cfg.validate().is_err(), "k hoechstens 20");
+    cfg.set_all("terr_famine_k=2,camp_bonus_area=1001").unwrap();
+    assert!(cfg.validate().is_err(), "Startflaeche hoechstens 1000");
+    cfg.set_all("camp_bonus_area=15").unwrap();
+    assert!(cfg.validate().is_ok());
+}
+
+#[test]
+fn the_bonus_area_belongs_to_player_a_only() {
+    let mut cfg = v3_config(2);
+    cfg.camp_bonus_area = 15;
+    let g = with_deposits_cfg(cfg, &[]);
+    assert_eq!(g.state.area[0], 15, "Spieler A beginnt mit der Belohnung");
+    assert_eq!(g.state.area[1], 0, "der Gegner beginnt mit nichts");
+    g.check_invariants().unwrap();
+    let g = v3_game(&[]);
+    assert_eq!(g.state.area, vec![0, 0], "ohne Belohnung wie immer");
+}

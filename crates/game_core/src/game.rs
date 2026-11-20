@@ -47,6 +47,10 @@ impl Game {
                 state.insert_factory(player, cell);
             }
         }
+        // Kampagne: Spieler A beginnt mit der mitgebrachten Flaeche.
+        if config.territory && config.camp_bonus_area > 0 {
+            state.area[0] = config.camp_bonus_area;
+        }
         // Mit `kat_roles` liegt Rekrut immer aus: Bauern gehoeren dann zu den Grundregeln.
         let always: &[Card] = if config.kat_roles {
             &[Card::Recruit]

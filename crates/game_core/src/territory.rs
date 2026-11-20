@@ -2052,11 +2052,26 @@ impl Game {
         self.config.terr_upkeep.then(|| {
             if self.config.terr_upkeep_cnt > 0 {
                 let n = self.pieces_of(player).filter(|p| !p.is_king()).count() as u32;
-                return Game::count_upkeep(self.config.terr_upkeep_cnt, n);
+                return Game::count_upkeep(self.upkeep_k(), n);
             }
             let sq = self.config.terr_upkeep_sq;
             self.pieces_of(player).map(|p| p.upkeep(sq)).sum()
         })
+    }
+
+    /// Version 3.10 (`terr_famine`): ist die laufende Runde eine Hungersnot-Runde?
+    pub fn famine_round(&self) -> bool {
+        self.config.terr_famine > 0 && self.state.round.is_multiple_of(self.config.terr_famine)
+    }
+
+    /// Das k des Unterhalts nach Anzahl in dieser Runde: in einer Hungersnot `terr_famine_k`, sonst
+    /// `terr_upkeep_cnt`.
+    pub fn upkeep_k(&self) -> u32 {
+        if self.famine_round() {
+            self.config.terr_famine_k
+        } else {
+            self.config.terr_upkeep_cnt
+        }
     }
 
     /// Version 3.9 (`terr_upkeep_cnt = k`): Unterhalt von `n` Figuren, `(k * n)^2`.
